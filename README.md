@@ -32,25 +32,26 @@ A modular, customizable, and feature-rich 2D plotting library written in Rust. W
 
 ## **Examples**  
 ### **PNG Outputs**  
-![](../dataviz-screenshots/cartesian_graph.png)  
-![](../dataviz-screenshots/grouped_horizontal_bar_chart.png)  
-![](../dataviz-screenshots/grouped_vertical_bar_chart.png)  
-![](../dataviz-screenshots/pie_chart.png)  
-![](../dataviz-screenshots/quadrant1_graph.png)  
-![](../dataviz-screenshots/scatter_graph.png)  
-![](../dataviz-screenshots/area_chart.png)  
-![](../dataviz-screenshots/histogram.png)  
-![](../dataviz-screenshots/real_time.gif)  
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/cartesian_graph.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/grouped_horizontal_bar_chart.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/grouped_vertical_bar_chart.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/pie_chart.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/quadrant1_graph.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/scatter_graph.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/area_chart.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/histogram.png?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/real_time.gif?raw=true" alt="" width="300px">
 
-### **SVG Outputs**  
-![](../dataviz-screenshots/cartesian_graph.svg)  
-![](../dataviz-screenshots/grouped_horizontal_bar_chart.svg)  
-![](../dataviz-screenshots/grouped_vertical_bar_chart.svg)  
-![](../dataviz-screenshots/pie_chart.svg)  
-![](../dataviz-screenshots/quadrant1_graph.svg)  
-![](../dataviz-screenshots/scatter_graph.svg)  
-![](../dataviz-screenshots/area_chart.svg)  
-![](../dataviz-screenshots/histogram.svg)  
+
+### **SVG Outputs**
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/cartesian_graph.svg?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/grouped_horizontal_bar_chart.svg?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/grouped_vertical_bar_chart.svg?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/pie_chart.svg?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/quadrant1_graph.svg?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/scatter_graph.svg?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/area_chart.svg?raw=true" alt="" width="300px">
+<img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/histogram.svg?raw=true" alt="" width="300px">
 
 ---
 
@@ -70,7 +71,6 @@ rusttype = "0.9.3"        # Font processing
 ---
 
 ## **Usage Example**  
-Here’s how to create a simple pie chart:
 
 ```rust
 use dataviz::figure::figuretypes::piechart::PieChart;
