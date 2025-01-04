@@ -1,11 +1,12 @@
 use crate::figure::{
     canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
+    configuration::figureconfig::FigureConfig,
     figuretypes::histogram::Histogram,
     utilities::axistype::AxisType,
 };
 
 use super::drawer::Drawer;
-
+use std::any::Any;
 impl Drawer for Histogram {
     fn draw_svg(&mut self, svg_canvas: &mut SvgCanvas) {
         // Clear existing SVG elements
@@ -150,7 +151,7 @@ impl Drawer for Histogram {
         let cfg = &self.config;
 
         // Draw the title
-        self.draw_title(canvas, &cfg, width / 2, margin / 2, &self.title);
+        self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);
 
         let bin_data = self.calculate_bins();
         let y_max = bin_data.iter().map(|&(_, freq)| freq).fold(0.0, f64::max);
@@ -246,5 +247,13 @@ impl Drawer for Histogram {
 
     fn draw_legend(&self, _canvas: &mut PixelCanvas) {
         // Histogram does not have a legend
+    }
+
+    fn as_any(&mut self) -> &mut (dyn Any + 'static) {
+        self as &mut (dyn Any)
+    }
+
+    fn get_figure_config(&self) -> &FigureConfig {
+        &self.config
     }
 }

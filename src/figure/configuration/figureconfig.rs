@@ -24,9 +24,9 @@ pub struct FigureConfig {
     /// Font size for axis labels.
     pub font_size_axis: f32,
     /// File path to the font used for labels.
-    pub font_label: String,
+    pub font_label: Option<String>,
     /// File path to the font used for the title.
-    pub font_title: String,
+    pub font_title: Option<String>,
 }
 
 impl Default for FigureConfig {
@@ -62,8 +62,23 @@ impl Default for FigureConfig {
             font_size_title: 24.0,
             font_size_legend: 10.0,
             font_size_axis: 10.0,
-            font_label: "../../../resources/fonts/Arial.ttf".to_string(),
-            font_title: "../../../resources/fonts/Arial.ttf".to_string(),
+            font_label: None,
+            font_title: None,
+        }
+    }
+}
+
+impl FigureConfig {
+    pub fn set_font_paths(&mut self, label_path: String, title_path: String) {
+        self.font_label = Some(label_path);
+        self.font_title = Some(title_path);
+    }
+
+    pub fn validate(&self) -> Result<(), String> {
+        if self.font_label.is_none() || self.font_title.is_none() {
+            Err("Both font_label and font_title must be provided.".to_string())
+        } else {
+            Ok(())
         }
     }
 }

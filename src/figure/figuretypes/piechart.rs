@@ -75,6 +75,7 @@ impl PieChart {
     /// ```rust
     /// pie_chart.draw_slice(&mut canvas, 200, 200, 100, 0.0, 1.0, [255, 0, 0]);
     /// ```
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_slice(
         &self,
         canvas: &mut PixelCanvas,

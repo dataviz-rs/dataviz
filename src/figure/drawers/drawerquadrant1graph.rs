@@ -3,12 +3,13 @@ use imageproc::drawing::text_size;
 
 use crate::figure::{
     canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
+    configuration::figureconfig::FigureConfig,
     figuretypes::quadrant1graph::Quadrant1Graph,
     utilities::axistype::AxisType,
 };
 
 use super::drawer::Drawer;
-
+use std::any::Any;
 impl Drawer for Quadrant1Graph {
     fn draw_svg(&mut self, svg_canvas: &mut SvgCanvas) {
         let width = svg_canvas.width as f64;
@@ -213,7 +214,7 @@ impl Drawer for Quadrant1Graph {
         let cfg = &self.config;
 
         // Draw the title
-        self.draw_title(canvas, &cfg, width / 2, margin / 2, &self.title);
+        self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);
 
         // Calculate dataset limits
         let (x_min, x_max) = self
@@ -308,8 +309,12 @@ impl Drawer for Quadrant1Graph {
     }
 
     fn draw_legend(&self, canvas: &mut PixelCanvas) {
-        let font_bytes =
-            std::fs::read(self.config.font_label.clone()).expect("Failed to read font file");
+        let font_path = self
+            .config
+            .font_label
+            .as_ref()
+            .expect("Font path is not set");
+        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
         let font = FontRef::try_from_slice(&font_bytes).unwrap();
         let scale = PxScale { x: 10.0, y: 10.0 }; // Font size
 
@@ -353,5 +358,13 @@ impl Drawer for Quadrant1Graph {
                 y -= line_height;
             }
         }
+    }
+
+    fn as_any(&mut self) -> &mut (dyn Any + 'static) {
+        self as &mut (dyn Any)
+    }
+
+    fn get_figure_config(&self) -> &FigureConfig {
+        &self.config
     }
 }

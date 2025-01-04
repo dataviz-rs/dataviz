@@ -7,8 +7,13 @@ use crate::figure::{
     utilities::{axistype::AxisType, linetype::LineType},
 };
 
+use std::any::Any;
+
 /// A trait for rendering charts and graphs, supporting multiple output formats.
-pub trait Drawer {
+pub trait Drawer: Any {
+    fn as_any(&mut self) -> &mut (dyn Any + 'static);
+    fn get_figure_config(&self) -> &FigureConfig;
+
     /// Draws the main content of the plot on a `PixelCanvas`.
     ///
     /// # Parameters
@@ -73,14 +78,15 @@ pub trait Drawer {
         y: u32,
         text: &str,
     ) {
-        let font_bytes = std::fs::read(&config.font_title).expect("Failed to read font file");
+        let font_path = config.font_label.as_ref().expect("Font path is not set");
+        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
         let font = FontRef::try_from_slice(&font_bytes).unwrap();
         let scale = ab_glyph::PxScale {
             x: config.font_size_label,
             y: config.font_size_label,
         };
 
-        let (w, h) = text_size(scale, &font, &text);
+        let (w, h) = text_size(scale, &font, text);
 
         canvas.draw_text(
             x.saturating_sub(w / 2),
@@ -107,14 +113,15 @@ pub trait Drawer {
         y: u32,
         text: &str,
     ) {
-        let font_bytes = std::fs::read(&config.font_title).expect("Failed to read font file");
+        let font_path = config.font_title.as_ref().expect("Font path is not set");
+        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
         let font = FontRef::try_from_slice(&font_bytes).unwrap();
         let scale = PxScale {
             x: config.font_size_title,
             y: config.font_size_title,
         };
 
-        let (w, h) = text_size(scale, &font, &text);
+        let (w, h) = text_size(scale, &font, text);
 
         canvas.draw_text(
             x.saturating_sub(w / 2),
@@ -143,14 +150,15 @@ pub trait Drawer {
         text: &str,
         axis: AxisType,
     ) {
-        let font_bytes = std::fs::read(&config.font_title).expect("Failed to read font file");
+        let font_path = config.font_label.as_ref().expect("Font path is not set");
+        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
         let font = FontRef::try_from_slice(&font_bytes).unwrap();
         let scale = ab_glyph::PxScale {
             x: config.font_size_axis,
             y: config.font_size_axis,
         };
 
-        let (w, h) = text_size(scale, &font, &text);
+        let (w, h) = text_size(scale, &font, text);
         let mut x = x;
         let mut y = y;
         match axis {

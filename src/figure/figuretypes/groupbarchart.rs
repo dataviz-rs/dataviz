@@ -99,7 +99,7 @@ impl GroupBarChart {
         let cfg = &self.config;
 
         // Draw the title
-        self.draw_title(canvas, &cfg, width / 2, margin / 2, &self.title);
+        self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);
 
         // Get unique y-axis values
         let unique_y_values: Vec<u32> = self
@@ -167,7 +167,7 @@ impl GroupBarChart {
                 if let Some(&(_, value)) = dataset
                     .data
                     .iter()
-                    .find(|(y, _)| &(*y as u32).to_string() == &y_label.to_string())
+                    .find(|(y, _)| (*y as u32).to_string() == y_label.to_string())
                 {
                     let bar_length = (value * scale_x) as u32;
                     let bar_top = group_center_y - (group_height / 2.0) as u32
@@ -210,7 +210,7 @@ impl GroupBarChart {
         let cfg = &self.config;
 
         // Draw the title
-        self.draw_title(canvas, &cfg, width / 2, margin / 2, &self.title);
+        self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);
 
         // Get unique x-axis values
         let unique_x_values: Vec<u32> = self
@@ -286,7 +286,7 @@ impl GroupBarChart {
                 if let Some(&(_, income)) = dataset
                     .data
                     .iter()
-                    .find(|(x, _)| &(*x as u32).to_string() == &x_label.to_string())
+                    .find(|(x, _)| (*x as u32).to_string() == x_label.to_string())
                 {
                     let bar_height = (income * scale_y) as u32;
                     let bar_left = group_center_x - (group_width / 2.0) as u32

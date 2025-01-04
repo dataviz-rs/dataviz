@@ -101,6 +101,7 @@ impl SvgCanvas {
     /// - `stroke_color`: Stroke color of the rectangle.
     /// - `stroke_width`: Width of the rectangle's border.
     /// - `opacity`: Opacity of the rectangle fill (0.0 to 1.0).
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_rect(
         &mut self,
         x: f64,
@@ -185,6 +186,7 @@ impl SvgCanvas {
     /// - `x_ticks`: Number of grid lines along the x-axis.
     /// - `y_ticks`: Number of grid lines along the y-axis.
     /// - `color`: Color of the grid lines.
+    #[allow(clippy::too_many_arguments)]
     pub fn draw_grid(
         &mut self,
         x_min: f64,

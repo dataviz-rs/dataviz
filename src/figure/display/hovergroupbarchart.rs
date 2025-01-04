@@ -51,7 +51,8 @@ impl Hover for GroupBarChart {
             let mut tooltip_text = String::from("X Value: ");
 
             // Calculate tooltip dimensions
-            let font = self.get_font(self.config.font_label.as_bytes());
+            let font_label = self.config.font_label.clone().unwrap();
+            let font = self.get_font(font_label.as_bytes());
             let scale = ab_glyph::PxScale { x: 12.0, y: 12.0 };
             let text_size = text_size(scale, &font, &tooltip_text).0 as i32;
 
@@ -62,9 +63,7 @@ impl Hover for GroupBarChart {
 
             // Ensure tooltip stays within bounds
             let rect_x = rect_x.max(0).min((canvas.width as i32 - rect_width) as i32);
-            let mut rect_y = rect_y
-                .max(0)
-                .min((canvas.height as i32 - rect_height) as i32);
+            let mut rect_y = rect_y.max(0).min(canvas.height as i32 - rect_height);
 
             // Draw tooltip background
             for y in rect_y..(rect_y + rect_height) {
@@ -142,8 +141,8 @@ impl Hover for GroupBarChart {
 
         for dataset in &self.datasets {
             for &(x, y) in &dataset.data {
-                let px = ((x) * scale_x + canvas.margin as f64) as f64;
-                let py = (canvas.height as f64 - canvas.margin as f64 - y * scale_y) as f64;
+                let px = (x) * scale_x + canvas.margin as f64;
+                let py = canvas.height as f64 - canvas.margin as f64 - y * scale_y;
 
                 let distance =
                     ((mouse_x as f64 - px).powi(2) + (mouse_y as f64 - py).powi(2)).sqrt();
@@ -168,6 +167,6 @@ impl Hover for GroupBarChart {
     }
 
     fn get_font<'a>(&self, font_data: &'a [u8]) -> FontRef<'a> {
-        FontRef::try_from_slice(&font_data).unwrap()
+        FontRef::try_from_slice(font_data).unwrap()
     }
 }

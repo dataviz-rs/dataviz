@@ -153,7 +153,7 @@ impl PixelCanvas {
             self.draw_text(x, current_y, &char_as_str, color, font, scale);
 
             // Move down for the next character
-            current_y += char_height as u32 + 5; // Adjust spacing between characters
+            current_y += char_height + 5; // Adjust spacing between characters
         }
     }
 
@@ -177,8 +177,7 @@ impl PixelCanvas {
     ) {
         let img: &mut [u8] = &mut self.buffer;
         let mut buffer =
-            image::ImageBuffer::from_raw(self.width as u32, self.height as u32, img.to_vec())
-                .unwrap();
+            image::ImageBuffer::from_raw(self.width, self.height, img.to_vec()).unwrap();
         draw_text_mut(
             &mut buffer,
             Rgb(color),

@@ -64,7 +64,8 @@ impl Hover for Histogram {
             let bin_info = format!("([{:.2}, {:.2}], total: {:.2})", bin_start, bin_end, freq);
 
             // Calculate text size for background rectangle
-            let font = self.get_font(self.config.font_label.as_bytes());
+            let font_label = self.config.font_label.clone().unwrap();
+            let font = self.get_font(font_label.as_bytes());
             let scale = ab_glyph::PxScale { x: 12.0, y: 12.0 };
             let text_size = text_size(scale, &font, &bin_info).0 as i32;
 
@@ -75,9 +76,7 @@ impl Hover for Histogram {
 
             // Adjust rectangle coordinates to stay within canvas bounds
             let rect_x = rect_x.max(0).min((canvas.width as i32 - rect_width) as i32);
-            let rect_y = rect_y
-                .max(0)
-                .min((canvas.height as i32 - rect_height) as i32);
+            let rect_y = rect_y.max(0).min(canvas.height as i32 - rect_height);
 
             // Draw white rectangle as background
             for y in rect_y..(rect_y + rect_height) {
@@ -148,6 +147,6 @@ impl Hover for Histogram {
     }
 
     fn get_font<'a>(&self, font_data: &'a [u8]) -> FontRef<'a> {
-        FontRef::try_from_slice(&font_data).unwrap()
+        FontRef::try_from_slice(font_data).unwrap()
     }
 }

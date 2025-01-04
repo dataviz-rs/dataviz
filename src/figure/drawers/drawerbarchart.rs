@@ -1,12 +1,13 @@
+use super::drawer::Drawer;
 use crate::figure::{
     canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
+    configuration::figureconfig::FigureConfig,
     figuretypes::groupbarchart::GroupBarChart,
     utilities::orientation::Orientation,
 };
 use ab_glyph::{FontRef, PxScale};
 use imageproc::drawing::text_size;
-
-use super::drawer::Drawer;
+use std::any::Any;
 
 impl Drawer for GroupBarChart {
     fn draw_svg(&mut self, svg_canvas: &mut SvgCanvas) {
@@ -115,7 +116,7 @@ impl Drawer for GroupBarChart {
                         if let Some(&(_, value)) = dataset
                             .data
                             .iter()
-                            .find(|(x, _)| &(*x as u32).to_string() == &x_label.to_string())
+                            .find(|(x, _)| (*x as u32).to_string() == x_label.to_string())
                         {
                             let bar_height = value * scale_y;
                             let bar_left = group_center_x - group_width / 2.0
@@ -234,7 +235,7 @@ impl Drawer for GroupBarChart {
                         if let Some(&(_, value)) = dataset
                             .data
                             .iter()
-                            .find(|(y, _)| &(*y as u32).to_string() == &y_label.to_string())
+                            .find(|(y, _)| (*y as u32).to_string() == y_label.to_string())
                         {
                             let bar_length = value * scale_x;
                             let bar_top = group_center_y - group_height / 2.0
@@ -308,8 +309,12 @@ impl Drawer for GroupBarChart {
     }
 
     fn draw_legend(&self, canvas: &mut PixelCanvas) {
-        let font_bytes =
-            std::fs::read(self.config.font_label.clone()).expect("Failed to read font file");
+        let font_path = self
+            .config
+            .font_label
+            .as_ref()
+            .expect("Font path is not set");
+        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
         let font = FontRef::try_from_slice(&font_bytes).unwrap();
         let scale = PxScale { x: 10.0, y: 10.0 }; // Font size
 
@@ -353,5 +358,13 @@ impl Drawer for GroupBarChart {
                 y -= line_height;
             }
         }
+    }
+
+    fn as_any(&mut self) -> &mut (dyn Any + 'static) {
+        self as &mut (dyn Any)
+    }
+
+    fn get_figure_config(&self) -> &FigureConfig {
+        &self.config
     }
 }

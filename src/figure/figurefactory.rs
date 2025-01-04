@@ -1,4 +1,11 @@
-use super::{configuration::figureconfig::FigureConfig, drawers::drawer::Drawer, figuretypes::{areachart::AreaChart, cartesiangraph::CartesianGraph, groupbarchart::GroupBarChart, histogram::Histogram, piechart::PieChart, scattergraph::ScatterGraph}};
+use super::{
+    configuration::figureconfig::FigureConfig,
+    drawers::drawer::Drawer,
+    figuretypes::{
+        areachart::AreaChart, cartesiangraph::CartesianGraph, groupbarchart::GroupBarChart,
+        histogram::Histogram, piechart::PieChart, scattergraph::ScatterGraph,
+    },
+};
 
 /// Represents the types of plots that can be created.
 pub enum FigureType {

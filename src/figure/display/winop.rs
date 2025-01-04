@@ -6,10 +6,19 @@ use resvg::{
 use std::time::{Duration, Instant};
 
 use super::hover::Hover;
-use crate::figure::{canvas::pixelcanvas::PixelCanvas, drawers::drawer::Drawer, configuration::figureconfig::FigureConfig};
+use crate::figure::{
+    canvas::pixelcanvas::PixelCanvas, configuration::figureconfig::FigureConfig,
+    drawers::drawer::Drawer,
+};
 
 /// A utility struct for managing window operations and displaying graphics interactively.
 pub struct Winop;
+
+impl Default for Winop {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Winop {
     /// Creates a new `Winop` instance.
@@ -29,11 +38,14 @@ impl Winop {
     /// # Panics
     /// - If the SVG content cannot be parsed.
     /// - If the window cannot be created.
+    #[allow(clippy::field_reassign_with_default)]
     pub fn display_svg(svg_content: &str, window_title: &str, figure_config: &FigureConfig) {
         // Initialize a font database.
         let mut fontdb = fontdb::Database::new();
         fontdb.load_system_fonts();
-        fontdb.load_font_data(figure_config.font_label.clone().into_bytes());
+        if let Ok(_) = &figure_config.validate() {
+            fontdb.load_font_data(figure_config.font_label.clone().unwrap().into_bytes());
+        }
 
         // Parse the SVG content.
         let mut opt = usvg::Options::default();

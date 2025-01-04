@@ -1,7 +1,7 @@
 //! # DataViz Library
 //!
-//! **DataViz** is a versatile and modular Rust library for creating and managing a wide variety of charts and graphs. 
-//! Designed with flexibility and extensibility in mind, DataViz provides a powerful API for data visualization, 
+//! **DataViz** is a versatile and modular Rust library for creating and managing a wide variety of charts and graphs.
+//! Designed with flexibility and extensibility in mind, DataViz provides a powerful API for data visualization,
 //! supporting different chart types, customization options, and interactive features.
 //!
 //! ## Features
@@ -34,7 +34,7 @@
 //! - [`dataset`](crate::figure::datasets::dataset): Common dataset traits for unifying data operations.
 //!
 //! ## Drawers
-//! Provides customizable renderers for each chart type. Drawers allow charts to be rendered on various canvases, 
+//! Provides customizable renderers for each chart type. Drawers allow charts to be rendered on various canvases,
 //! such as pixel-based or vector-based canvases. Includes:
 //! - [`drawer`](crate::figure::drawers::drawer): Core drawing functionality.
 //! - Specialized drawers for specific chart types like:
@@ -83,7 +83,6 @@
 //!
 //! ## License
 //! DataViz is open-source and licensed under the MIT license. Contributions are welcome!
-
 
 pub mod figure {
     pub mod figuretypes {

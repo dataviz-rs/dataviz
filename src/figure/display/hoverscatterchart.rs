@@ -101,7 +101,8 @@ impl Hover for ScatterGraph {
             );
 
             // Draw an edged rectangle for the hover information
-            let font = self.get_font(self.config.font_label.as_bytes());
+            let font_label = self.config.font_label.clone().unwrap();
+            let font = self.get_font(font_label.as_bytes());
             let scale = ab_glyph::PxScale { x: 12.0, y: 12.0 };
             let coord_text = format!("({:.2}, {:.2})", x, y);
             let text_size = text_size(scale, &font, &coord_text).0 as i32;
@@ -112,9 +113,7 @@ impl Hover for ScatterGraph {
             let rect_height = 25;
 
             let rect_x = rect_x.max(0).min((canvas.width as i32 - rect_width) as i32);
-            let rect_y = rect_y
-                .max(0)
-                .min((canvas.height as i32 - rect_height) as i32);
+            let rect_y = rect_y.max(0).min(canvas.height as i32 - rect_height);
 
             for y in rect_y..(rect_y + rect_height) {
                 for x in rect_x..(rect_x + rect_width) {
@@ -168,6 +167,6 @@ impl Hover for ScatterGraph {
     }
 
     fn get_font<'a>(&self, font_data: &'a [u8]) -> FontRef<'a> {
-        FontRef::try_from_slice(&font_data).unwrap()
+        FontRef::try_from_slice(font_data).unwrap()
     }
 }
