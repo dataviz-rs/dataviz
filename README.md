@@ -1,5 +1,5 @@
 # **DataViz** 🚀  
-A modular, customizable, and feature-rich 2D plotting library written in Rust. With **DataViz**, you can create a wide variety of plots tailored to your needs, supporting both raster (PNG) and vector (SVG) outputs.
+A modular, customizable, and feature-rich 2D plotting library written in Rust. With **DataViz**, you can create a wide variety of plots tailored to your needs, supporting both raster (PNG) and vector (SVG) outputs. You can save and display(interactive or real-time) your DataViz figures.
 
 ---
 
@@ -26,7 +26,250 @@ A modular, customizable, and feature-rich 2D plotting library written in Rust. W
 - **Vector (SVG)**: Generate scalable vector graphics for precision and scalability.  
 
 ### **Interactive Capabilities**  
-- Hover effects and real-time updates (coming soon).
+- Hover effects and real-time updates.
+
+---
+
+## **Installation**  
+Add the following dependencies to your `Cargo.toml` file:
+```toml
+[dependencies]
+dataviz = "0.1.5"
+```
+
+## **Examples**  
+To see more examples you can visit: https://github.com/dataviz-rs/dataviz-examples
+
+---
+
+## **Usage Example**  
+
+```rust
+use dataviz::figure::{
+    canvas::pixelcanvas::PixelCanvas, // For creating a pixel canvas to draw the chart
+    configuration::figureconfig::FigureConfig, // For configuring visual properties of the chart
+    datasets::bardataset::BarDataset, // For defining datasets for bar charts
+    display::winop::Winop,            // For displaying the chart interactively
+    drawers::drawer::Drawer,          // For drawing functionality
+    figuretypes::groupbarchart::GroupBarChart, // For creating grouped bar charts
+    utilities::orientation::Orientation, // For setting the chart orientation (vertical/horizontal)
+};
+
+use rand::Rng;
+
+fn main() {
+    // Configuration for the figure (e.g., fonts, colors, grid, and axis settings)
+    let figure_config = FigureConfig {
+        font_size_title: 20.0,       // Font size for the chart title
+        font_size_label: 16.0,       // Font size for axis labels
+        font_size_legend: 14.0,      // Font size for legend
+        font_size_axis: 10.0,        // Font size for axis tick labels
+        color_axis: [0, 0, 0],       // Color of the axes (black)
+        color_background: [0, 0, 0], // Background color of the chart (black)
+        color_grid: [220, 220, 220], // Grid color (light gray)
+        color_title: [0, 0, 0],      // Title color (black)
+        num_axis_ticks: 20,          // Number of axis tick marks
+        num_grid_horizontal: 20,     // Number of horizontal grid lines
+        num_grid_vertical: 20,       // Number of vertical grid lines
+        font_label: Some("path/to/dataviz/resources/fonts/font.ttf"
+            .to_string()), // Path to the font for axis labels
+        font_title: Some("path/to/dataviz/resources/fonts/font.ttf"
+            .to_string()), // Path to the font for the title
+    };
+
+    // Create a grouped bar chart with the given configuration
+    let mut barchart = GroupBarChart::new(
+        "Grouped Bar Chart",     // Chart title
+        "X Axis",                // X-axis label
+        "Y Axis",                // Y-axis label
+        Orientation::Horizontal, // Orientation of the bar chart (Horizontal)
+        figure_config,           // Pass the figure configuration
+    );
+
+    // Create a pixel canvas for rendering the chart
+    let mut canvas = PixelCanvas::new(800, 600, [255, 255, 255], 80); // 800x600 canvas with white background
+
+    // Define datasets for the bar chart
+    let mut dataset1 = BarDataset::new("Company A", [220, 0, 0]); // Dataset for Company A (red bars)
+    dataset1.add_data(2020.0, 100.0); // Add data point: Year 2020, value 100
+    dataset1.add_data(2021.0, 200.0); // Add data point: Year 2021, value 200
+    dataset1.add_data(2022.0, 150.0); // Add data point: Year 2022, value 150
+
+    let mut dataset2 = BarDataset::new("Company B", [0, 220, 0]); // Dataset for Company B (green bars)
+    dataset2.add_data(2020.0, 120.0); // Add data point: Year 2020, value 120
+    dataset2.add_data(2021.0, 180.0); // Add data point: Year 2021, value 180
+    dataset2.add_data(2022.0, 220.0); // Add data point: Year 2022, value 220
+
+    let mut dataset3 = BarDataset::new("Company C", [0, 0, 220]); // Dataset for Company C (blue bars)
+    dataset3.add_data(2020.0, 150.0); // Add data point: Year 2020, value 150
+    dataset3.add_data(2021.0, 250.0); // Add data point: Year 2021, value 250
+    dataset3.add_data(2022.0, 400.0); // Add data point: Year 2022, value 400
+
+    let mut dataset4 = BarDataset::new("Company D", [150, 100, 50]); // Dataset for Company D (brown bars)
+    dataset4.add_data(2020.0, 50.0); // Add data point: Year 2020, value 50
+    dataset4.add_data(2021.0, 256.0); // Add data point: Year 2021, value 256
+    dataset4.add_data(2022.0, 40.0); // Add data point: Year 2022, value 40
+
+    // Add datasets to the bar chart
+    barchart.add_dataset(dataset1);
+    barchart.add_dataset(dataset2);
+    barchart.add_dataset(dataset3);
+    barchart.add_dataset(dataset4);
+
+    // Draw the bar chart onto the canvas
+    barchart.draw(&mut canvas);
+
+    // Save the canvas as an image file
+    canvas.save_as_image("grouped_horizontal_bar_chart.png");
+
+    // Display the bar chart interactively
+    Winop::display_interactive(&mut canvas, &mut barchart, "Interactive BarChart");
+
+
+    // Create a new pixel canvas for real-time display
+    let mut rng = rand::thread_rng();
+    let update_data = move |chart: &mut GroupBarChart| {
+        for i in 0..chart.datasets.len() {
+            for point in chart.datasets[i].data.iter_mut() {
+                point.1 += rng.gen_range(-20.0..30.0); // Increment y-value
+            }
+        }
+    };
+
+    // Display the bar chart in real-time
+    Winop::display_real_time(
+        &mut canvas,
+        &mut barchart,
+        "Real-Time Bar Chart",
+        update_data,
+        30,
+    );
+}
+```
+
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelgroupedbarchartdisplay/screenshots/interactivedisplay.png?raw=true" alt="" width="300px">
+
+---
+
+```rust
+let mut figure = FigureFactory::create_figure(FigureType::GroupBarChartVertical);
+
+    // Attempt to downcast the Drawer trait object to GroupBarChart
+    // Dereference the Box and use downcast_mut
+    if let Some(group_bar_chart) = figure.as_any().downcast_mut::<GroupBarChart>() {
+        group_bar_chart.config.set_font_paths(
+            "path/to/dataviz/resources/fonts/font.ttf".to_string(),
+            "path/to/dataviz/resources/fonts/font.ttf".to_string(),
+        );
+
+        // Create a SVG canvas for rendering the chart
+        let mut canvas = PixelCanvas::new(800, 600, [255, 255, 255], 80); // 800x600 canvas with white background
+
+        // Define datasets for the bar chart
+        let mut dataset1 = BarDataset::new("Company A", [220, 0, 0]); // Dataset for Company A (red bars)
+        dataset1.add_data(2020.0, 100.0); // Add data point: Year 2020, value 100
+        dataset1.add_data(2021.0, 200.0); // Add data point: Year 2021, value 200
+
+        let mut dataset2 = BarDataset::new("Company B", [0, 220, 0]); // Dataset for Company B (green bars)
+        dataset2.add_data(2020.0, 120.0); // Add data point: Year 2020, value 120
+        dataset2.add_data(2021.0, 180.0); // Add data point: Year 2021, value 180
+
+        // Add datasets to the bar chart
+        group_bar_chart.add_dataset(dataset1);
+        group_bar_chart.add_dataset(dataset2);
+
+        // Draw the bar chart onto the canvas
+        group_bar_chart.draw(&mut canvas);
+
+        // Save the canvas as an image file
+        canvas.save_as_image("grouped_vertical_bar_chart.png");
+    } else {
+        println!("Failed to downcast to GroupBarChart.");
+    }
+```
+
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelgroupedbarchartfigurefactory/screenshots/grouped_vertical_bar_chart.png?raw=true" alt="" width="300px">
+
+---
+
+```rust
+use dataviz::figure::{
+    canvas::svgcanvas::SvgCanvas,              // For creating a SVG canvas to draw the chart
+    configuration::figureconfig::FigureConfig, // For configuring visual properties of the chart
+    datasets::bardataset::BarDataset,          // For defining datasets for bar charts
+    drawers::drawer::Drawer,                   // For drawing functionality
+    figuretypes::groupbarchart::GroupBarChart, // For creating grouped bar charts
+    utilities::orientation::Orientation,       // For setting the chart orientation (vertical/horizontal)
+};
+
+fn main() {
+    // Configuration for the figure (e.g., fonts, colors, grid, and axis settings)
+    let figure_config = FigureConfig {
+        font_size_title: 20.0,   // Font size for the chart title
+        font_size_label: 16.0,   // Font size for axis labels
+        font_size_legend: 14.0,  // Font size for legend
+        font_size_axis: 10.0,    // Font size for axis tick labels
+        color_axis: [0, 0, 0],   // Color of the axes (black)
+        color_background: [0, 0, 0], // Background color of the chart (black)
+        color_grid: [220, 220, 220], // Grid color (light gray)
+        color_title: [0, 0, 0],      // Title color (black)
+        num_axis_ticks: 20,          // Number of axis tick marks
+        num_grid_horizontal: 20,     // Number of horizontal grid lines
+        num_grid_vertical: 20,       // Number of vertical grid lines
+        font_label: Some("path/to/dataviz/resources/fonts/font.ttf"
+        .to_string()), // Path to the font for axis labels
+        font_title: Some("path/to/dataviz/resources/fonts/font.ttf"
+        .to_string()), // Path to the font for the title
+    };
+
+    // Create a grouped bar chart with the given configuration
+    let mut barchart = GroupBarChart::new(
+        "Grouped Bar Chart",    // Chart title
+        "X Axis",               // X-axis label
+        "Y Axis",               // Y-axis label
+        Orientation::Vertical,  // Orientation of the bar chart (vertical)
+        figure_config,          // Pass the figure configuration
+    );
+
+    // Create a SVG canvas for rendering the chart
+    let mut canvas = SvgCanvas::new(800, 600, "white", 80); // 800x600 canvas with white background
+
+    // Define datasets for the bar chart
+    let mut dataset1 = BarDataset::new("Company A", [220, 0, 0]); // Dataset for Company A (red bars)
+    dataset1.add_data(2020.0, 100.0); // Add data point: Year 2020, value 100
+    dataset1.add_data(2021.0, 200.0); // Add data point: Year 2021, value 200
+    dataset1.add_data(2022.0, 150.0); // Add data point: Year 2022, value 150
+
+    let mut dataset2 = BarDataset::new("Company B", [0, 220, 0]); // Dataset for Company B (green bars)
+    dataset2.add_data(2020.0, 120.0); // Add data point: Year 2020, value 120
+    dataset2.add_data(2021.0, 180.0); // Add data point: Year 2021, value 180
+    dataset2.add_data(2022.0, 220.0); // Add data point: Year 2022, value 220
+
+    let mut dataset3 = BarDataset::new("Company C", [0, 0, 220]); // Dataset for Company C (blue bars)
+    dataset3.add_data(2020.0, 150.0); // Add data point: Year 2020, value 150
+    dataset3.add_data(2021.0, 250.0); // Add data point: Year 2021, value 250
+    dataset3.add_data(2022.0, 400.0); // Add data point: Year 2022, value 400
+
+    let mut dataset4 = BarDataset::new("Company D", [150, 100, 50]); // Dataset for Company D (brown bars)
+    dataset4.add_data(2020.0, 50.0);  // Add data point: Year 2020, value 50
+    dataset4.add_data(2021.0, 256.0); // Add data point: Year 2021, value 256
+    dataset4.add_data(2022.0, 40.0);  // Add data point: Year 2022, value 40
+
+    // Add datasets to the bar chart
+    barchart.add_dataset(dataset1);
+    barchart.add_dataset(dataset2);
+    barchart.add_dataset(dataset3);
+    barchart.add_dataset(dataset4);
+
+    // Draw the bar chart onto the canvas
+    barchart.draw_svg(&mut canvas);
+
+    // Save the canvas as an image file
+    canvas.save("grouped_vertical_bar_chart.svg").unwrap();
+}
+```
+
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/svggroupedbarchartvertical/screenshots/grouped_vertical_bar_chart.svg?raw=true" alt="" width="300px">
 
 ---
 
@@ -53,146 +296,6 @@ A modular, customizable, and feature-rich 2D plotting library written in Rust. W
 <img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/area_chart.svg?raw=true" alt="" width="300px">
 <img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/histogram.svg?raw=true" alt="" width="300px">
 
----
-
-## **Installation**  
-Add the following dependencies to your `Cargo.toml` file:
-```toml
-[dependencies]
-ab_glyph = "0.2.29"       # Font rendering
-image = "0.25"            # Raster image generation
-imageproc = "0.25.0"      # Image processing
-minifb = "0.27.0"         # Simple framebuffer support
-rand = "0.8.5"            # Optional, for generating random test data
-resvg = "0.44.0"          # SVG rendering
-rusttype = "0.9.3"        # Font processing
-```
-
----
-
-## **Usage Example**  
-
-```rust
-use dataviz::figure::figuretypes::piechart::PieChart;
-use dataviz::figure::configuration::figureconfig::FigureConfig;
-
-fn main() {
-    let mut pie_chart = PieChart::new("Market Share", FigureConfig::default());
-    pie_chart.add_slice("Product A", 40.0, [255, 0, 0]);
-    pie_chart.add_slice("Product B", 30.0, [0, 255, 0]);
-    pie_chart.add_slice("Product C", 30.0, [0, 0, 255]);
-
-    // Save as PNG or SVG
-    pie_chart.draw();
-}
-```
-
-```rust
-fn main() {
-    let mut fig = FigureFactory::create_figure(dataviz::figure::figurefactory::FigureType::CartesianGraph);
-    let mut canvas = PixelCanvas::new(800, 600, [255, 255, 255], 80);
-    fig.draw(&mut canvas);
-    canvas.save_as_image("output.png");
-}
-```
-
-```rust
-let figure_config = FigureConfig {
-        font_size_title: 20.0,
-        font_size_label: 16.0,
-        font_size_legend: 14.0,
-        color_axis: [0, 0, 0],
-        color_background: [0, 0, 0],
-        color_grid: [0, 0, 0],
-        num_axis_ticks: 20,
-        num_grid_horizontal: 20,
-        num_grid_vertical: 20,
-        font_label: "path/to/font/Arial.ttf"
-            .to_string(),
-        font_title: "path/to/font/Arial.ttf"
-            .to_string(),
-        ..Default::default()
-    };
-    let mut pixel_canvas = SvgCanvas::new(800, 600, "white", 80);
-    let mut bar_chart = GroupBarChart::new(
-        "Yearly Income",
-        "Year",
-        "Income",
-        Orientation::Vertical,
-        figure_config,
-    );
-
-    let mut dataset1 = BarDataset::new("Company A", [220, 0, 0]);
-    dataset1.add_data(2020.0, 100.0);
-    dataset1.add_data(2021.0, 200.0);
-    dataset1.add_data(2022.0, 150.0);
-
-    let mut dataset2 = BarDataset::new("Company B", [0, 220, 0]);
-    dataset2.add_data(2020.0, 120.0);
-    dataset2.add_data(2021.0, 180.0);
-    dataset2.add_data(2022.0, 220.0);
-
-    let mut dataset3 = BarDataset::new("Company C", [0, 0, 220]);
-    dataset3.add_data(2020.0, 150.0);
-    dataset3.add_data(2021.0, 250.0);
-    dataset3.add_data(2022.0, 400.0);
-
-    let mut dataset4 = BarDataset::new("Company D", [150, 100, 50]);
-    dataset4.add_data(2020.0, 50.0);
-    dataset4.add_data(2021.0, 256.0);
-    dataset4.add_data(2022.0, 40.0);
-
-    bar_chart.add_dataset(dataset1);
-    bar_chart.add_dataset(dataset2);
-    bar_chart.add_dataset(dataset3);
-    bar_chart.add_dataset(dataset4);
-
-    bar_chart.draw_svg(&mut pixel_canvas);
-    pixel_canvas
-        .save("grouped_horizontal_bar_chart.svg")
-        .unwrap();
-
-    let svg_text = pixel_canvas.get_svg_as_text();
-    Winop::display_svg(&svg_text, "Bar Chart Example");
-```
-
-```rust
-    let handle = thread::spawn(move || {
-        let mut pixel_canvas = PixelCanvas::new(800, 600, [255, 255, 255], 80);
-        let mut scatter_graph = ScatterGraph::new("Real-Time Scatter Graph", "X", "Y", FigureConfig::default());
-
-        let dataset1 = ScatterGraphDataset::new([0, 220, 0], "Data1", ScatterDotType::Circle(5));
-        let dataset2 = ScatterGraphDataset::new([220, 0, 0], "Data2", ScatterDotType::Square(5));
-        let dataset3 = ScatterGraphDataset::new([0, 0, 220], "Data3", ScatterDotType::Triangle(5));
-        let mut rng = rand::thread_rng();
-        scatter_graph.add_dataset(dataset1);
-        scatter_graph.add_dataset(dataset2);
-        scatter_graph.add_dataset(dataset3);
-
-        // Closure to update scatter graph data
-        let update_data = move |graph: &mut ScatterGraph| {
-            for i in 0..graph.datasets.len() {
-                let x = rng.gen_range(0.0..10.0);
-                let y = rng.gen_range(0.0..10.0);
-                graph.datasets[i].add_point((x, y));
-            }
-        };
-
-        // Display the scatter graph in real-time
-        Winop::display_real_time(
-            &mut PixelCanvas,
-            &mut scatter_graph,
-            "Real-Time Scatter Graph",
-            update_data,
-            30,
-        );
-    });
-
-    handle.join().unwrap();
-
-```
-
----
 
 ## **License**  
 This project is licensed under the **MIT**. See the `LICENSE` file for details.
@@ -200,12 +303,11 @@ This project is licensed under the **MIT**. See the `LICENSE` file for details.
 ---
 
 ## **Contributing**  
-We welcome contributions to make **Plotter Library** even better!  
+We welcome contributions to make **DataViz** even better!
+- Visit DataViz repository: https://github.com/dataviz-rs/dataviz
 - Report bugs and suggest features through GitHub Issues.  
-- Submit pull requests for enhancements or fixes.  
+- Submit pull requests for enhancements or fixes.
 
 Let’s make data visualization in Rust easy and accessible!
 
 ---
-
-Happy Plotting! 🚀
