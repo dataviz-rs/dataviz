@@ -1,3 +1,4 @@
+use super::drawer::Drawer;
 use crate::figure::{
     canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
     configuration::figureconfig::FigureConfig,
@@ -7,7 +8,6 @@ use crate::figure::{
 use ab_glyph::{FontRef, PxScale};
 use imageproc::drawing::text_size;
 use std::any::Any;
-use super::drawer::Drawer;
 
 impl Drawer for GroupBarChart {
     fn draw_svg(&mut self, svg_canvas: &mut SvgCanvas) {
@@ -367,5 +367,4 @@ impl Drawer for GroupBarChart {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
-
 }

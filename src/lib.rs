@@ -132,12 +132,13 @@ pub mod figure {
 
     pub mod display {
         pub mod hover;
+        pub mod hoverareachart;
         pub mod hovercartesian;
         pub mod hovergroupbarchart;
         pub mod hoverhistogram;
         pub mod hoverpiechart;
+        pub mod hoverquadrant1graph;
         pub mod hoverscatterchart;
-        pub mod hoverareachart;
         pub mod winop;
     }
 

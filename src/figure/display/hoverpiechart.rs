@@ -58,8 +58,14 @@ impl Hover for PieChart {
             );
 
             // Draw an edged rectangle for the hover information
-            let font_label = self.config.font_label.clone().unwrap();
-            let font = self.get_font(font_label.as_bytes());
+            let font_path = self
+                .config
+                .font_label
+                .as_ref()
+                .expect("Font path is not set");
+            let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
+            let font = FontRef::try_from_slice(&font_bytes).unwrap();
+
             let scale = ab_glyph::PxScale { x: 12.0, y: 12.0 };
             let coord_text = format!("{}: {:.2}", self.title, value);
             let text_size = text_size(scale, &font, &coord_text).0 as i32;
@@ -124,6 +130,7 @@ impl Hover for PieChart {
     }
 
     fn get_font<'a>(&self, font_data: &'a [u8]) -> FontRef<'a> {
+        println!("font_data: {:?}", font_data);
         FontRef::try_from_slice(font_data).unwrap()
     }
 }

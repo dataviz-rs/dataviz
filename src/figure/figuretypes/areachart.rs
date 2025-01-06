@@ -129,7 +129,6 @@ impl AreaChart {
         }
     }
 
-
     pub fn update_range(&mut self) {
         for dataset in &self.datasets {
             for &(x, y) in &dataset.points {

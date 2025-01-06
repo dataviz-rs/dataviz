@@ -51,8 +51,13 @@ impl Hover for GroupBarChart {
             let mut tooltip_text = String::from("X Value: ");
 
             // Calculate tooltip dimensions
-            let font_label = self.config.font_label.clone().unwrap();
-            let font = self.get_font(font_label.as_bytes());
+            let font_path = self
+                .config
+                .font_label
+                .as_ref()
+                .expect("Font path is not set");
+            let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
+            let font = FontRef::try_from_slice(&font_bytes).unwrap();
             let scale = ab_glyph::PxScale { x: 12.0, y: 12.0 };
             let text_size = text_size(scale, &font, &tooltip_text).0 as i32;
 

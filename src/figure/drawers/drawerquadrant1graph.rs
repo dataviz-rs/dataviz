@@ -29,6 +29,9 @@ impl Drawer for Quadrant1Graph {
             "black",
         );
 
+        // Symmetric scaling
+        self.update_range();
+
         // Determine dataset range
         let (x_min, x_max) = self
             .datasets
@@ -359,7 +362,7 @@ impl Drawer for Quadrant1Graph {
             }
         }
     }
-    
+
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
         self as &mut (dyn Any)
     }
@@ -367,5 +370,4 @@ impl Drawer for Quadrant1Graph {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
-
 }

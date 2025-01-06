@@ -107,7 +107,6 @@ impl Drawer for CartesianGraph {
             y_axis_ticks
         ));
 
-
         // Draw X-axis label
         svg_canvas.elements.push(format!(
         r#"<text x="{:.2}" y="{:.2}" font-size="{:.2}" text-anchor="middle" fill="black">{}</text>"#,
@@ -365,5 +364,4 @@ impl Drawer for CartesianGraph {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
-
 }

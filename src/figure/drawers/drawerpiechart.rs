@@ -1,4 +1,5 @@
 use ab_glyph::{FontRef, PxScale};
+use imageproc::drawing::text_size;
 use std::f64::consts::PI;
 
 use crate::figure::{
@@ -192,29 +193,50 @@ impl Drawer for PieChart {
             .expect("Font path is not set");
         let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
         let font = FontRef::try_from_slice(&font_bytes).unwrap();
-        let scale = PxScale { x: 15.0, y: 15.0 };
+        let scale = PxScale { x: 10.0, y: 10.0 }; // Font size
 
-        let square_size = 10;
-        let padding = 5;
-        let line_height = 20;
-        let x = canvas.margin;
-        let mut y = canvas.height - canvas.margin;
+        let square_size = 10; // Size of the colored square
+        let padding = 5; // Space between the square and text
+        let line_height = 20; // Vertical space for each legend entry
+        let legend_margin = canvas.margin; // Margin from the bottom of the canvas
 
-        for (label, _, color) in &self.datasets {
+        let mut x = canvas.margin;
+        let mut y = canvas.height - legend_margin; // Legend starts from the bottom
+
+        for dataset in &self.datasets {
+            let (w, h) = text_size(scale, &font, &dataset.0);
             // Draw the square
             for dy in 0..square_size {
                 for dx in 0..square_size {
-                    canvas.draw_pixel(x + dx, y + dy, *color);
+                    canvas.draw_pixel(
+                        x + dx,
+                        y + square_size * 2 + dy + h, // Adjust to align above baseline
+                        dataset.2,
+                    );
                 }
             }
 
-            // Draw the label
-            canvas.draw_text(x + square_size + padding, y, label, [0, 0, 0], &font, scale);
+            // Draw the label text next to the square
+            let text_x: u32 = x + square_size + padding;
+            canvas.draw_text(
+                text_x,
+                y + 2 * square_size + h,
+                &dataset.0,
+                dataset.2,
+                &font,
+                scale,
+            );
 
-            y += line_height;
+            // Move to the next legend entry
+            x += square_size + padding + w + padding;
+            if x > canvas.width - canvas.margin {
+                // If the width exceeds, wrap to the next row
+                x = canvas.margin;
+                y -= line_height;
+            }
         }
     }
-    
+
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
         self as &mut (dyn Any)
     }
@@ -222,5 +244,4 @@ impl Drawer for PieChart {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
-
 }

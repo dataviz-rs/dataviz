@@ -1,6 +1,6 @@
 [package]
 name = "dataviz"
-version = "0.1.6"
+version = "0.1.7"
 edition = "2021"
 authors = ["Samet Eraslan <absameteraslan@gmail.com>"]
 description = "A modular library for creating charts and graphs in Rust."
@@ -8,7 +8,7 @@ license = "MIT"
 repository = "https://github.com/dataviz-rs/dataviz"
 documentation = "https://docs.rs/dataviz"
 keywords = ["charts", "graphs", "visualization", "plot", "dataviz"]
-categories = ["visualization", "graphics", "data-structures"]
+categories = ["visualization", "graphics"]
 readme = "./README.md"
 
 [dependencies]

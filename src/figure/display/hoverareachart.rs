@@ -2,9 +2,7 @@ use ab_glyph::FontRef;
 use image::ImageBuffer;
 use imageproc::drawing::{draw_line_segment_mut, draw_text_mut, text_size};
 
-use crate::figure::{
-    canvas::pixelcanvas::PixelCanvas, figuretypes::areachart::AreaChart,
-};
+use crate::figure::{canvas::pixelcanvas::PixelCanvas, figuretypes::areachart::AreaChart};
 
 use super::hover::Hover;
 
@@ -14,8 +12,13 @@ impl Hover for AreaChart {
             let mut img =
                 ImageBuffer::from_raw(canvas.width, canvas.height, canvas.buffer.clone()).unwrap();
 
-            let font_label = self.config.font_label.clone().unwrap();
-            let font = self.get_font(font_label.as_bytes());
+            let font_path = self
+                .config
+                .font_label
+                .as_ref()
+                .expect("Font path is not set");
+            let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
+            let font = FontRef::try_from_slice(&font_bytes).unwrap();
             let scale = ab_glyph::PxScale { x: 12.0, y: 12.0 };
             let coord_text = format!("({:.2}, {:.2}) = {:.2}", x, y, value);
             let text_size = text_size(scale, &font, &coord_text).0 as i32;

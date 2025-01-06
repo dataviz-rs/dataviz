@@ -38,7 +38,7 @@ A modular, customizable, and feature-rich 2D plotting library written in Rust. W
 - **Vector (SVG)**: Generate scalable vector graphics for precision and scalability.  
 
 ### **Interactive Capabilities**  
-- Hover effects and real-time updates.
+- Hover effects(Press C key to see it) and real-time updates.
 
 ---
 
@@ -56,7 +56,7 @@ To see more examples you can visit: https://github.com/dataviz-rs/dataviz-exampl
 
 ## **Usage Example**  
 
-#### 🔗 [Grouped Vertical Bar Chart Interactive Display Source Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelgroupedbarchartdisplay/src/main.rs)
+#### 🔗 [Grouped Vertical Bar Chart Interactive Display Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelgroupedbarchartdisplay/src/main.rs)
 <br/>
 <img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelgroupedbarchartdisplay/screenshots/interactivedisplay.png?raw=true" alt="" width="500px">
 
@@ -68,7 +68,7 @@ To see more examples you can visit: https://github.com/dataviz-rs/dataviz-exampl
 
 ---
 
-#### 🔗 [Pixel Area Chart Real Time Display Source Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelareachartdisplay/src/main.rs)
+#### 🔗 [Pixel Area Chart Real Time Display Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelareachartdisplay/src/main.rs)
 <br/>
 <img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelareachartdisplay/screenshots/areachartrealtime.gif?raw=true" alt="" width="500px">
 <br/>
@@ -76,7 +76,7 @@ To see more examples you can visit: https://github.com/dataviz-rs/dataviz-exampl
 
 ---
 
-#### 🔗 [Pixel Cartesian Graph Real Time Display Source Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelcartesiandisplay/src/main.rs)
+#### 🔗 [Pixel Cartesian Graph Real Time Display Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelcartesiandisplay/src/main.rs)
 <br/>
 <img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelcartesiandisplay/screenshots/cartesiangraphrealtime.gif?raw=true" alt="" width="500px">
 <br/>
@@ -84,7 +84,7 @@ To see more examples you can visit: https://github.com/dataviz-rs/dataviz-exampl
 
 ---
 
-#### 🔗 [Pixel Histogram Real Time Display Source Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelhistogramdisplay/src/main.rs)
+#### 🔗 [Pixel Histogram Real Time Display Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelhistogramdisplay/src/main.rs)
 <br/>
 <img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelhistogramdisplay/screenshots/histogramrealtime.gif?raw=true" alt="" width="500px">
 <br/>
@@ -92,7 +92,31 @@ To see more examples you can visit: https://github.com/dataviz-rs/dataviz-exampl
 
 ---
 
-#### 🔗 [SVG Cartesian Graph Source Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/svgcartesiangraph/src/main.rs)
+#### 🔗 [Pixel Pie Chart Real Time Display Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelpiechartdisplay/src/main.rs)
+<br/>
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelpiechartdisplay/screenshots/piechartrealtime.gif?raw=true" alt="" width="500px">
+<br/>
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelpiechartdisplay/screenshots/piechart.png?raw=true" alt="" width="500px">
+
+---
+
+#### 🔗 [Pixel Quadrant 1 Graph Real Time Display Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelquadrant1graphdisplay/src/main.rs)
+<br/>
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelquadrant1graphdisplay/screenshots/quadrant1realtime.gif?raw=true" alt="" width="500px">
+<br/>
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelquadrant1graphdisplay/screenshots/quadrant1graph.png?raw=true" alt="" width="500px">
+
+---
+
+#### 🔗 [Pixel Scatter Graph Real Time Display Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelscattergraphdisplay/src/main.rs)
+<br/>
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelscattergraphdisplay/screenshots/scatterrealtime.gif?raw=true" alt="" width="500px">
+<br/>
+<img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/pixelscattergraphdisplay/screenshots/scatter_graph.png?raw=true" alt="" width="500px">
+
+---
+
+#### 🔗 [SVG Cartesian Graph Example Code](https://github.com/dataviz-rs/dataviz-examples/blob/main/svgcartesiangraph/src/main.rs)
 <br/>
 <img src="https://github.com/dataviz-rs/dataviz-examples/blob/main/svgcartesiangraph/screenshots/cartesian_graph.svg?raw=true" alt="" width="500px">
 

@@ -249,7 +249,6 @@ impl Drawer for Histogram {
         // Histogram does not have a legend
     }
 
-    
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
         self as &mut (dyn Any)
     }
@@ -257,5 +256,4 @@ impl Drawer for Histogram {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
-
 }
