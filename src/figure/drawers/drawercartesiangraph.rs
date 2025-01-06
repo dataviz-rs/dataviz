@@ -107,13 +107,14 @@ impl Drawer for CartesianGraph {
             y_axis_ticks
         ));
 
+
         // Draw X-axis label
         svg_canvas.elements.push(format!(
         r#"<text x="{:.2}" y="{:.2}" font-size="{:.2}" text-anchor="middle" fill="black">{}</text>"#,
         width / 2.0,
-        height - margin / 3.0,
+        margin - 5.0,
         font_size * 1.5,
-        self.x_label
+        self.y_label
     ));
 
         // Draw Y-axis label (rotated)
@@ -124,7 +125,7 @@ impl Drawer for CartesianGraph {
         font_size * 1.5,
         margin / 3.0,
         height / 2.0,
-        self.y_label
+        self.x_label
     ));
 
         // Plot datasets
@@ -142,11 +143,13 @@ impl Drawer for CartesianGraph {
         }
 
         // Draw legend
-        let mut legend_x = margin + 5.0;
-        let legend_y = margin;
-
+        let legend_x_start = 5.0; // Start at the very left with margin spacing
+        let legend_y = height - margin / 2.0; // Move to bottom-left corner
+        let mut legend_x = legend_x_start; // Reset starting position for legend items
         let mut elements = String::new();
+
         for dataset in &self.datasets {
+            // Draw color square
             elements.push_str(&format!(
                 r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="rgb({},{},{})"/>"#,
                 legend_x,
@@ -158,6 +161,7 @@ impl Drawer for CartesianGraph {
                 dataset.color[2]
             ));
 
+            // Draw label text next to the color square
             elements.push_str(&format!(
                 r#"<text x="{:.2}" y="{:.2}" font-size="{:.2}" fill="rgb({},{},{})">{}</text>"#,
                 legend_x + font_size * 1.3,
@@ -169,19 +173,24 @@ impl Drawer for CartesianGraph {
                 dataset.label
             ));
 
-            legend_x += font_size * (dataset.label.len() - 1) as f64;
+            // Update legend_x to position the next item
+            legend_x += font_size * 5.0 + dataset.label.len() as f64 * font_size * 0.6;
         }
 
+        // Draw a background rectangle for the legend
+        let legend_width = legend_x - legend_x_start + 5.0;
+        let legend_height = font_size + 10.0;
         svg_canvas.draw_rect(
-            margin,
-            margin - 10.0,
-            legend_x - margin + 5.0,
-            font_size + 20.0,
+            legend_x_start - 5.0,
+            legend_y - 5.0,
+            legend_width,
+            legend_height,
             "white",
             "black",
             0.5,
             0.5,
         );
+
         svg_canvas.elements.push(elements);
     }
 
@@ -293,6 +302,8 @@ impl Drawer for CartesianGraph {
                 AxisType::AxisY,
             );
         }
+
+        self.draw_legend(canvas);
     }
 
     fn draw_legend(&self, canvas: &mut PixelCanvas) {
@@ -354,4 +365,5 @@ impl Drawer for CartesianGraph {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
+
 }

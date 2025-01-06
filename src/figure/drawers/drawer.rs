@@ -11,6 +11,7 @@ use std::any::Any;
 
 /// A trait for rendering charts and graphs, supporting multiple output formats.
 pub trait Drawer: Any {
+
     fn as_any(&mut self) -> &mut (dyn Any + 'static);
     fn get_figure_config(&self) -> &FigureConfig;
 

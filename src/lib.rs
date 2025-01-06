@@ -137,6 +137,7 @@ pub mod figure {
         pub mod hoverhistogram;
         pub mod hoverpiechart;
         pub mod hoverscatterchart;
+        pub mod hoverareachart;
         pub mod winop;
     }
 

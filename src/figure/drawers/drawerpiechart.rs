@@ -214,7 +214,7 @@ impl Drawer for PieChart {
             y += line_height;
         }
     }
-
+    
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
         self as &mut (dyn Any)
     }
@@ -222,4 +222,5 @@ impl Drawer for PieChart {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
+
 }

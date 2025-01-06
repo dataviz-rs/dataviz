@@ -1,7 +1,6 @@
 use ab_glyph::{FontRef, PxScale};
 use imageproc::drawing::text_size;
 
-use super::drawer::Drawer;
 use crate::figure::{
     canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
     configuration::figureconfig::FigureConfig,
@@ -9,6 +8,7 @@ use crate::figure::{
     utilities::axistype::AxisType,
 };
 use std::any::Any;
+use super::drawer::Drawer;
 
 impl Drawer for AreaChart {
     fn draw_svg(&mut self, svg_canvas: &mut SvgCanvas) {
@@ -273,8 +273,8 @@ impl Drawer for AreaChart {
         let origin_x = canvas.margin + ((0.0 - x_min) * scale_x) as u32;
         let origin_y = height - margin - ((0.0 - y_min) * scale_y) as u32;
 
-        self.draw_label(canvas, cfg, width - margin / 2, origin_y, &self.y_label);
-        self.draw_label(canvas, cfg, margin, margin / 2, &self.x_label);
+        self.draw_label(canvas, cfg, width - margin / 2, origin_y, &self.x_label);
+        self.draw_label(canvas, cfg, margin, margin / 2, &self.y_label);
 
         // Draw axis tick values
         let num_ticks = cfg.num_axis_ticks;
@@ -386,4 +386,5 @@ impl Drawer for AreaChart {
     fn get_figure_config(&self) -> &FigureConfig {
         &self.config
     }
+
 }
