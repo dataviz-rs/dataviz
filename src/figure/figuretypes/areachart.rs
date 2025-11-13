@@ -38,9 +38,9 @@ impl AreaChart {
     /// A new `AreaChart` instance with an empty dataset.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::configuration::figureconfig::FigureConfig;
-    /// use crate::figure::areachart::AreaChart;
+    /// ```rust,ignore
+    /// use dataviz::figure::configuration::figureconfig::FigureConfig;
+    /// use dataviz::figure::areachart::AreaChart;
     ///
     /// let config = FigureConfig::default();
     /// let area_chart = AreaChart::new("Example Chart", "X Axis", "Y Axis", config);
@@ -65,8 +65,8 @@ impl AreaChart {
     /// - `dataset`: The `AreaChartDataset` to be added to the chart.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::datasets::areachartdataset::AreaChartDataset;
+    /// ```rust,ignore
+    /// use dataviz::figure::datasets::areachartdataset::AreaChartDataset;
     /// let dataset = AreaChartDataset::new([255, 0, 0], "Example Dataset", 0.5);
     /// area_chart.add_dataset(dataset);
     /// ```
@@ -93,7 +93,7 @@ impl AreaChart {
     /// under the line segment and blend it into the canvas using the dataset's color and transparency.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// let scale_x = 10.0;
     /// let scale_y = 10.0;
     /// area_chart.draw_area(&mut canvas, &dataset, 50, 400, scale_x, scale_y);

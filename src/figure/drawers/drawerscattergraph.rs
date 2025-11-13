@@ -78,8 +78,7 @@ impl Drawer for ScatterGraph {
             let tick_end_y = origin_y + 5.0;
 
             x_axis_ticks.push_str(&format!(
-                "M {:.2},{:.2} L {:.2},{:.2} ",
-                x, tick_start_y, x, tick_end_y
+                "M {x:.2},{tick_start_y:.2} L {x:.2},{tick_end_y:.2} "
             ));
 
             // Draw value as text (fallback to basic SVG <text>)
@@ -88,8 +87,7 @@ impl Drawer for ScatterGraph {
             x, height - margin + font_size * 1.5, font_size, value));
         }
         svg_canvas.elements.push(format!(
-            r#"<path d="{}" stroke="black" stroke-width="1" fill="none"/>"#,
-            x_axis_ticks
+            r#"<path d="{x_axis_ticks}" stroke="black" stroke-width="1" fill="none"/>"#
         ));
 
         // Y-axis
@@ -101,8 +99,7 @@ impl Drawer for ScatterGraph {
             let tick_end_x = origin_x + 5.0;
 
             y_axis_ticks.push_str(&format!(
-                "M {:.2},{:.2} L {:.2},{:.2} ",
-                tick_start_x, y, tick_end_x, y
+                "M {tick_start_x:.2},{y:.2} L {tick_end_x:.2},{y:.2} "
             ));
 
             // Draw value as text (fallback to basic SVG <text>)
@@ -112,8 +109,7 @@ impl Drawer for ScatterGraph {
         ));
         }
         svg_canvas.elements.push(format!(
-            r#"<path d="{}" stroke="black" stroke-width="1" fill="none"/>"#,
-            y_axis_ticks
+            r#"<path d="{y_axis_ticks}" stroke="black" stroke-width="1" fill="none"/>"#
         ));
 
         // Draw X-axis label
@@ -325,7 +321,7 @@ impl Drawer for ScatterGraph {
             let value_x = x_min + i as f64 * x_tick_step;
             let tick_x = origin_x + ((value_x - x_min) * scale_x) as u32;
 
-            let value_label = format!("{:.2}", value_x);
+            let value_label = format!("{value_x:.2}");
 
             self.draw_axis_value(canvas, cfg, tick_x, origin_y, &value_label, AxisType::AxisX);
         }
@@ -336,7 +332,7 @@ impl Drawer for ScatterGraph {
             let value_y = y_min + i as f64 * y_tick_step;
             let tick_y = origin_y - ((value_y - y_min) * scale_y) as u32;
 
-            let value_label = format!("{:.2}", value_y);
+            let value_label = format!("{value_y:.2}");
 
             self.draw_axis_value(
                 canvas,
@@ -431,7 +427,7 @@ impl Drawer for ScatterGraph {
     }
 
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
-        self as &mut (dyn Any)
+        self as &mut dyn Any
     }
 
     fn get_figure_config(&self) -> &FigureConfig {

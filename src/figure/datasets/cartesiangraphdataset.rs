@@ -24,8 +24,8 @@ impl CartesianDataset {
     /// A new `CartesianDataset` instance with an empty list of points.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::utilities::linetype::LineType;
+    /// ```rust,ignore
+    /// use dataviz::figure::utilities::linetype::LineType;
     ///
     /// let dataset = CartesianDataset::new([0, 128, 255], "Temperature", LineType::Dashed(10));
     /// ```

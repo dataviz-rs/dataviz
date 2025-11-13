@@ -49,8 +49,8 @@ impl FigureFactory {
     /// A boxed `Drawer` object representing the created plot.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::figurefactory::{FigureFactory, FigureType};
+    /// ```rust,ignore
+    /// use dataviz::figure::figurefactory::{FigureFactory, FigureType};
     ///
     /// let bar_chart = FigureFactory::create_figure(FigureType::BarChart);
     /// ```

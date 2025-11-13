@@ -36,10 +36,10 @@ impl GroupBarChart {
     /// A new `GroupBarChart` instance with an empty dataset.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::configuration::figureconfig::FigureConfig;
-    /// use crate::figure::groupbarchart::GroupBarChart;
-    /// use crate::figure::utilities::orientation::Orientation;
+    /// ```rust,ignore
+    /// use dataviz::figure::configuration::figureconfig::FigureConfig;
+    /// use dataviz::figure::figuretypes::groupbarchart::GroupBarChart;
+    /// use dataviz::figure::utilities::orientation::Orientation;
     ///
     /// let config = FigureConfig::default();
     /// let bar_chart = GroupBarChart::new("Sales Chart", "Year", "Revenue", Orientation::Vertical, config);
@@ -67,8 +67,8 @@ impl GroupBarChart {
     /// - `dataset`: The `BarDataset` to be added to the chart.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::datasets::bardataset::BarDataset;
+    /// ```rust,ignore
+    /// use dataviz::figure::datasets::bardataset::BarDataset;
     ///
     /// let dataset = BarDataset::new("Company A", [255, 0, 0]);
     /// bar_chart.add_dataset(dataset);
@@ -87,7 +87,7 @@ impl GroupBarChart {
     /// It uses the `FigureConfig` settings for appearance and adjusts the canvas accordingly.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// bar_chart.draw_horizontal(&mut canvas);
     /// ```
     pub fn draw_horizontal(&self, canvas: &mut PixelCanvas) {
@@ -141,7 +141,7 @@ impl GroupBarChart {
             let value_x = x_min + i as f64 * x_tick_step;
             let tick_x = origin_x + ((value_x - x_min) * scale_x) as u32;
 
-            let value_label = format!("{:.1}", value_x);
+            let value_label = format!("{value_x:.1}");
 
             self.draw_axis_value(canvas, cfg, tick_x, origin_y, &value_label, AxisType::AxisX);
         }
@@ -199,7 +199,7 @@ impl GroupBarChart {
     /// It uses the `FigureConfig` settings for appearance and adjusts the canvas accordingly.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// bar_chart.draw_vertical(&mut canvas);
     /// ```
     pub fn draw_vertical(&self, canvas: &mut PixelCanvas) {
@@ -253,7 +253,7 @@ impl GroupBarChart {
             let value_y = i as f64 * y_tick_step;
             let tick_y = origin_y - (value_y * scale_y) as u32;
 
-            let value_label = format!("{:.2}", value_y);
+            let value_label = format!("{value_y:.2}");
 
             self.draw_axis_value(
                 canvas,

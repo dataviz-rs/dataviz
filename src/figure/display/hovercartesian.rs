@@ -22,7 +22,7 @@ impl Hover for CartesianGraph {
             let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
             let font = FontRef::try_from_slice(&font_bytes).unwrap();
             let scale = ab_glyph::PxScale { x: 12.0, y: 12.0 };
-            let coord_text = format!("({:.2}, {:.2}) = {:.2}", x, y, value);
+            let coord_text = format!("({x:.2}, {y:.2}) = {value:.2}");
             let text_size = text_size(scale, &font, &coord_text).0 as i32;
 
             let rect_x = mouse_x as i32 + 10;

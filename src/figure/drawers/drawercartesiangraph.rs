@@ -69,8 +69,7 @@ impl Drawer for CartesianGraph {
             let tick_end_y = center_y + 5.0;
 
             x_axis_ticks.push_str(&format!(
-                "M {:.2},{:.2} L {:.2},{:.2} ",
-                x, tick_start_y, x, tick_end_y
+                "M {x:.2},{tick_start_y:.2} L {x:.2},{tick_end_y:.2} "
             ));
 
             // Draw value as text (fallback to basic SVG <text>)
@@ -79,8 +78,7 @@ impl Drawer for CartesianGraph {
             x, height - margin + font_size * 1.5, font_size, value));
         }
         svg_canvas.elements.push(format!(
-            r#"<path d="{}" stroke="black" stroke-width="1" fill="none"/>"#,
-            x_axis_ticks
+            r#"<path d="{x_axis_ticks}" stroke="black" stroke-width="1" fill="none"/>"#
         ));
 
         // Y-axis
@@ -92,8 +90,7 @@ impl Drawer for CartesianGraph {
             let tick_end_x = center_x + 5.0;
 
             y_axis_ticks.push_str(&format!(
-                "M {:.2},{:.2} L {:.2},{:.2} ",
-                tick_start_x, y, tick_end_x, y
+                "M {tick_start_x:.2},{y:.2} L {tick_end_x:.2},{y:.2} "
             ));
 
             // Draw value as text (fallback to basic SVG <text>)
@@ -103,8 +100,7 @@ impl Drawer for CartesianGraph {
         ));
         }
         svg_canvas.elements.push(format!(
-            r#"<path d="{}" stroke="black" stroke-width="1" fill="none"/>"#,
-            y_axis_ticks
+            r#"<path d="{y_axis_ticks}" stroke="black" stroke-width="1" fill="none"/>"#
         ));
 
         // Draw X-axis label
@@ -136,7 +132,7 @@ impl Drawer for CartesianGraph {
                     let x2 = margin + (p2.0 - self.x_min) * scale_x;
                     let y2 = height - margin - (p2.1 - self.y_min) * scale_y;
 
-                    svg_canvas.draw_line_rgb(x1, y1, x2, y2, dataset.color, 2.0);
+                    svg_canvas.draw_line_rgb_styled(x1, y1, x2, y2, dataset.color, 2.0, dataset.line_type.clone());
                 }
             }
         }
@@ -237,35 +233,7 @@ impl Drawer for CartesianGraph {
                     let x2 = center_x as i32 + (p2.0 * scale_x) as i32;
                     let y2 = center_y as i32 - (p2.1 * scale_y) as i32;
 
-                    // Simple line drawing algorithm (Bresenham)
-                    let dx = (x2 - x1).abs();
-                    let sx = if x1 < x2 { 1 } else { -1 };
-                    let dy = -(y2 - y1).abs();
-                    let sy = if y1 < y2 { 1 } else { -1 };
-                    let mut err = dx + dy;
-
-                    let mut x = x1;
-                    let mut y = y1;
-
-                    while x != x2 || y != y2 {
-                        if x >= canvas.margin as i32
-                            && x < (canvas.width - canvas.margin) as i32
-                            && y >= canvas.margin as i32
-                            && y < (canvas.height - canvas.margin) as i32
-                        {
-                            canvas.draw_pixel(x as u32, y as u32, dataset.color);
-                        }
-
-                        let e2 = 2 * err;
-                        if e2 >= dy {
-                            err += dy;
-                            x += sx;
-                        }
-                        if e2 <= dx {
-                            err += dx;
-                            y += sy;
-                        }
-                    }
+                    canvas.draw_line(x1, y1, x2, y2, dataset.color, dataset.line_type.clone());
                 }
             }
         }
@@ -285,13 +253,13 @@ impl Drawer for CartesianGraph {
             // X-axis ticks
             let x = canvas.margin + i * x_tick_step;
             let value_x = self.x_min + ((self.x_max - self.x_min) / num_ticks as f64) * i as f64;
-            let label_x = format!("{:+.2}", value_x);
+            let label_x = format!("{value_x:+.2}");
             self.draw_axis_value(canvas, cfg, x, y, &label_x, AxisType::AxisX);
 
             // Y-axis ticks
             let y = canvas.margin + i * y_tick_step;
             let value_y = self.y_min + ((self.y_max - self.y_min) / num_ticks as f64) * i as f64;
-            let label_y = format!("{:.2}", value_y);
+            let label_y = format!("{value_y:.2}");
             self.draw_axis_value(
                 canvas,
                 cfg,
@@ -358,7 +326,7 @@ impl Drawer for CartesianGraph {
     }
 
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
-        self as &mut (dyn Any)
+        self as &mut dyn Any
     }
 
     fn get_figure_config(&self) -> &FigureConfig {
