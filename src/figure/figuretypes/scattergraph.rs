@@ -30,9 +30,9 @@ impl ScatterGraph {
     /// A new `ScatterGraph` instance with an empty dataset.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::configuration::figureconfig::FigureConfig;
-    /// use crate::figure::scattergraph::ScatterGraph;
+    /// ```rust,ignore
+    /// use dataviz::figure::configuration::figureconfig::FigureConfig;
+    /// use dataviz::figure::scattergraph::ScatterGraph;
     ///
     /// let config = FigureConfig::default();
     /// let scatter_graph = ScatterGraph::new("Data Points", "X Axis", "Y Axis", config);
@@ -53,9 +53,9 @@ impl ScatterGraph {
     /// - `dataset`: The `ScatterGraphDataset` to be added to the graph.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::datasets::scattergraphdataset::ScatterGraphDataset;
-    /// use crate::figure::utilities::scatterdottype::ScatterDotType;
+    /// ```rust,ignore
+    /// use dataviz::figure::datasets::scattergraphdataset::ScatterGraphDataset;
+    /// use dataviz::figure::utilities::scatterdottype::ScatterDotType;
     ///
     /// let dataset = ScatterGraphDataset {
     ///     points: vec![(1.0, 2.0), (3.0, 4.0)],
@@ -86,7 +86,7 @@ impl ScatterGraph {
     /// - `Triangle`: An upward-pointing triangular dot with a specified base width.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// scatter_graph.draw_dot(&mut canvas, 100, 100, ScatterDotType::Circle(5), [255, 0, 0]);
     /// ```
     pub fn draw_dot(

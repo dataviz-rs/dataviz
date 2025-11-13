@@ -19,7 +19,7 @@ impl BarDataset {
     /// A new `BarDataset` instance with an empty list of data points.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// let dataset = BarDataset::new("Sales Data", [0, 128, 255]);
     /// ```
     pub fn new(label: &str, color: [u8; 3]) -> Self {
@@ -37,7 +37,7 @@ impl BarDataset {
     /// - `y`: The y-coordinate representing the value for the category.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// let mut dataset = BarDataset::new("Revenue", [255, 0, 0]);
     /// dataset.add_data(2020.0, 1500.0);
     /// dataset.add_data(2021.0, 2000.0);

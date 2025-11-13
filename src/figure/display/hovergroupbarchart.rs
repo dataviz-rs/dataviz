@@ -99,10 +99,10 @@ impl Hover for GroupBarChart {
 
             for (dataset_index, value) in group_values.iter().enumerate() {
                 if dataset_index == 0 {
-                    tooltip_text.push_str(&format!("{:.2}", value));
+                    tooltip_text.push_str(&format!("{value:.2}"));
                 } else {
                     let dataset_label = &self.datasets[dataset_index].label;
-                    tooltip_text = format!("{} : {:.2}", dataset_label, value);
+                    tooltip_text = format!("{dataset_label} : {value:.2}");
                 }
 
                 // Draw the tooltip text

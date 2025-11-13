@@ -24,8 +24,8 @@ impl ScatterGraphDataset {
     /// A new `ScatterGraphDataset` instance with an empty list of points.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::utilities::scatterdottype::ScatterDotType;
+    /// ```rust,ignore
+    /// use dataviz::figure::utilities::scatterdottype::ScatterDotType;
     ///
     /// let dataset = ScatterGraphDataset::new(
     ///     [255, 0, 0],

@@ -39,8 +39,7 @@ impl Drawer for PieChart {
 
         // Begin group for pie chart with transformation
         svg_canvas.elements.push(format!(
-            r#"<g transform="translate({:.2},{:.2})" stroke="black" stroke-width="1">"#,
-            cx, cy
+            r#"<g transform="translate({cx:.2},{cy:.2})" stroke="black" stroke-width="1">"#
         ));
 
         // Track the starting angle in radians
@@ -238,7 +237,7 @@ impl Drawer for PieChart {
     }
 
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
-        self as &mut (dyn Any)
+        self as &mut dyn Any
     }
 
     fn get_figure_config(&self) -> &FigureConfig {

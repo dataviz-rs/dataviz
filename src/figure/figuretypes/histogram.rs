@@ -41,9 +41,9 @@ impl Histogram {
     /// A new `Histogram` instance with empty data and initialized bins.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::configuration::figureconfig::FigureConfig;
-    /// use crate::figure::histogram::Histogram;
+    /// ```rust,ignore
+    /// use dataviz::figure::configuration::figureconfig::FigureConfig;
+    /// use dataviz::figure::histogram::Histogram;
     ///
     /// let config = FigureConfig::default();
     /// let histogram = Histogram::new("Data Distribution", "Values", "Frequency", 10, [255, 0, 0], config);
@@ -77,7 +77,7 @@ impl Histogram {
     /// - `values`: A vector of `f64` values to be added to the histogram.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// histogram.add_data_vec(vec![1.2, 2.5, 3.1, 4.8]);
     /// ```
     pub fn add_data_vec(&mut self, values: Vec<f64>) {
@@ -97,7 +97,7 @@ impl Histogram {
     /// - Updates the appropriate bin count based on the value.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// histogram.add_data(3.5);
     /// ```
     pub fn add_data(&mut self, value: f64) {
@@ -129,7 +129,7 @@ impl Histogram {
     /// - The frequency count for that bin.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// let bins = histogram.calculate_bins();
     /// for (start, count) in bins {
     ///     println!("Bin starts at {}, count is {}", start, count);

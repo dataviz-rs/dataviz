@@ -42,7 +42,11 @@ impl PixelCanvas {
 
     /// Clears the canvas by filling it with the background color.
     pub fn clear(&mut self) {
-        self.buffer.fill(self.background_color[0]);
+        for i in (0..self.buffer.len()).step_by(3) {
+            self.buffer[i] = self.background_color[0];
+            self.buffer[i + 1] = self.background_color[1];
+            self.buffer[i + 2] = self.background_color[2];
+        }
     }
 
     /// Draws a single pixel at the specified coordinates with the given color.
@@ -235,7 +239,7 @@ impl PixelCanvas {
                 // Draw the final pixel
                 self.draw_pixel(x2 as u32, y2 as u32, color);
             }
-            LineType::Dashed(dash_length) | LineType::Dotted(dash_length) => {
+            LineType::Dashed(dash_length) => {
                 let mut is_drawing = true;
                 let mut segment_length = 0;
 
@@ -246,6 +250,39 @@ impl PixelCanvas {
 
                     segment_length += 1;
                     if segment_length == dash_length {
+                        is_drawing = !is_drawing; // Toggle drawing
+                        segment_length = 0; // Reset segment length
+                    }
+
+                    let e2 = 2 * err;
+                    if e2 >= dy {
+                        err += dy;
+                        x += sx;
+                    }
+                    if e2 <= dx {
+                        err += dx;
+                        y += sy;
+                    }
+                }
+                // Ensure the final pixel is drawn in drawing mode
+                if is_drawing {
+                    self.draw_pixel(x2 as u32, y2 as u32, color);
+                }
+            }
+            LineType::Dotted(dot_spacing) => {
+                let mut is_drawing = true;
+                let mut segment_length = 0;
+                // For dotted lines: always use small dots (2-3 pixels) with variable spacing
+                let dot_length = 3;
+
+                while x != x2 || y != y2 {
+                    if is_drawing {
+                        self.draw_pixel(x as u32, y as u32, color);
+                    }
+
+                    segment_length += 1;
+                    let threshold = if is_drawing { dot_length } else { dot_spacing };
+                    if segment_length == threshold {
                         is_drawing = !is_drawing; // Toggle drawing
                         segment_length = 0; // Reset segment length
                     }
