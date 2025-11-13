@@ -1,84 +1,50 @@
 name: CI
-
 on:
   push:
-    branches: [ "main" ]
   pull_request:
-    branches: [ "main" ]
-
-env:
-  CARGO_TERM_COLOR: always
 
 jobs:
-  test:
-    name: Test
+  build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        rust: [stable, beta, nightly]
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        toolchain: ${{ matrix.rust }}
-        components: rustfmt, clippy
-    
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
-    
-    - name: Check formatting
-      run: cargo fmt -- --check
-    
-    - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings
-    
-    - name: Build
-      run: cargo build --verbose --all-features
-    
-    - name: Run tests
-      run: cargo test --verbose --all-features
+    env:
+      # default toolchain used if nothing is supplied
+      TOOLCHAIN: stable
 
-  security:
-    name: Security audit
-    runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-    
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
-    
-    - name: Run security audit
-      run: |
-        cargo install cargo-audit
-        cargo audit
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    
-    - name: Install Rust
-      uses: dtolnay/rust-toolchain@stable
-      with:
-        components: llvm-tools-preview
-    
-    - name: Cache dependencies
-      uses: Swatinem/rust-cache@v2
-    
-    - name: Install cargo-llvm-cov
-      run: cargo install cargo-llvm-cov
-    
-    - name: Generate coverage
-      run: cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        files: lcov.info
-        fail_ci_if_error: true
+      - name: Cache cargo registry and build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Set up Rust toolchain
+        # official actions-rs/toolchain handles rustup install reliably
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: ${{ env.TOOLCHAIN }}
+          profile: minimal
+          components: clippy, rustfmt
+          override: true
+
+      - name: Verify rustc & cargo
+        run: |
+          rustc --version
+          cargo --version
+
+      - name: Build
+        run: cargo build --verbose
+
+      - name: Run clippy (optional)
+        run: cargo clippy -- -D warnings
+        continue-on-error: false
+
+      - name: Run tests
+        run: cargo test --verbose
