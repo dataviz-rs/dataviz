@@ -2,6 +2,7 @@ use std::{
     fs::File,
     io::{self, Write},
 };
+use crate::figure::utilities::linetype::LineType;
 
 /// A structure for creating and managing an SVG-based drawing canvas.
 pub struct SvgCanvas {
@@ -65,8 +66,7 @@ impl SvgCanvas {
         stroke_width: f64,
     ) {
         self.elements.push(format!(
-            r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="{}" stroke-width="{:.2}"/>"#,
-            x1, y1, x2, y2, color, stroke_width
+            r#"<line x1="{x1:.2}" y1="{y1:.2}" x2="{x2:.2}" y2="{y2:.2}" stroke="{color}" stroke-width="{stroke_width:.2}"/>"#
         ));
     }
 
@@ -92,6 +92,47 @@ impl SvgCanvas {
         ));
     }
 
+    /// Adds a line with RGB color and line style (solid, dashed, or dotted) to the SVG canvas.
+    ///
+    /// # Parameters
+    /// - `x1`, `y1`: Coordinates of the start point.
+    /// - `x2`, `y2`: Coordinates of the end point.
+    /// - `color`: The RGB color of the line.
+    /// - `stroke_width`: The width of the line stroke.
+    /// - `line_type`: The line style (Solid, Dashed, or Dotted).
+    #[allow(clippy::too_many_arguments)]
+    pub fn draw_line_rgb_styled(
+        &mut self,
+        x1: f64,
+        y1: f64,
+        x2: f64,
+        y2: f64,
+        color: [u8; 3],
+        stroke_width: f64,
+        line_type: LineType,
+    ) {
+        let stroke_dasharray = match line_type {
+            LineType::Solid => String::new(),
+            LineType::Dashed(length) => format!("{length},{length}"),
+            LineType::Dotted(spacing) => {
+                // For dots: small dash (3) followed by gap (spacing)
+                format!("3,{spacing}")
+            }
+        };
+
+        if stroke_dasharray.is_empty() {
+            self.elements.push(format!(
+                r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}"/>"#,
+                x1, y1, x2, y2, color[0], color[1], color[2], stroke_width
+            ));
+        } else {
+            self.elements.push(format!(
+                r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}" stroke-dasharray="{}"/>"#,
+                x1, y1, x2, y2, color[0], color[1], color[2], stroke_width, stroke_dasharray
+            ));
+        }
+    }
+
     /// Adds a rectangle to the SVG canvas.
     ///
     /// # Parameters
@@ -114,8 +155,7 @@ impl SvgCanvas {
         opacity: f64,
     ) {
         self.elements.push(format!(
-            r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="{}" stroke="{}" stroke-width="{:.2}" fill-opacity="{}"/>"#,
-            x, y, width, height, fill_color, stroke_color, stroke_width, opacity
+            r#"<rect x="{x:.2}" y="{y:.2}" width="{width:.2}" height="{height:.2}" fill="{fill_color}" stroke="{stroke_color}" stroke-width="{stroke_width:.2}" fill-opacity="{opacity}"/>"#
         ));
     }
 
@@ -128,12 +168,11 @@ impl SvgCanvas {
     pub fn add_font_style(&mut self, font_url: &str, class_name: &str, font_family: &str) {
         self.elements.push(format!(
             r#"<style>
-                @import url('{}');
-                .{} {{
-                    font-family: '{}', sans-serif;
+                @import url('{font_url}');
+                .{class_name} {{
+                    font-family: '{font_family}', sans-serif;
                 }}
-            </style>"#,
-            font_url, class_name, font_family
+            </style>"#
         ));
     }
 
@@ -145,8 +184,7 @@ impl SvgCanvas {
     /// - `color`: Fill color of the circle.
     pub fn draw_circle(&mut self, cx: f64, cy: f64, r: f64, color: &str) {
         self.elements.push(format!(
-            r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="{}"/>"#,
-            cx, cy, r, color
+            r#"<circle cx="{cx:.2}" cy="{cy:.2}" r="{r:.2}" fill="{color}"/>"#
         ));
     }
 
@@ -159,8 +197,7 @@ impl SvgCanvas {
     /// - `color`: Text color.
     pub fn draw_text(&mut self, x: f64, y: f64, text: &str, font_size: f64, color: &str) {
         self.elements.push(format!(
-            r#"<text x="{:.2}" y="{:.2}" font-size="{:.2}" text-anchor="middle" fill="{}">{}</text>"#,
-            x, y, font_size, color, text
+            r#"<text x="{x:.2}" y="{y:.2}" font-size="{font_size:.2}" text-anchor="middle" fill="{color}">{text}</text>"#
         ));
     }
 
@@ -173,8 +210,7 @@ impl SvgCanvas {
     /// - `color`: Text color.
     pub fn draw_title(&mut self, x: f64, y: f64, text: &str, font_size: f64, color: &str) {
         self.elements.push(format!(
-            r#"<text x="{:.2}" y="{:.2}" font-size="{:.2}" text-anchor="middle" fill="{}">{}</text>"#,
-            x, y, font_size, color ,text
+            r#"<text x="{x:.2}" y="{y:.2}" font-size="{font_size:.2}" text-anchor="middle" fill="{color}">{text}</text>"#
         ));
     }
 
@@ -221,7 +257,7 @@ impl SvgCanvas {
     pub fn save(&self, file_path: &str) -> io::Result<()> {
         let mut file = File::create(file_path)?;
         for element in &self.elements {
-            writeln!(file, "{}", element)?;
+            writeln!(file, "{element}")?;
         }
         writeln!(file, "</svg>")?;
         Ok(())

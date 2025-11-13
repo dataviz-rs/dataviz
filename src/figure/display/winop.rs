@@ -43,7 +43,7 @@ impl Winop {
         // Initialize a font database.
         let mut fontdb = fontdb::Database::new();
         fontdb.load_system_fonts();
-        if let Ok(_) = &figure_config.validate() {
+        if figure_config.validate().is_ok() {
             fontdb.load_font_data(figure_config.font_label.clone().unwrap().into_bytes());
         }
 
@@ -126,7 +126,7 @@ impl Winop {
                 ..WindowOptions::default()
             },
         )
-        .unwrap_or_else(|e| panic!("Unable to open Window: {}", e));
+        .unwrap_or_else(|e| panic!("Unable to open Window: {e}"));
 
         let frame_duration = Duration::from_secs_f32(1.0 / fps as f32);
         let mut last_frame_time = Instant::now();
@@ -186,7 +186,7 @@ impl Winop {
                 let r = rgb[0] as u32;
                 let g = rgb[1] as u32;
                 let b = rgb[2] as u32;
-                (r << 16) | (g << 8) | b
+                0xFF000000 | (r << 16) | (g << 8) | b
             })
             .collect()
     }
@@ -214,7 +214,7 @@ impl Winop {
                 ..WindowOptions::default()
             },
         )
-        .unwrap_or_else(|e| panic!("Unable to open Window: {}", e));
+        .unwrap_or_else(|e| panic!("Unable to open Window: {e}"));
 
         let mut hover_enabled = false;
         let mut show_hints = false;

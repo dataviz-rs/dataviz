@@ -61,8 +61,7 @@ impl Drawer for Histogram {
             let tick_end_y = origin_y + 5.0;
 
             x_axis_ticks.push_str(&format!(
-                "M {:.2},{:.2} L {:.2},{:.2} ",
-                x, tick_start_y, x, tick_end_y
+                "M {x:.2},{tick_start_y:.2} L {x:.2},{tick_end_y:.2} "
             ));
 
             // Draw value as text (fallback to basic SVG <text>)
@@ -71,8 +70,7 @@ impl Drawer for Histogram {
             x, height - margin + font_size * 1.5, font_size, value));
         }
         svg_canvas.elements.push(format!(
-            r#"<path d="{}" stroke="black" stroke-width="1" fill="none"/>"#,
-            x_axis_ticks
+            r#"<path d="{x_axis_ticks}" stroke="black" stroke-width="1" fill="none"/>"#
         ));
 
         // Y-axis
@@ -84,8 +82,7 @@ impl Drawer for Histogram {
             let tick_end_x = origin_x + 5.0;
 
             y_axis_ticks.push_str(&format!(
-                "M {:.2},{:.2} L {:.2},{:.2} ",
-                tick_start_x, y, tick_end_x, y
+                "M {tick_start_x:.2},{y:.2} L {tick_end_x:.2},{y:.2} "
             ));
 
             // Draw value as text (fallback to basic SVG <text>)
@@ -95,8 +92,7 @@ impl Drawer for Histogram {
         ));
         }
         svg_canvas.elements.push(format!(
-            r#"<path d="{}" stroke="black" stroke-width="1" fill="none"/>"#,
-            y_axis_ticks
+            r#"<path d="{y_axis_ticks}" stroke="black" stroke-width="1" fill="none"/>"#
         ));
 
         // Draw X-axis label
@@ -206,7 +202,7 @@ impl Drawer for Histogram {
             let edge_value = bin_start + i as f64 * bin_width;
 
             canvas.draw_pixel(edge_x as u32, origin_y as u32, [0, 0, 0]); // Tick mark
-            let edge_label = format!("{:.1}", edge_value);
+            let edge_label = format!("{edge_value:.1}");
             self.draw_axis_value(
                 canvas,
                 cfg,
@@ -224,7 +220,7 @@ impl Drawer for Histogram {
             let tick_y = origin_y - (tick_value * scale_y) as i32;
 
             canvas.draw_pixel(origin_x as u32, tick_y as u32, [0, 0, 0]); // Tick mark
-            let tick_label = format!("{:.1}", tick_value);
+            let tick_label = format!("{tick_value:.1}");
             self.draw_axis_value(
                 canvas,
                 cfg,
@@ -250,7 +246,7 @@ impl Drawer for Histogram {
     }
 
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
-        self as &mut (dyn Any)
+        self as &mut dyn Any
     }
 
     fn get_figure_config(&self) -> &FigureConfig {

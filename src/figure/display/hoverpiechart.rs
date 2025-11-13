@@ -130,7 +130,7 @@ impl Hover for PieChart {
     }
 
     fn get_font<'a>(&self, font_data: &'a [u8]) -> FontRef<'a> {
-        println!("font_data: {:?}", font_data);
+        println!("font_data: {font_data:?}");
         FontRef::try_from_slice(font_data).unwrap()
     }
 }
