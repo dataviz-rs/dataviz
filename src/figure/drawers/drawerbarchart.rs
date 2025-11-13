@@ -79,8 +79,7 @@ impl Drawer for GroupBarChart {
                     let tick_end_x = origin_x + 5.0;
 
                     y_axis_ticks.push_str(&format!(
-                        "M {:.2},{:.2} L {:.2},{:.2} ",
-                        tick_start_x, y, tick_end_x, y
+                        "M {tick_start_x:.2},{y:.2} L {tick_end_x:.2},{y:.2} "
                     ));
 
                     // Draw value as text (fallback to basic SVG <text>)
@@ -90,8 +89,7 @@ impl Drawer for GroupBarChart {
         ));
                 }
                 svg_canvas.elements.push(format!(
-                    r#"<path d="{}" stroke="black" stroke-width="1" fill="none"/>"#,
-                    y_axis_ticks
+                    r#"<path d="{y_axis_ticks}" stroke="black" stroke-width="1" fill="none"/>"#
                 ));
 
                 // Draw X-axis labels and grouped bars
@@ -208,7 +206,7 @@ impl Drawer for GroupBarChart {
                     svg_canvas.draw_text(
                         x,
                         origin_y + font_size * 1.5,
-                        &format!("{:.1}", value_x),
+                        &format!("{value_x:.1}"),
                         font_size,
                         "black",
                     );
@@ -361,7 +359,7 @@ impl Drawer for GroupBarChart {
     }
 
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
-        self as &mut (dyn Any)
+        self as &mut dyn Any
     }
 
     fn get_figure_config(&self) -> &FigureConfig {

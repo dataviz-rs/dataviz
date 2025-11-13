@@ -83,7 +83,7 @@ impl Drawer for Quadrant1Graph {
             svg_canvas.draw_text(
                 x,
                 height - margin + font_size * 1.5,
-                &format!("{:.1}", value),
+                &format!("{value:.1}"),
                 font_size,
                 "black",
             );
@@ -97,7 +97,7 @@ impl Drawer for Quadrant1Graph {
             svg_canvas.draw_text(
                 margin - font_size * 2.0,
                 y,
-                &format!("{:.1}", value),
+                &format!("{value:.1}"),
                 font_size,
                 "black",
             );
@@ -261,7 +261,7 @@ impl Drawer for Quadrant1Graph {
             let value_x = x_min + i as f64 * x_tick_step;
             let tick_x = origin_x + ((value_x - x_min) * scale_x) as u32;
 
-            let value_label = format!("{:.2}", value_x);
+            let value_label = format!("{value_x:.2}");
 
             self.draw_axis_value(canvas, cfg, tick_x, origin_y, &value_label, AxisType::AxisX);
         }
@@ -271,7 +271,7 @@ impl Drawer for Quadrant1Graph {
         for i in 0..=num_ticks {
             let value_y = y_min + i as f64 * y_tick_step;
             let tick_y = origin_y - ((value_y - y_min) * scale_y) as u32;
-            let value_label = format!("{:.2}", value_y);
+            let value_label = format!("{value_y:.2}");
 
             self.draw_axis_value(
                 canvas,
@@ -364,7 +364,7 @@ impl Drawer for Quadrant1Graph {
     }
 
     fn as_any(&mut self) -> &mut (dyn Any + 'static) {
-        self as &mut (dyn Any)
+        self as &mut dyn Any
     }
 
     fn get_figure_config(&self) -> &FigureConfig {

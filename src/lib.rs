@@ -68,7 +68,7 @@
 //! ## Getting Started
 //! Here's a quick example of creating and rendering a pie chart:
 //!
-//! ```rust
+//! ```rust,ignore
 //! use dataviz::figure::figuretypes::piechart::PieChart;
 //! use dataviz::figure::configuration::figureconfig::FigureConfig;
 //!

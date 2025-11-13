@@ -61,7 +61,7 @@ impl Hover for Histogram {
                 ImageBuffer::from_raw(canvas.width, canvas.height, canvas.buffer.clone()).unwrap();
 
             // Format the text as: ([x-start, x-end], total: y-value)
-            let bin_info = format!("([{:.2}, {:.2}], total: {:.2})", bin_start, bin_end, freq);
+            let bin_info = format!("([{bin_start:.2}, {bin_end:.2}], total: {freq:.2})");
 
             // Calculate text size for background rectangle
             let font_path = self

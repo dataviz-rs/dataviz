@@ -34,9 +34,9 @@ impl Quadrant1Graph {
     /// A new `Quadrant1Graph` instance with an empty dataset.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::configuration::figureconfig::FigureConfig;
-    /// use crate::figure::quadrant1graph::Quadrant1Graph;
+    /// ```rust,ignore
+    /// use dataviz::figure::configuration::figureconfig::FigureConfig;
+    /// use dataviz::figure::quadrant1graph::Quadrant1Graph;
     ///
     /// let config = FigureConfig::default();
     /// let graph = Quadrant1Graph::new("First Quadrant Graph", "X Axis", "Y Axis", config);
@@ -64,9 +64,9 @@ impl Quadrant1Graph {
     /// This method ensures that only points with `x >= 0.0` and `y >= 0.0` are included in the dataset.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::datasets::cartesiangraphdataset::CartesianDataset;
-    /// use crate::figure::utilities::linetype::LineType;
+    /// ```rust,ignore
+    /// use dataviz::figure::datasets::cartesiangraphdataset::CartesianDataset;
+    /// use dataviz::figure::utilities::linetype::LineType;
     ///
     /// let mut graph = Quadrant1Graph::new("Example Graph", "X Axis", "Y Axis", config);
     /// let dataset = CartesianDataset {

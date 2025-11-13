@@ -1,6 +1,6 @@
 [package]
 name = "dataviz"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2021"
 authors = ["Samet Eraslan <absameteraslan@gmail.com>"]
 description = "A modular library for creating charts and graphs in Rust."

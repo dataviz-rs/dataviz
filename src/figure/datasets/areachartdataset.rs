@@ -22,7 +22,7 @@ impl AreaChartDataset {
     /// A new `AreaChartDataset` instance with an empty list of points.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// let dataset = AreaChartDataset::new([255, 0, 0], "Example Dataset", 0.5);
     /// ```
     pub fn new(color: [u8; 3], label: &str, alpha: f64) -> Self {

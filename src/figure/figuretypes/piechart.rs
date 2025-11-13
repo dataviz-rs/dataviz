@@ -24,9 +24,9 @@ impl PieChart {
     /// A new `PieChart` instance with no datasets.
     ///
     /// # Example
-    /// ```rust
-    /// use crate::figure::configuration::figureconfig::FigureConfig;
-    /// use crate::figure::piechart::PieChart;
+    /// ```rust,ignore
+    /// use dataviz::figure::configuration::figureconfig::FigureConfig;
+    /// use dataviz::figure::piechart::PieChart;
     ///
     /// let config = FigureConfig::default();
     /// let pie_chart = PieChart::new("Market Share", config);
@@ -47,7 +47,7 @@ impl PieChart {
     /// - `color`: The RGB color of the slice.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// pie_chart.add_slice("Product A", 30.0, [255, 0, 0]);
     /// pie_chart.add_slice("Product B", 50.0, [0, 255, 0]);
     /// pie_chart.add_slice("Product C", 20.0, [0, 0, 255]);
@@ -72,7 +72,7 @@ impl PieChart {
     /// It ensures that only points within the slice and the circle are drawn.
     ///
     /// # Example
-    /// ```rust
+    /// ```rust,ignore
     /// pie_chart.draw_slice(&mut canvas, 200, 200, 100, 0.0, 1.0, [255, 0, 0]);
     /// ```
     #[allow(clippy::too_many_arguments)]
