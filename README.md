@@ -46,7 +46,7 @@ A modular, customizable, and feature-rich 2D plotting library written in Rust. W
 Add the following dependencies to your `Cargo.toml` file:
 ```toml
 [dependencies]
-dataviz = "0.1.6"
+dataviz = "0.1.9"
 ```
 
 ## **Examples**  
