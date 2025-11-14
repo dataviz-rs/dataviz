@@ -92,6 +92,7 @@ impl GroupBarChart {
     /// ```
     pub fn draw_horizontal(&self, canvas: &mut PixelCanvas) {
         canvas.clear();
+        self.fill_background(canvas, &self.config);
 
         let margin = canvas.margin;
         let width = canvas.width;
@@ -204,6 +205,8 @@ impl GroupBarChart {
     /// ```
     pub fn draw_vertical(&self, canvas: &mut PixelCanvas) {
         canvas.clear();
+        self.fill_background(canvas, &self.config);
+
         let margin = canvas.margin;
         let width = canvas.width;
         let height = canvas.height;

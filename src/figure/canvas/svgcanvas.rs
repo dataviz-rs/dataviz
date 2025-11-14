@@ -1,8 +1,8 @@
+use crate::figure::utilities::linetype::LineType;
 use std::{
     fs::File,
     io::{self, Write},
 };
-use crate::figure::utilities::linetype::LineType;
 
 /// A structure for creating and managing an SVG-based drawing canvas.
 pub struct SvgCanvas {

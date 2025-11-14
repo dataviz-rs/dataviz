@@ -15,9 +15,13 @@ impl Drawer for Histogram {
         let height = svg_canvas.height as f64;
         let margin = svg_canvas.margin as f64;
         let font_size = 12.0;
+        let cfg = &self.config;
+        let margin_bg_color = svg_canvas.background_color.clone();
 
-        // Draw background
-        svg_canvas.draw_rect(0.0, 0.0, width, height, "white", "black", 1.0, 1.0);
+        // Draw margin background (using SvgCanvas background_color parameter)
+        svg_canvas.draw_rect(0.0, 0.0, width, height, &margin_bg_color, "black", 1.0, 1.0);
+        // Draw chart background (using FigureConfig color)
+        self.fill_svg_background(svg_canvas, cfg);
 
         // Draw Title
         svg_canvas.draw_title(
@@ -141,10 +145,12 @@ impl Drawer for Histogram {
     fn draw(&mut self, canvas: &mut PixelCanvas) {
         canvas.clear();
 
+        let cfg = &self.config;
+        self.fill_background(canvas, cfg);
+
         let margin = canvas.margin;
         let width = canvas.width;
         let height = canvas.height;
-        let cfg = &self.config;
 
         // Draw the title
         self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);
