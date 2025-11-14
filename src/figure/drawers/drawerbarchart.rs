@@ -15,11 +15,15 @@ impl Drawer for GroupBarChart {
         let height = svg_canvas.height as f64;
         let margin = svg_canvas.margin as f64;
         let font_size = 12.0;
+        let cfg = &self.config;
+        let margin_bg_color = svg_canvas.background_color.clone();
 
         match self.orientation {
             Orientation::Vertical => {
-                // Draw background
-                svg_canvas.draw_rect(0.0, 0.0, width, height, "white", "black", 1.0, 1.0);
+                // Draw margin background (using SvgCanvas background_color parameter)
+                svg_canvas.draw_rect(0.0, 0.0, width, height, &margin_bg_color, "black", 1.0, 1.0);
+                // Draw chart background (using FigureConfig color)
+                self.fill_svg_background(svg_canvas, cfg);
 
                 // Draw Title
                 svg_canvas.draw_title(
@@ -141,8 +145,10 @@ impl Drawer for GroupBarChart {
                 let margin = svg_canvas.margin as f64;
                 let font_size = 12.0;
 
-                // Draw background
-                svg_canvas.draw_rect(0.0, 0.0, width, height, "white", "black", 1.0, 1.0);
+                // Draw margin background (using SvgCanvas background_color parameter)
+                svg_canvas.draw_rect(0.0, 0.0, width, height, &margin_bg_color, "black", 1.0, 1.0);
+                // Draw chart background (using FigureConfig color)
+                self.fill_svg_background(svg_canvas, cfg);
 
                 // Draw Title
                 svg_canvas.draw_title(
@@ -256,11 +262,12 @@ impl Drawer for GroupBarChart {
             }
         }
         // Draw legend in the bottom-left corner
-        let legend_x_start = 5.0; // Start at the very left with margin spacing
-        let legend_y = height - margin / 2.0; // Move to bottom-left corner
+        let legend_x_start = margin + 10.0; // Start inside chart area with margin spacing
+        let legend_y = height - margin + font_size * 1.5 + 10.0; // Position below x-axis labels
 
         let mut legend_x = legend_x_start;
         let mut elements = String::new();
+        let legend_bg_color = svg_canvas.background_color.clone();
 
         for dataset in &self.datasets {
             elements.push_str(&format!(
@@ -290,7 +297,7 @@ impl Drawer for GroupBarChart {
             legend_y - 5.0,
             legend_x - legend_x_start + 5.0,
             font_size + 10.0,
-            "white",
+            &legend_bg_color,
             "black",
             0.5,
             0.5,
