@@ -16,9 +16,13 @@ impl Drawer for AreaChart {
         let height = svg_canvas.height as f64;
         let margin = svg_canvas.margin as f64;
         let font_size = 12.0;
+        let cfg = &self.config;
 
-        // Draw background
-        svg_canvas.draw_rect(0.0, 0.0, width, height, "white", "black", 1.0, 1.0);
+        // Draw margin background (using SvgCanvas background_color parameter)
+        let margin_bg_color = svg_canvas.background_color.clone();
+        svg_canvas.draw_rect(0.0, 0.0, width, height, &margin_bg_color, "black", 1.0, 1.0);
+        // Draw chart background (using FigureConfig color)
+        self.fill_svg_background(svg_canvas, cfg);
 
         // Draw Title
         svg_canvas.draw_title(
@@ -171,10 +175,11 @@ impl Drawer for AreaChart {
         }
 
         // Draw legend
-        let legend_x_start = 5.0; // Start at the very left with margin spacing
-        let legend_y = height - margin / 2.0; // Move to bottom-left corner
+        let legend_x_start = margin + 10.0; // Start inside chart area with margin spacing
+        let legend_y = height - margin + font_size * 1.5 + 10.0; // Position below x-axis labels
         let mut legend_x = legend_x_start; // Reset starting position for legend items
         let mut elements = String::new();
+        let legend_bg_color = svg_canvas.background_color.clone();
 
         for dataset in &self.datasets {
             // Draw color square
@@ -213,7 +218,7 @@ impl Drawer for AreaChart {
             legend_y - 5.0,
             legend_width,
             legend_height,
-            "white",
+            &legend_bg_color,
             "black",
             0.5,
             0.5,
@@ -226,10 +231,12 @@ impl Drawer for AreaChart {
     fn draw(&mut self, canvas: &mut PixelCanvas) {
         canvas.clear();
 
+        let cfg = &self.config;
+        self.fill_background(canvas, cfg);
+
         let margin = canvas.margin;
         let width = canvas.width;
         let height = canvas.height;
-        let cfg = &self.config;
 
         // Draw the title
         self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);

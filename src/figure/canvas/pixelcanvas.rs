@@ -30,7 +30,9 @@ impl PixelCanvas {
     /// # Returns
     /// A new `PixelCanvas` instance.
     pub fn new(width: u32, height: u32, background_color: [u8; 3], margin: u32) -> Self {
-        let buffer = vec![0; (width * height * 3) as usize];
+        let buffer = (0..(width * height * 3) as usize)
+            .map(|i| background_color[i % 3])
+            .collect::<Vec<u8>>();
         Self {
             width,
             height,

@@ -32,6 +32,53 @@ pub trait Drawer: Any {
     /// - `svg_canvas`: The `SvgCanvas` to render the plot on.
     fn draw_svg(&mut self, svg_canvas: &mut SvgCanvas);
 
+    /// Converts RGB color array to SVG color string format.
+    ///
+    /// # Parameters
+    /// - `color`: RGB color as `[u8; 3]`.
+    ///
+    /// # Returns
+    /// A string in format `"rgb(r,g,b)"`.
+    fn rgb_to_svg_color(&self, color: [u8; 3]) -> String {
+        format!("rgb({},{},{})", color[0], color[1], color[2])
+    }
+
+    /// Fills the SVG chart background area (inside margins) with the background color.
+    ///
+    /// # Parameters
+    /// - `svg_canvas`: The `SvgCanvas` to draw on.
+    /// - `config`: The `FigureConfig` containing the background color.
+    fn fill_svg_background(&self, svg_canvas: &mut SvgCanvas, config: &FigureConfig) {
+        let margin = svg_canvas.margin as f64;
+        let width = svg_canvas.width as f64;
+        let height = svg_canvas.height as f64;
+        let bg_color = self.rgb_to_svg_color(config.color_background);
+
+        svg_canvas.draw_rect(
+            margin,
+            margin,
+            width - 2.0 * margin,
+            height - 2.0 * margin,
+            &bg_color,
+            "none",
+            0.0,
+            1.0,
+        );
+    }
+
+    /// Fills the chart background area (inside margins) with the background color.
+    ///
+    /// # Parameters
+    /// - `canvas`: The `PixelCanvas` to fill.
+    /// - `config`: The `FigureConfig` containing the background color.
+    fn fill_background(&self, canvas: &mut PixelCanvas, config: &FigureConfig) {
+        for y in canvas.margin..canvas.height - canvas.margin {
+            for x in canvas.margin..canvas.width - canvas.margin {
+                canvas.draw_pixel(x, y, config.color_background);
+            }
+        }
+    }
+
     /// Draws the grid for the plot based on the provided configuration.
     ///
     /// # Parameters
