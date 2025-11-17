@@ -223,7 +223,7 @@ impl PixelCanvas {
         let mut y = y1;
 
         match line_type {
-            LineType::Solid => {
+            LineType::Solid(draw_dots) => {
                 // Draw a continuous line without any gaps
                 while x != x2 || y != y2 {
                     self.draw_pixel(x as u32, y as u32, color);
@@ -240,8 +240,37 @@ impl PixelCanvas {
                 }
                 // Draw the final pixel
                 self.draw_pixel(x2 as u32, y2 as u32, color);
+
+                // Optionally draw dots at both endpoints
+                if draw_dots {
+                    let dot_radius = 2;
+                    // Draw dot at start point
+                    for dy_c in -dot_radius..=dot_radius {
+                        for dx_c in -dot_radius..=dot_radius {
+                            if dx_c * dx_c + dy_c * dy_c <= (dot_radius * dot_radius) {
+                                let px = (x1 + dx_c) as u32;
+                                let py = (y1 + dy_c) as u32;
+                                if px < self.width && py < self.height {
+                                    self.draw_pixel(px, py, color);
+                                }
+                            }
+                        }
+                    }
+                    // Draw dot at end point
+                    for dy_c in -dot_radius..=dot_radius {
+                        for dx_c in -dot_radius..=dot_radius {
+                            if dx_c * dx_c + dy_c * dy_c <= (dot_radius * dot_radius) {
+                                let px = (x2 + dx_c) as u32;
+                                let py = (y2 + dy_c) as u32;
+                                if px < self.width && py < self.height {
+                                    self.draw_pixel(px, py, color);
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            LineType::Dashed(dash_length) => {
+            LineType::Dashed(dash_length, draw_dots) => {
                 let mut is_drawing = true;
                 let mut segment_length = 0;
 
@@ -270,38 +299,92 @@ impl PixelCanvas {
                 if is_drawing {
                     self.draw_pixel(x2 as u32, y2 as u32, color);
                 }
-            }
-            LineType::Dotted(dot_spacing) => {
-                let mut is_drawing = true;
-                let mut segment_length = 0;
-                // For dotted lines: always use small dots (2-3 pixels) with variable spacing
-                let dot_length = 3;
 
-                while x != x2 || y != y2 {
-                    if is_drawing {
-                        self.draw_pixel(x as u32, y as u32, color);
+                // Optionally draw dots at both endpoints
+                if draw_dots {
+                    let dot_radius = 2;
+                    // Draw dot at start point
+                    for dy_c in -dot_radius..=dot_radius {
+                        for dx_c in -dot_radius..=dot_radius {
+                            if dx_c * dx_c + dy_c * dy_c <= (dot_radius * dot_radius) {
+                                let px = (x1 + dx_c) as u32;
+                                let py = (y1 + dy_c) as u32;
+                                if px < self.width && py < self.height {
+                                    self.draw_pixel(px, py, color);
+                                }
+                            }
+                        }
                     }
-
-                    segment_length += 1;
-                    let threshold = if is_drawing { dot_length } else { dot_spacing };
-                    if segment_length == threshold {
-                        is_drawing = !is_drawing; // Toggle drawing
-                        segment_length = 0; // Reset segment length
-                    }
-
-                    let e2 = 2 * err;
-                    if e2 >= dy {
-                        err += dy;
-                        x += sx;
-                    }
-                    if e2 <= dx {
-                        err += dx;
-                        y += sy;
+                    // Draw dot at end point
+                    for dy_c in -dot_radius..=dot_radius {
+                        for dx_c in -dot_radius..=dot_radius {
+                            if dx_c * dx_c + dy_c * dy_c <= (dot_radius * dot_radius) {
+                                let px = (x2 + dx_c) as u32;
+                                let py = (y2 + dy_c) as u32;
+                                if px < self.width && py < self.height {
+                                    self.draw_pixel(px, py, color);
+                                }
+                            }
+                        }
                     }
                 }
-                // Ensure the final pixel is drawn in drawing mode
-                if is_drawing {
-                    self.draw_pixel(x2 as u32, y2 as u32, color);
+            }
+            LineType::Dotted(spacing, draw_dots) => {
+                // Only draw intermediate dots if draw_dots is true
+                if draw_dots {
+                    // Draw circles (dots) at regular intervals along the line
+                    let dx_f = (x2 - x1) as f64;
+                    let dy_f = (y2 - y1) as f64;
+                    let distance = (dx_f * dx_f + dy_f * dy_f).sqrt();
+                    let steps = if distance > 0.0 {
+                        (distance / spacing as f64).ceil() as usize
+                    } else {
+                        1
+                    };
+
+                    // Circle radius directly reflects input spacing value
+                    let circle_radius = (spacing as i32 / 4).clamp(1, 16);
+                    // Opacity: 40% opaque (60% transparent)
+                    let opacity = 0.4;
+
+                    for i in 0..=steps {
+                        let t = if steps == 0 {
+                            0.0
+                        } else {
+                            i as f64 / steps as f64
+                        };
+                        let cx = (x1 as f64 + t * dx_f) as i32;
+                        let cy = (y1 as f64 + t * dy_f) as i32;
+
+                        // Draw a filled circle at this position with transparency
+                        for dy_c in -(circle_radius)..=(circle_radius) {
+                            for dx_c in -(circle_radius)..=(circle_radius) {
+                                if dx_c * dx_c + dy_c * dy_c <= (circle_radius * circle_radius) {
+                                    let px = (cx + dx_c) as u32;
+                                    let py = (cy + dy_c) as u32;
+                                    if px < self.width && py < self.height {
+                                        // Blend the color with existing pixel for transparency effect
+                                        let idx = (py * self.width + px) as usize * 3;
+                                        let existing_r = self.buffer[idx] as f64;
+                                        let existing_g = self.buffer[idx + 1] as f64;
+                                        let existing_b = self.buffer[idx + 2] as f64;
+
+                                        let blended_r = (color[0] as f64 * opacity
+                                            + existing_r * (1.0 - opacity))
+                                            as u8;
+                                        let blended_g = (color[1] as f64 * opacity
+                                            + existing_g * (1.0 - opacity))
+                                            as u8;
+                                        let blended_b = (color[2] as f64 * opacity
+                                            + existing_b * (1.0 - opacity))
+                                            as u8;
+
+                                        self.draw_pixel(px, py, [blended_r, blended_g, blended_b]);
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

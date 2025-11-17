@@ -107,7 +107,7 @@ pub trait Drawer: Any {
         x2: i32,
         y2: i32,
     ) {
-        canvas.draw_line(x1, y1, x2, y2, config.color_axis, LineType::Solid);
+        canvas.draw_line(x1, y1, x2, y2, config.color_axis, LineType::Solid(false));
     }
 
     /// Draws a text label on the canvas.
