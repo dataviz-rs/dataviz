@@ -111,25 +111,79 @@ impl SvgCanvas {
         stroke_width: f64,
         line_type: LineType,
     ) {
-        let stroke_dasharray = match line_type {
-            LineType::Solid => String::new(),
-            LineType::Dashed(length) => format!("{length},{length}"),
-            LineType::Dotted(spacing) => {
-                // For dots: small dash (3) followed by gap (spacing)
-                format!("3,{spacing}")
-            }
-        };
+        match line_type {
+            LineType::Solid(draw_dots) => {
+                // Draw a solid line
+                self.elements.push(format!(
+                    r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}"/>"#,
+                    x1, y1, x2, y2, color[0], color[1], color[2], stroke_width
+                ));
 
-        if stroke_dasharray.is_empty() {
-            self.elements.push(format!(
-                r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}"/>"#,
-                x1, y1, x2, y2, color[0], color[1], color[2], stroke_width
-            ));
-        } else {
-            self.elements.push(format!(
-                r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}" stroke-dasharray="{}"/>"#,
-                x1, y1, x2, y2, color[0], color[1], color[2], stroke_width, stroke_dasharray
-            ));
+                // Optionally draw dots at both endpoints
+                if draw_dots {
+                    let dot_radius = 2.0;
+                    // Draw dot at start point
+                    self.elements.push(format!(
+                        r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="rgb({},{},{})"/>"#,
+                        x1, y1, dot_radius, color[0], color[1], color[2]
+                    ));
+                    // Draw dot at end point
+                    self.elements.push(format!(
+                        r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="rgb({},{},{})"/>"#,
+                        x2, y2, dot_radius, color[0], color[1], color[2]
+                    ));
+                }
+            }
+            LineType::Dashed(length, draw_dots) => {
+                // Draw a dashed line
+                let stroke_dasharray = format!("{length},{length}");
+                self.elements.push(format!(
+                    r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}" stroke-dasharray="{}"/>"#,
+                    x1, y1, x2, y2, color[0], color[1], color[2], stroke_width, stroke_dasharray
+                ));
+
+                // Optionally draw dots at both endpoints
+                if draw_dots {
+                    let dot_radius = 2.0;
+                    // Draw dot at start point
+                    self.elements.push(format!(
+                        r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="rgb({},{},{})"/>"#,
+                        x1, y1, dot_radius, color[0], color[1], color[2]
+                    ));
+                    // Draw dot at end point
+                    self.elements.push(format!(
+                        r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="rgb({},{},{})"/>"#,
+                        x2, y2, dot_radius, color[0], color[1], color[2]
+                    ));
+                }
+            }
+            LineType::Dotted(spacing, draw_dots) => {
+                // Only draw intermediate dots if draw_dots is true
+                if draw_dots {
+                    // Draw circles at regular intervals along the line
+                    let distance = ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt();
+                    let steps = (distance / spacing as f64).ceil() as usize;
+                    // Circle radius directly reflects input spacing value
+                    let circle_radius = (spacing as f64 / 5.0).clamp(1.0, 30.0);
+
+                    // Draw circles at regular intervals
+                    for i in 0..=steps {
+                        let t = if steps == 0 {
+                            0.0
+                        } else {
+                            i as f64 / steps as f64
+                        };
+                        let cx = x1 + t * (x2 - x1);
+                        let cy = y1 + t * (y2 - y1);
+
+                        // Draw filled circle with dataset color, 60% transparent (40% opaque)
+                        self.elements.push(format!(
+                            r#"<circle cx="{:.2}" cy="{:.2}" r="{:.2}" fill="rgb({},{},{})" opacity="0.4"/>"#,
+                            cx, cy, circle_radius, color[0], color[1], color[2]
+                        ));
+                    }
+                }
+            }
         }
     }
 

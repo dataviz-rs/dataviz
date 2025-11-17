@@ -261,15 +261,29 @@ impl Drawer for GroupBarChart {
                 }
             }
         }
-        // Draw legend in the bottom-left corner
+        // Draw legend with wrapping support
         let legend_x_start = margin + 10.0; // Start inside chart area with margin spacing
-        let legend_y = height - margin + font_size * 1.5 + 10.0; // Position below x-axis labels
+        let legend_line_height = font_size + 10.0; // Height of each legend row
 
         let mut legend_x = legend_x_start;
+        // Position legend below x-axis labels: x-axis labels start at (height - margin + font_size * 1.5)
+        // and extend down by font_size. Add padding for safety.
+        let mut legend_y = height - margin + font_size * 1.5 + font_size + 20.0;
         let mut elements = String::new();
         let legend_bg_color = svg_canvas.background_color.clone();
+        let mut row_positions = vec![(legend_x_start, legend_y)]; // Track position of each row
 
         for dataset in &self.datasets {
+            let item_width = font_size * 5.0 + dataset.label.len() as f64 * font_size * 0.6;
+
+            // Check if current item exceeds the available width
+            if legend_x + item_width > width - margin && legend_x != legend_x_start {
+                // Wrap to next row
+                legend_x = legend_x_start;
+                legend_y -= legend_line_height;
+                row_positions.push((legend_x, legend_y));
+            }
+
             elements.push_str(&format!(
                 r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="rgb({},{},{})"/>"#,
                 legend_x,
@@ -289,14 +303,51 @@ impl Drawer for GroupBarChart {
                 dataset.label
             ));
 
-            legend_x += font_size * 5.0 + dataset.label.len() as f64 * font_size * 0.6;
+            legend_x += item_width;
         }
 
+        // Calculate overall legend bounds
+        let mut max_row_width = 0.0;
+        let mut current_row_idx = 0;
+        let mut legend_x = legend_x_start;
+
+        for dataset in &self.datasets {
+            let item_width = font_size * 5.0 + dataset.label.len() as f64 * font_size * 0.6;
+
+            // Check if we need to wrap
+            if legend_x + item_width > width - margin && legend_x != legend_x_start {
+                current_row_idx += 1;
+                legend_x = legend_x_start;
+            }
+
+            let row_width = legend_x + item_width - row_positions[current_row_idx].0;
+            if row_width > max_row_width {
+                max_row_width = row_width;
+            }
+            legend_x += item_width;
+        }
+
+        // Draw single background rectangle for entire legend
+        let first_row_y = row_positions[0].1;
+        let last_row_y = if row_positions.len() > 1 {
+            row_positions[row_positions.len() - 1].1
+        } else {
+            first_row_y
+        };
+
+        let legend_rect_x = legend_x_start - 5.0;
+        // In SVG, Y increases downward. When wrapping, last_row_y < first_row_y (top is smaller Y)
+        let min_y = first_row_y.min(last_row_y);
+        let max_y = first_row_y.max(last_row_y);
+        let legend_rect_y = min_y - 5.0;
+        let legend_rect_width = max_row_width + 10.0;
+        let legend_rect_height = (max_y - min_y) + legend_line_height + 10.0;
+
         svg_canvas.draw_rect(
-            legend_x_start - 5.0,
-            legend_y - 5.0,
-            legend_x - legend_x_start + 5.0,
-            font_size + 10.0,
+            legend_rect_x,
+            legend_rect_y,
+            legend_rect_width,
+            legend_rect_height,
             &legend_bg_color,
             "black",
             0.5,

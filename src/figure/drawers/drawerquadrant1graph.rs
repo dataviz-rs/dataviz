@@ -19,6 +19,11 @@ impl Drawer for Quadrant1Graph {
         let cfg = &self.config;
         let margin_bg_color = svg_canvas.background_color.clone();
 
+        // Extract config values before mutable borrow
+        let num_grid_vertical = cfg.num_grid_vertical;
+        let num_grid_horizontal = cfg.num_grid_horizontal;
+        let num_axis_ticks = cfg.num_axis_ticks;
+
         // Draw margin background (using SvgCanvas background_color parameter)
         svg_canvas.draw_rect(0.0, 0.0, width, height, &margin_bg_color, "black", 1.0, 1.0);
         // Draw chart background (using FigureConfig color)
@@ -57,14 +62,13 @@ impl Drawer for Quadrant1Graph {
         let scale_y = (height - 2.0 * margin) / (y_max - y_min);
 
         // Draw grid
-        let num_ticks = 10;
         svg_canvas.draw_grid(
             margin,
             width - margin,
             margin,
             height - margin,
-            num_ticks,
-            num_ticks,
+            num_grid_horizontal,
+            num_grid_vertical,
             "lightgray",
         );
 
@@ -80,9 +84,9 @@ impl Drawer for Quadrant1Graph {
         svg_canvas.draw_line(margin, margin, margin, height - margin, "black", 2.0); // Y-axis
 
         // Draw tick marks and values for X-axis
-        for i in 0..=num_ticks {
-            let value = x_min + i as f64 * (x_max - x_min) / num_ticks as f64;
-            let x = margin + i as f64 * (width - 2.0 * margin) / num_ticks as f64;
+        for i in 0..=num_axis_ticks {
+            let value = x_min + i as f64 * (x_max - x_min) / num_axis_ticks as f64;
+            let x = margin + i as f64 * (width - 2.0 * margin) / num_axis_ticks as f64;
 
             svg_canvas.draw_text(
                 x,
@@ -94,9 +98,9 @@ impl Drawer for Quadrant1Graph {
         }
 
         // Draw tick marks and values for Y-axis
-        for i in 0..=num_ticks {
-            let value = y_min + i as f64 * (y_max - y_min) / num_ticks as f64;
-            let y = height - margin - i as f64 * (height - 2.0 * margin) / num_ticks as f64;
+        for i in 0..=num_axis_ticks {
+            let value = y_min + i as f64 * (y_max - y_min) / num_axis_ticks as f64;
+            let y = height - margin - i as f64 * (height - 2.0 * margin) / num_axis_ticks as f64;
 
             svg_canvas.draw_text(
                 margin - font_size * 2.0,
@@ -136,37 +140,63 @@ impl Drawer for Quadrant1Graph {
                     let x2 = margin + (p2.0 - x_min) * scale_x;
                     let y2 = height - margin - (p2.1 - y_min) * scale_y;
 
-                    svg_canvas.draw_line(
+                    // Use styled line drawing to support solid, dashed, and dotted lines
+                    svg_canvas.draw_line_rgb_styled(
                         x1,
                         y1,
                         x2,
                         y2,
-                        &format!(
-                            "rgb({},{},{})",
-                            dataset.color[0], dataset.color[1], dataset.color[2]
-                        ),
+                        dataset.color,
                         1.5,
+                        dataset.line_type.clone(),
                     );
                 }
             }
 
-            // Optionally draw points
-            for &(x, y) in &dataset.points {
-                let svg_x = margin + (x - x_min) * scale_x;
-                let svg_y = height - margin - (y - y_min) * scale_y;
+            // Draw data point dots for Solid(true) and all Dotted line types
+            let should_draw_dots = match dataset.line_type {
+                crate::figure::utilities::linetype::LineType::Solid(draw_dots) => draw_dots,
+                crate::figure::utilities::linetype::LineType::Dotted(_, _) => true,
+                _ => false,
+            };
 
-                svg_canvas.draw_circle(svg_x, svg_y, 3.0, "black");
+            if should_draw_dots {
+                for &(x, y) in &dataset.points {
+                    let svg_x = margin + (x - x_min) * scale_x;
+                    let svg_y = height - margin - (y - y_min) * scale_y;
+
+                    let color_str = format!(
+                        "rgb({},{},{})",
+                        dataset.color[0], dataset.color[1], dataset.color[2]
+                    );
+                    svg_canvas.draw_circle(svg_x, svg_y, 3.0, &color_str);
+                }
             }
         }
 
-        // Draw legend in the bottom-left corner
+        // Draw legend in the bottom-left corner with wrapping support
         let legend_x_start = margin + 10.0; // Start inside chart area with margin spacing
-        let legend_y = height - margin + font_size * 1.5 + 10.0; // Position below x-axis labels
-        let mut legend_x = legend_x_start; // Reset starting position for legend items
+        let legend_line_height = font_size + 10.0; // Height of each legend row
+
+        let mut legend_x = legend_x_start;
+        // Position legend below x-axis labels: x-axis labels start at (height - margin + font_size * 1.5)
+        // and extend down by font_size. Add padding for safety.
+        let mut legend_y = height - margin + font_size * 1.5 + font_size + 20.0;
         let mut elements = String::new();
         let legend_bg_color = svg_canvas.background_color.clone();
+        let mut row_positions = vec![(legend_x_start, legend_y)]; // Track position of each row
 
         for dataset in &self.datasets {
+            let item_width = font_size * 5.0 + dataset.label.len() as f64 * font_size * 0.6;
+
+            // Check if current item exceeds the available width
+            if legend_x + item_width > width - margin && legend_x != legend_x_start {
+                // Wrap to next row
+                legend_x = legend_x_start;
+                legend_y -= legend_line_height;
+                row_positions.push((legend_x, legend_y));
+            }
+
             // Draw color square
             elements.push_str(&format!(
                 r#"<rect x="{:.2}" y="{:.2}" width="{:.2}" height="{:.2}" fill="rgb({},{},{})"/>"#,
@@ -192,17 +222,51 @@ impl Drawer for Quadrant1Graph {
             ));
 
             // Update legend_x to position the next item
-            legend_x += font_size * 5.0 + dataset.label.len() as f64 * font_size * 0.6;
+            legend_x += item_width;
         }
 
-        // Draw a background rectangle for the legend
-        let legend_width = legend_x - legend_x_start + 5.0;
-        let legend_height = font_size + 10.0;
+        // Calculate overall legend bounds
+        let mut max_row_width = 0.0;
+        let mut current_row_idx = 0;
+        let mut legend_x = legend_x_start;
+
+        for dataset in &self.datasets {
+            let item_width = font_size * 5.0 + dataset.label.len() as f64 * font_size * 0.6;
+
+            // Check if we need to wrap
+            if legend_x + item_width > width - margin && legend_x != legend_x_start {
+                current_row_idx += 1;
+                legend_x = legend_x_start;
+            }
+
+            let row_width = legend_x + item_width - row_positions[current_row_idx].0;
+            if row_width > max_row_width {
+                max_row_width = row_width;
+            }
+            legend_x += item_width;
+        }
+
+        // Draw single background rectangle for entire legend
+        let first_row_y = row_positions[0].1;
+        let last_row_y = if row_positions.len() > 1 {
+            row_positions[row_positions.len() - 1].1
+        } else {
+            first_row_y
+        };
+
+        let legend_rect_x = legend_x_start - 5.0;
+        // In SVG, Y increases downward. When wrapping, last_row_y < first_row_y (top is smaller Y)
+        let min_y = first_row_y.min(last_row_y);
+        let max_y = first_row_y.max(last_row_y);
+        let legend_rect_y = min_y - 5.0;
+        let legend_rect_width = max_row_width + 10.0;
+        let legend_rect_height = (max_y - min_y) + legend_line_height + 10.0;
+
         svg_canvas.draw_rect(
-            legend_x_start - 5.0,
-            legend_y - 5.0,
-            legend_width,
-            legend_height,
+            legend_rect_x,
+            legend_rect_y,
+            legend_rect_width,
+            legend_rect_height,
             &legend_bg_color,
             "black",
             0.5,
