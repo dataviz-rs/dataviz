@@ -5,6 +5,10 @@
 ### Added
 - `Figure::resize(width, height)` (figures embedded in resizable panels).
 
+### Changed
+- With `Axes::auto_scale_y` on, `zoom_at`, `pan_by` and `zoom_to_box`
+  only change x; the y-axes keep fitting the visible data.
+
 ### Fixed
 - `Figure::alt_text`: sentences start with a capital letter.
 

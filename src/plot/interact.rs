@@ -13,6 +13,9 @@
 //! if let Some(h) = fig.hover(300.0, 200.0) { println!("{}", h.text); }
 //! fig.reset_view();
 //! ```
+//!
+//! With [`Axes::auto_scale_y`] on, zooming and panning only change x and
+//! the y-axes keep fitting the visible data.
 
 use super::axes::{Axes, AxesKind, Layout};
 use super::figure::Figure;
@@ -33,10 +36,13 @@ impl Axes {
         let (x0, x1) = zoom(&lay.x, px);
         let (y0, y1) = zoom(&lay.y, py);
         self.x.limits(x0, x1);
-        self.y.limits(y0, y1);
-        if let Some(m) = &lay.y2 {
-            let (a, b) = zoom(m, py);
-            self.y2.limits(a, b);
+        // With auto scale the y-axes keep following the data.
+        if !self.fit_y {
+            self.y.limits(y0, y1);
+            if let Some(m) = &lay.y2 {
+                let (a, b) = zoom(m, py);
+                self.y2.limits(a, b);
+            }
         }
     }
 
@@ -52,10 +58,13 @@ impl Axes {
         let (x0, x1) = shift(&lay.x, dx);
         let (y0, y1) = shift(&lay.y, dy);
         self.x.limits(x0, x1);
-        self.y.limits(y0, y1);
-        if let Some(m) = &lay.y2 {
-            let (a, b) = shift(m, dy);
-            self.y2.limits(a, b);
+        // With auto scale the y-axes keep following the data.
+        if !self.fit_y {
+            self.y.limits(y0, y1);
+            if let Some(m) = &lay.y2 {
+                let (a, b) = shift(m, dy);
+                self.y2.limits(a, b);
+            }
         }
     }
 
@@ -67,10 +76,13 @@ impl Axes {
         let (x0, x1) = (lay.x.value(a.0), lay.x.value(b.0));
         let (y0, y1) = (lay.y.value(a.1), lay.y.value(b.1));
         self.x.limits(x0.min(x1), x0.max(x1));
-        self.y.limits(y0.min(y1), y0.max(y1));
-        if let Some(m) = &lay.y2 {
-            let (u, v) = (m.value(a.1), m.value(b.1));
-            self.y2.limits(u.min(v), u.max(v));
+        // With auto scale the y-axes keep following the data.
+        if !self.fit_y {
+            self.y.limits(y0.min(y1), y0.max(y1));
+            if let Some(m) = &lay.y2 {
+                let (u, v) = (m.value(a.1), m.value(b.1));
+                self.y2.limits(u.min(v), u.max(v));
+            }
         }
     }
 }
