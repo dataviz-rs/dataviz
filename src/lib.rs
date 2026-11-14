@@ -29,6 +29,7 @@ pub mod plot;
 
 /// Everything needed for the [`plot`] API: `use dataviz::prelude::*;`
 pub mod prelude {
+    pub use crate::plot::a11y::Cvd;
     pub use crate::plot::anim::Recorder;
     pub use crate::plot::series::bar::{BarMode, LabelPosition};
     pub use crate::plot::series::line::Step;
