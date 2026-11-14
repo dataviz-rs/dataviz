@@ -150,6 +150,138 @@ fn parse_records(text: &str, delim: char) -> Vec<Vec<String>> {
     rows
 }
 
+/// Records live data to a CSV file as it arrives: buffered, flushed at most
+/// once a second and when dropped, appending to an existing file (the
+/// header is written only to a new or empty file). Timestamps are written
+/// as `YYYY-MM-DD HH:MM:SS.mmm`, which [`Table::time_column`] reads back.
+///
+/// ```
+/// use dataviz::plot::data::{CsvLog, Table};
+/// use dataviz::plot::time::datetime;
+/// let path = std::env::temp_dir().join("dataviz_csvlog_doc.csv");
+/// let _ = std::fs::remove_file(&path);
+/// {
+///     let mut log = CsvLog::create(&path, &["time", "price", "qty"]).unwrap();
+///     log.record(datetime(2024, 5, 1, 12, 0, 1.25), &[65000.5, 0.01]).unwrap();
+///     log.row(["2024-05-01 12:00:02", "65001", "0.5"]).unwrap();
+/// } // flushed on drop
+/// let t = Table::read(&path).unwrap();
+/// assert_eq!(t.column("price").unwrap(), vec![65000.5, 65001.0]);
+/// assert_eq!(t.time_column("time").unwrap()[0], datetime(2024, 5, 1, 12, 0, 1.25));
+/// ```
+pub struct CsvLog {
+    out: std::io::BufWriter<std::fs::File>,
+    path: std::path::PathBuf,
+    rows: u64,
+    last_flush: std::time::Instant,
+}
+
+impl CsvLog {
+    /// Opens `path` for appending (created if missing) with column names
+    /// `header`.
+    pub fn create(path: impl AsRef<Path>, header: &[&str]) -> std::io::Result<Self> {
+        let path = path.as_ref().to_path_buf();
+        if let Some(dir) = path.parent().filter(|d| !d.as_os_str().is_empty()) {
+            std::fs::create_dir_all(dir)?;
+        }
+        let file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)?;
+        let empty = file.metadata()?.len() == 0;
+        let mut log = CsvLog {
+            out: std::io::BufWriter::new(file),
+            path,
+            rows: 0,
+            last_flush: std::time::Instant::now(),
+        };
+        if empty {
+            log.row(header.iter())?;
+            log.rows = 0;
+        }
+        Ok(log)
+    }
+
+    /// Writes a row: the time `t` (seconds since 1970) and `values` (NaN as
+    /// an empty cell).
+    pub fn record(&mut self, t: f64, values: &[f64]) -> std::io::Result<()> {
+        use std::io::Write;
+        write!(self.out, "{}", format_timestamp(t))?;
+        for v in values {
+            if v.is_finite() {
+                write!(self.out, ",{v}")?;
+            } else {
+                self.out.write_all(b",")?;
+            }
+        }
+        self.end_row()
+    }
+
+    /// Writes a row of arbitrary fields (quoted when they contain a comma,
+    /// quote or line break).
+    pub fn row<T: std::fmt::Display>(
+        &mut self,
+        fields: impl IntoIterator<Item = T>,
+    ) -> std::io::Result<()> {
+        use std::io::Write;
+        for (i, f) in fields.into_iter().enumerate() {
+            if i > 0 {
+                self.out.write_all(b",")?;
+            }
+            let f = f.to_string();
+            if f.contains([',', '"', '\n', '\r']) {
+                write!(self.out, "\"{}\"", f.replace('"', "\"\""))?;
+            } else {
+                self.out.write_all(f.as_bytes())?;
+            }
+        }
+        self.end_row()
+    }
+
+    fn end_row(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        self.out.write_all(b"\n")?;
+        self.rows += 1;
+        if self.last_flush.elapsed() >= std::time::Duration::from_secs(1) {
+            self.flush()?;
+        }
+        Ok(())
+    }
+
+    /// Writes buffered rows to the file.
+    pub fn flush(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        self.last_flush = std::time::Instant::now();
+        self.out.flush()
+    }
+
+    /// Rows written since the log was opened.
+    pub fn rows(&self) -> u64 {
+        self.rows
+    }
+
+    /// The file.
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+impl Drop for CsvLog {
+    fn drop(&mut self) {
+        let _ = self.flush();
+    }
+}
+
+/// `YYYY-MM-DD HH:MM:SS.mmm` for a timestamp in seconds since 1970.
+pub fn format_timestamp(t: f64) -> String {
+    if !t.is_finite() {
+        return String::new();
+    }
+    let ms = ((t * 1000.0).round() as i64).rem_euclid(1000);
+    let whole = (t * 1000.0).round().div_euclid(1000.0);
+    format!("{}.{ms:03}", time::format_time(whole, "%Y-%m-%d %H:%M:%S"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

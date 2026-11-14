@@ -67,6 +67,11 @@ impl Candles {
 }
 
 impl Series for Candles {
+    fn y_range_in(&self, x0: f64, x1: f64) -> Option<Option<(f64, f64)>> {
+        Some(super::y_range_where(&self.x, x0, x1, |i| {
+            (self.low[i], self.high[i])
+        }))
+    }
     fn extent(&self) -> Option<Extent> {
         let half = self.spacing() * self.width / 2.0;
         let mut e: Option<Extent> = None;

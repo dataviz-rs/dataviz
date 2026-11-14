@@ -156,6 +156,16 @@ impl Bars {
 }
 
 impl Series for Bars {
+    fn y_range_in(&self, x0: f64, x1: f64) -> Option<Option<(f64, f64)>> {
+        if self.horizontal {
+            return None;
+        }
+        let x: Vec<f64> = self.pos.iter().map(|p| p + self.offset).collect();
+        Some(super::y_range_where(&x, x0, x1, |i| {
+            let (b, h) = (self.bottoms.get(i).copied().unwrap_or(0.0), self.heights[i]);
+            (b.min(b + h), b.max(b + h))
+        }))
+    }
     fn extent(&self) -> Option<Extent> {
         let mut e: Option<Extent> = None;
         for (_, a, b, lo, hi) in self.geometry() {
