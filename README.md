@@ -10,7 +10,7 @@
     <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
 </a>
 
-**Fast, pure-Rust plotting: 50+ chart types, interactive windows, live
+**Fast, pure-Rust plotting: 80+ chart types, interactive windows, live
 data, animations, maps, math and every language — with the least CPU and
 memory of the Rust plotting libraries.**
 
@@ -35,9 +35,16 @@ memory of the Rust plotting libraries.**
   matplotlib, and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
   Optional multi-core and GPU backends.
-- **Everything in one crate.** 50+ chart types — lines, bars, statistics,
-  finance with indicators, heatmaps, contours, 3D, maps, sankey, networks —
-  with themes, subplots, shared and broken axes, legends and colorbars.
+- **Everything in one crate.** 80+ chart types — lines, bars, statistics,
+  heatmaps, contours, 3D, maps, sankey, networks — plus ready-made charts
+  for **data scientists** (ROC/PR curves, confusion matrices, regression
+  bands, density contours, dendrograms), **biologists and clinicians**
+  (DNA sequence logos, gene tracks, Manhattan, volcano, clustermaps,
+  single-cell UMAPs, dose-response, Kaplan-Meier, forest plots),
+  **engineers** (FFT spectra, spectrograms, Bode, Nyquist, Smith charts)
+  and **traders** (candlesticks,
+  Ichimoku, VWAP, RSI, MACD, volume profile, order book depth, drawdown,
+  Renko), with themes, subplots, shared and broken axes.
 - **Interactive and live.** `fig.show()` opens a window with zoom, pan, a
   crosshair with axis values, hover readouts, legend toggling, a range
   slider, measurement and selection; `fig.show_live()` streams data with
@@ -103,6 +110,7 @@ fig.show_live("title", 30, |fig| { /* push new points */ true })?;
 | Shift+drag / Ctrl+drag | measure Δx, Δy and % / select a box (`fig.selection()`) |
 | `A`, `R` | auto scale y to the visible data, follow live data again |
 | `S`, Shift+S, Ctrl+C, `V` | save PNG, SVG/PDF, copy to the clipboard, record a GIF |
+| 3D: drag, wheel, `X`/`Y`/`Z` | turn the scene, zoom, rotate 15° around that axis (Shift = reverse) |
 
 Live charts keep the view you zoomed to while data arrives (y follows the
 visible data), stream with `Line::push` / `keep_last` / `keep_since`, and
@@ -116,18 +124,94 @@ and click work in your own GUI or web page through
 | Category | Charts |
 |---|---|
 | Lines & areas | line, step, smooth spline, area, fill-between, stacked / 100 % area, function plot, sparkline |
-| Points | scatter, colormapped scatter, bubble, 3D scatter |
+| Points | scatter, colormapped scatter, bubble |
 | Bars | vertical, horizontal, grouped, stacked, percent, overlay, value labels, waterfall, Gantt, lollipop |
 | Distributions | histogram (bin rules, density, cumulative, step), KDE, ECDF, box (notches), violin, strip, swarm, ridgeline, Q-Q, 2D histogram, hexbin |
 | Uncertainty & fits | error bars, error bands, polynomial regression with R², moving averages |
-| Finance | candlestick, OHLC, Heikin-Ashi, Bollinger bands, RSI, MACD |
-| Grids & fields | heatmap, correlation matrix, calendar heatmap, image, contour lines and fills, quiver, 3D surface/wireframe |
+| Machine learning | ROC curve (AUC), precision-recall curve, confusion matrix, regression with confidence band, LOESS, 2D density contours, dendrogram |
+| Biology & medicine | 3D DNA double helix, molecules from PDB/XYZ (ball-and-stick, sticks, space-filling, backbone), 3D cells and organoids, 3D UMAP, DNA/protein sequence logo, gene track, Manhattan plot, p-value Q-Q, volcano plot, MA plot, clustermap, single-cell embedding (UMAP/t-SNE), dose-response (IC50), Kaplan-Meier survival, forest plot |
+| Signals & control | FFT spectrum, spectrogram, Bode plot, Nyquist plot, Smith chart |
+| Finance & trading | candlestick, OHLC, Heikin-Ashi, Renko, Bollinger bands, Ichimoku cloud, VWAP, RSI, MACD, Stochastic, ATR, volume profile, order book depth, drawdown, trading-day axis |
+| Grids & fields | heatmap, correlation matrix, calendar heatmap, image, contour lines and fills, quiver |
+| 3D | surface, wireframe, scatter, line, spheres, meshes, ellipsoids, text; one shared scene per plot with depth sorting, lighting, perspective and free rotation around x, y and z |
 | Maps | built-in world map, choropleth by ISO code or name, points and great-circle routes, GeoJSON shapes; Robinson, Natural Earth, equirectangular, Mercator |
 | Parts of a whole | pie, donut, treemap, sunburst, funnel, gauge |
 | Polar | polar line/scatter, radar, rose / wind rose |
 | Relations & flows | sankey, network graph (force-directed), parallel coordinates |
 | Layouts | subplots with spans, shared axes, broken axes, secondary y-axis, facets (small multiples), pair plot, aligned panels |
 | Annotations | text, arrows, reference lines, shaded spans, rectangles |
+
+### For data scientists
+
+```rust ignore
+ax.roc_curve("gradient boosting", &labels, &scores);    // legend shows the AUC
+ax.pr_curve("gradient boosting", &labels, &scores);     // and the average precision
+ax.confusion_matrix(["cat", "dog", "bird"], &actual, &predicted, true);
+ax.regplot(&x, &y);                                     // fit, 95 % band and R²
+ax.density_contour(&x, &y);                             // 2D KDE, millions of points
+ax.dendrogram(&names, &features);                       // hierarchical clustering
+```
+
+### For biologists and clinicians
+
+```rust ignore
+ax.sequence_logo(&aligned_sequences);                   // DNA, RNA or protein motif
+ax.gene_track(&genes);                                  // exons, introns, strand
+ax.manhattan(&chromosome, &position, &p_values);        // GWAS
+ax.volcano(&genes, &log2_fc, &p_values, 1.0, 1e-3, 10); // top 10 genes named
+fig.clustermap(&genes, &samples, &expression);          // clustered heatmap
+ax.embedding(&umap_x, &umap_y, &cell_types);            // single-cell clusters
+ax.dose_response(&concentration, &viability);           // 4PL fit and IC50
+ax.kaplan_meier([("control", t1, e1), ("treated", t2, e2)]); // log-rank p
+ax.forest_plot(&studies, &hr, &low, &high, 1.0);        // meta-analysis
+```
+
+### 3D: rotate around x, y and z
+
+<img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology-3d/screenshots/rotate.gif" alt="DNA and a cell turning around the z, x and y axes" width="100%">
+
+```rust ignore
+ax.dna_helix("ATGCGTATAAAAGCC").highlight(5..11, "#ffd400", Some("TATA box"));
+ax.molecule(Molecule::from_pdb(&pdb)).style(MolStyle::Backbone).coloring(MolColor::Rainbow);
+ax.ellipsoid([0.0, 0.0, 0.0], [10.0, 8.0, 6.0]).opacity(0.16);   // a cell membrane
+ax.spheres3d(&x, &y, &z, [1.0]).values(&expression, Colormap::Viridis);
+ax.embedding3d(&umap1, &umap2, &umap3, &cell_types);
+ax.surface_fn(|x, y| (x * y).sin(), (-3.0, 3.0), (-3.0, 3.0), 60);
+ax.rotate(Axis3::X, 30.0).roll(10.0).perspective(0.4);       // or ax.camera(azimuth, elevation)
+```
+
+All 3D series of a plot share one scene, sorted by depth, lit from the
+upper left and optionally faded with distance (`depth_cue`). The camera is
+a rotation matrix, so it turns freely around any axis. In a window: drag
+to turn, wheel to zoom, `X`/`Y`/`Z` rotate by 15° (Shift+key the other
+way), `R` resets, hover names the atom, base pair or point. A frame of the
+1BNA DNA structure (486 atoms) takes about 12 ms, a 10 000-point 3D
+scatter 7 ms (800×600, one core).
+
+### For engineers
+
+```rust ignore
+use dataviz::plot::series::signal::{freq_response, logspace};
+ax.spectrum(&signal, 8000.0);                           // FFT amplitude spectrum
+ax.spectrogram(&signal, 8000.0, 512, 64);               // STFT power in dB
+let w = logspace(0.01, 100.0, 400);
+fig.bode("plant", &w, &freq_response(&[1.0], &[1.0, 0.4, 1.0], &w));
+ax.nyquist(&freq_response(&[1.0], &[1.0, 0.4, 1.0], &w));
+ax.smith(&impedances);                                  // normalized z on a Smith chart
+```
+
+### For traders
+
+```rust ignore
+let x = ax.trading_axis(&times, "%d %b");               // no weekend gaps
+ax.candlestick(&x, &open, &high, &low, &close);
+ax.ichimoku(&x, &high, &low, &close);
+ax.vwap(&x, &high, &low, &close, &volume);
+profile.volume_profile(&close, &volume, 24);            // POC and value area
+osc.stochastic(&x, &high, &low, &close, 14, 3);
+book.depth_chart(&bids, &asks);
+dd.drawdown(&x, &equity);                               // max drawdown in the legend
+```
 
 ### Statistics and finance
 
@@ -268,7 +352,15 @@ Every image links to its example in
 <table>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-interactive"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-interactive/screenshots/interactive.gif" alt="Zoom, pan and range slider" width="100%"><br><sub>Zoom, pan and range slider</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-streaming"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-streaming/screenshots/streaming.gif" alt="Live dashboard (streaming data)" width="100%"><br><sub>Live dashboard (streaming data)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-animation"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-animation/screenshots/animation.gif" alt="Animations (GIF, APNG, MP4)" width="100%"><br><sub>Animations (GIF, APNG, MP4)</sub></a></td></tr>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-binance"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-binance/screenshots/binance.png" alt="Live Binance BTC dashboard" width="100%"><br><sub>Live Binance BTC dashboard</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-html"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-html/screenshots/html.png" alt="Interactive HTML (hover, crosshair)" width="100%"><br><sub>Interactive HTML (hover, crosshair)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-wasm"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-wasm/screenshots/wasm.png" alt="In the browser (WebAssembly)" width="100%"><br><sub>In the browser (WebAssembly)</sub></a></td></tr>
-<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-egui"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-egui/screenshots/egui.png" alt="Inside an egui app" width="100%"><br><sub>Inside an egui app</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-backends"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-backends/screenshots/backends.png" alt="CPU, multi-core and GPU backends" width="100%"><br><sub>CPU, multi-core and GPU backends</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-egui"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-egui/screenshots/egui.png" alt="Inside an egui app" width="100%"><br><sub>Inside an egui app</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-backends"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-backends/screenshots/backends.png" alt="CPU, multi-core and GPU backends" width="100%"><br><sub>CPU, multi-core and GPU backends</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-terminal"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-terminal/screenshots/terminal.png" alt="Charts in the terminal" width="100%"><br><sub>Charts in the terminal</sub></a></td></tr>
+</table>
+
+### For data scientists, biologists, engineers and traders
+
+<table>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-data-science"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-data-science/screenshots/data_science.png" alt="Data science: ROC, confusion matrix, regression" width="100%"><br><sub>Data science: ROC, confusion matrix, regression</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology/screenshots/biology.png" alt="Biology: DNA logo, GWAS, volcano, UMAP, survival" width="100%"><br><sub>Biology: DNA logo, GWAS, volcano, UMAP, survival</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology/screenshots/clustermap.png" alt="Clustermap of gene expression" width="100%"><br><sub>Clustermap of gene expression</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology-3d"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology-3d/screenshots/rotate.gif" alt="3D DNA and cell turning around x, y, z" width="100%"><br><sub>3D DNA and cell turning around x, y, z</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology-3d"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology-3d/screenshots/biology_3d.png" alt="3D: DNA, PDB molecules, cell, organoid, UMAP" width="100%"><br><sub>3D: DNA, PDB molecules, cell, organoid, UMAP</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-engineering"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-engineering/screenshots/engineering.png" alt="Engineering: spectrum, spectrogram, Nyquist, Smith" width="100%"><br><sub>Engineering: spectrum, spectrogram, Nyquist, Smith</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-engineering"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-engineering/screenshots/bode.png" alt="Bode plot" width="100%"><br><sub>Bode plot</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-trading"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-trading/screenshots/trading.png" alt="Trading: Ichimoku, VWAP, volume profile, depth" width="100%"><br><sub>Trading: Ichimoku, VWAP, volume profile, depth</sub></a></td></tr>
 </table>
 
 ### Lines, points and bars
@@ -297,7 +389,7 @@ Every image links to its example in
 
 <table>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-heatmap"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-heatmap/screenshots/heatmap.png" alt="Heatmap (correlation matrix)" width="100%"><br><sub>Heatmap (correlation matrix)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-contour"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-contour/screenshots/contour.png" alt="Contour plots" width="100%"><br><sub>Contour plots</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-image"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-image/screenshots/image.png" alt="Images" width="100%"><br><sub>Images</sub></a></td></tr>
-<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-three-d"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-three-d/screenshots/three_d.png" alt="3D surface and scatter" width="100%"><br><sub>3D surface and scatter</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-three-d"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-three-d/screenshots/three_d.png" alt="3D surface, Lorenz attractor, mesh" width="100%"><br><sub>3D surface, Lorenz attractor, mesh</sub></a></td></tr>
 </table>
 
 ### Maps
