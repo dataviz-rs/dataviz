@@ -218,6 +218,8 @@ pub enum Node {
         opacity: f64,
         /// Tooltip shown by SVG viewers (`<title>`).
         tooltip: Option<String>,
+        /// Element id in SVG output (e.g. `s0-1`: plot 0, series 1).
+        id: Option<String>,
     },
     /// The same node drawn at many positions (markers): `template` is
     /// drawn translated by each offset. Compact (8 bytes per position) and
@@ -596,8 +598,12 @@ impl SvgWriter<'_> {
                 clip,
                 opacity,
                 tooltip,
+                id,
             } => {
                 let mut attrs = String::new();
+                if let Some(id) = id {
+                    let _ = write!(attrs, r#" id="{}""#, esc(id));
+                }
                 if let Some((x, y, w, h)) = clip {
                     self.clip_id += 1;
                     let id = self.clip_id;
@@ -791,6 +797,7 @@ mod tests {
             clip: Some((0.0, 0.0, 5.0, 5.0)),
             opacity: 0.5,
             tooltip: Some("tip".into()),
+            id: None,
         });
         let svg = s.to_svg();
         assert!(svg.contains("a&lt;b"));

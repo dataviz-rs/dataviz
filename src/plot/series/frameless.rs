@@ -191,6 +191,7 @@ impl Series for Pie {
                     short(self.values[i]),
                     frac * 100.0
                 )),
+                id: None,
             });
             if self.show_percent && frac > 0.03 {
                 let rr = if self.hole > 0.0 {
@@ -483,6 +484,7 @@ impl Series for Treemap {
                 clip: None,
                 opacity: 1.0,
                 tooltip: Some(format!("{label}: {}", short(value))),
+                id: None,
             });
             let tc = color.contrasting_text();
             let has_children = self.cells_children(&label, depth);
@@ -646,6 +648,7 @@ impl Series for Sunburst {
                 clip: None,
                 opacity: 1.0,
                 tooltip: Some(format!("{label}: {}", short(value))),
+                id: None,
             });
             let mid = (a0 + a1) / 2.0;
             let rr = r0 + ring / 2.0;
@@ -907,6 +910,7 @@ impl Series for Sankey {
                     lay.names[*b],
                     short(*v)
                 )),
+                id: None,
             });
         }
         for (i, r) in lay.rects.iter().enumerate() {
@@ -1315,6 +1319,7 @@ impl Series for Network {
                 clip: None,
                 opacity: 1.0,
                 tooltip: Some(format!("{} (degree {})", self.nodes[i], degree[i])),
+                id: None,
             });
             ctx.push(text_node(
                 p.0,
