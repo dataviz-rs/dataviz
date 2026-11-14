@@ -255,6 +255,14 @@ impl Figure {
         (self.width, self.height)
     }
 
+    /// Changes the size in pixels (e.g. when the panel showing the figure
+    /// is resized).
+    pub fn resize(&mut self, width: u32, height: u32) -> &mut Self {
+        self.width = width.max(1) as f64;
+        self.height = height.max(1) as f64;
+        self
+    }
+
     pub(crate) fn fonts(&self) -> Arc<FontSet> {
         FontSet::resolve(self.theme.font.as_deref())
     }

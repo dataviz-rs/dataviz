@@ -1,6 +1,9 @@
 # Changelog
 
-## 0.15.1
+## 0.16.0
+
+### Added
+- `Figure::resize(width, height)` (figures embedded in resizable panels).
 
 ### Fixed
 - `Figure::alt_text`: sentences start with a capital letter.
