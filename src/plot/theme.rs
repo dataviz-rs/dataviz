@@ -273,13 +273,4 @@ impl Theme {
             ("solarized", Theme::solarized()),
         ]
     }
-
-    /// The `i`-th palette color.
-    pub(crate) fn color(&self, i: usize) -> Color {
-        if self.palette.is_empty() {
-            Color::BLUE
-        } else {
-            self.palette[i % self.palette.len()]
-        }
-    }
 }

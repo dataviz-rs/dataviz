@@ -112,7 +112,9 @@ impl Pixels {
     /// `0x00RRGGBB` pixels composited on white (the layout `minifb` expects).
     pub fn to_0rgb(&self) -> Vec<u32> {
         self.rgba
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|p| {
                 let a = p[3] as u32;
                 let c = |v: u8| (v as u32 * a + 255 * (255 - a)) / 255;

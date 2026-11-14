@@ -1,5 +1,57 @@
 # Changelog
 
+## 0.2.0
+
+A complete plotting library in the new `dataviz::plot` module (with
+`dataviz::prelude`). The 0.1 API (`dataviz::figure::*`) is unchanged and
+still supported (`cargo semver-checks`: no breaking change).
+
+### Added
+- **Architecture**: every chart draws into a backend-independent scene that
+  is written as **SVG**, rasterized with resvg to anti-aliased **PNG, JPEG,
+  WebP, BMP** or raw RGBA (any DPI scale), converted to **PDF** (`pdf`
+  feature), shown in an **interactive window** (`window` feature, on by
+  default) or printed in the **terminal** (24-bit half blocks or braille).
+- **Figures**: subplot grids with spans, shared axes, titles, themes, custom
+  fonts (system sans-serif by default, same metrics for layout, SVG and
+  raster).
+- **Axes**: linear, log (any base), symmetric-log, date/time and categorical
+  scales; automatic nice limits with margins and sticky edges; manual limits,
+  inverted axes, equal aspect, secondary y-axis; major/minor ticks, explicit
+  or labelled ticks, tick formats (auto, decimals, percent, SI, scientific,
+  time, prefix/suffix, custom closure), automatic label thinning/rotation.
+- **Styling**: line width, dash styles, markers (10 shapes), opacity,
+  palettes (Tab10, Okabe–Ito, Set2, Dark2, Tab20, Neon, Muted), 14 colormaps
+  with colorbars, CSS color names/hex/rgba parsing, 7 themes (light, dark,
+  minimal, ggplot, seaborn, publication, solarized), legends in 10 positions
+  with columns.
+- **Chart types**: line (steps, monotone smoothing, min/max decimation for
+  huge data), area, fill-between, stacked and 100 % stacked areas, scatter
+  (colormapped, bubble), bars (vertical/horizontal, grouped, stacked,
+  percent, overlay, value labels, rounded), histogram (bin rules, density,
+  cumulative, step), 2D histogram, hexbin, box plot (notches, means,
+  outliers), violin, error bars and bands, KDE, ECDF, polynomial regression,
+  moving average, heatmap (annotated), image display, contour lines and
+  filled contours, candlestick and OHLC, stem/lollipop, waterfall, quiver,
+  function plots, Gantt, sparklines, pie/donut, polar line/scatter, radar,
+  rose/polar bar, gauge, funnel, treemap, sunburst, sankey, network graph,
+  parallel coordinates, calendar heatmap, 3D surface/wireframe, 3D scatter
+  and line.
+- **Annotations**: text, arrows, horizontal/vertical lines, shaded spans,
+  rectangles; SVG tooltips (`<title>`).
+- **Interactivity**: `Figure::show` with wheel zoom, drag pan, box zoom,
+  reset, hover tooltips and PNG export; `Figure::show_live` for streaming
+  data (`Line::push` / `keep_last`).
+- **Data & statistics**: generic numeric inputs (slices, vectors, ranges,
+  iterators of any number type), CSV/TSV loading with dates
+  (`plot::data::Table`), statistics helpers (quantiles, box stats, KDE,
+  histogram bin rules, regression, moving average, ECDF, LTTB).
+- Custom chart types by implementing `plot::Series`.
+
+### Changed
+- `minifb` is now optional behind the default `window` feature
+  (`default-features = false` builds headless / WASM-friendly).
+
 ## 0.1.11
 
 ### Fixed

@@ -204,7 +204,7 @@ pub fn bin_edges(values: &[f64], bins: &Bins) -> Vec<f64> {
             .collect()
     };
     let width = |w: f64| -> Vec<f64> {
-        if !(w > 0.0) || hi == lo {
+        if w.is_nan() || w <= 0.0 || hi == lo {
             return count(1);
         }
         let c = ((hi - lo) / w).ceil().max(1.0) as usize;
@@ -214,7 +214,7 @@ pub fn bin_edges(values: &[f64], bins: &Bins) -> Vec<f64> {
     match bins {
         Bins::Count(c) => count(*c),
         Bins::Width(w) => {
-            if !(*w > 0.0) {
+            if w.is_nan() || *w <= 0.0 {
                 return count(sturges());
             }
             let start = (lo / w).floor() * w;

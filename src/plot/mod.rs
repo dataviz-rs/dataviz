@@ -20,6 +20,7 @@
 pub mod axes;
 pub mod axis;
 pub mod color;
+pub mod data;
 pub mod figure;
 pub mod legend;
 pub mod output;
@@ -28,10 +29,13 @@ pub mod scene;
 pub mod series;
 pub mod stats;
 pub mod style;
+pub mod terminal;
 pub(crate) mod text;
 pub mod theme;
 pub mod ticks;
 pub mod time;
+#[cfg(feature = "window")]
+pub mod window;
 
 pub use axes::{Axes, AxesKind};
 pub use axis::{Axis, TickSpec};

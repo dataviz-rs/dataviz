@@ -28,13 +28,16 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Clippy
-        run: cargo clippy --all-targets -- -D warnings
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
-      - name: Tests (unit, integration, doc, README)
-        run: cargo test --verbose
+      - name: Tests (unit, integration, doc, README; all features)
+        run: cargo test --all-features --verbose
+
+      - name: Headless build (no default features)
+        run: cargo build --no-default-features
 
       - name: Docs
-        run: cargo doc --no-deps
+        run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
 

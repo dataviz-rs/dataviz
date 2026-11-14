@@ -786,9 +786,9 @@ impl Sankey {
         }
         // Sinks go to the last column.
         let max_col = col.iter().copied().max().unwrap_or(0);
-        for i in 0..n {
+        for (i, c) in col.iter_mut().enumerate() {
             if !links.iter().any(|l| l.0 == i) && links.iter().any(|l| l.1 == i) {
-                col[i] = max_col;
+                *c = max_col;
             }
         }
         let inflow = |i: usize| links.iter().filter(|l| l.1 == i).map(|l| l.2).sum::<f64>();
@@ -906,7 +906,6 @@ impl Series for Sankey {
                 )),
             });
         }
-        let max_x = lay.rects.iter().map(|r| r.x).fold(0.0, f64::max);
         for (i, r) in lay.rects.iter().enumerate() {
             ctx.push(Node::Rect {
                 x: r.x,
@@ -917,12 +916,7 @@ impl Series for Sankey {
                 fill: Some(color(i)),
                 stroke: None,
             });
-            let last = (r.x - max_x).abs() < 1e-6;
-            let (x, anchor) = if last {
-                (r.right() + 5.0, Anchor::Start)
-            } else {
-                (r.right() + 5.0, Anchor::Start)
-            };
+            let (x, anchor) = (r.right() + 5.0, Anchor::Start);
             ctx.push(text_node(
                 x,
                 r.y + r.h / 2.0,
@@ -1225,7 +1219,7 @@ impl Network {
                 }
                 let (dx, dy) = (pos[a].0 - pos[b].0, pos[a].1 - pos[b].1);
                 let d = dx.hypot(dy).max(1e-4);
-                let f = d * d / k * w.max(0.1).min(10.0).sqrt();
+                let f = d * d / k * w.clamp(0.1, 10.0).sqrt();
                 disp[a].0 -= dx / d * f;
                 disp[a].1 -= dy / d * f;
                 disp[b].0 += dx / d * f;

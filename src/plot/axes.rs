@@ -226,6 +226,11 @@ impl Axes {
         self.last_n(n)
     }
 
+    /// The `index`-th series if it has type `S` (e.g. to update data).
+    pub fn series_mut<S: Series>(&mut self, index: usize) -> Option<&mut S> {
+        self.series.get_mut(index)?.as_any_mut().downcast_mut::<S>()
+    }
+
     /// Number of series.
     pub fn series_count(&self) -> usize {
         self.series.len()
@@ -508,10 +513,10 @@ impl Axes {
         let (mut a, sa) = lo.unwrap_or((f64::NAN, false));
         let (mut b, sb) = hi.unwrap_or((f64::NAN, false));
         if scale.is_log() {
-            if !(a > 0.0) {
+            if a.is_nan() || a <= 0.0 {
                 a = if b > 0.0 { b / 1000.0 } else { 1.0 };
             }
-            if !(b > 0.0) {
+            if b.is_nan() || b <= 0.0 {
                 b = a * 10.0;
             }
         }
@@ -562,6 +567,7 @@ impl Axes {
         order(lo, hi)
     }
 
+    #[allow(clippy::type_complexity)]
     fn axis_limits(&self) -> ((f64, f64), (f64, f64), Option<(f64, f64)>) {
         let e = self.extent(false);
         let xl = e.map(|e| (e.x_min, e.sticky_x_min));
@@ -1021,6 +1027,8 @@ impl Axes {
                 seg(x, p.bottom(), x, p.bottom() + tl * 0.6, &axis, out);
             }
             let mut last_end = f64::NEG_INFINITY;
+            let mut xt = xt;
+            xt.sort_by(|a, b| lay.x.px(a.0).total_cmp(&lay.x.px(b.0)));
             for (v, label) in xt {
                 let x = lay.x.px(v);
                 if !x.is_finite() || x < p.x - 0.5 || x > p.right() + 0.5 {

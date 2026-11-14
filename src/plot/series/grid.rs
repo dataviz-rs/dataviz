@@ -327,6 +327,7 @@ impl Hexbin {
 
     /// Hexagon centres (data units), cell size and counts (matplotlib-style
     /// lattice in data space, so counts do not depend on the canvas).
+    #[allow(clippy::type_complexity)]
     fn bin(&self) -> Option<((f64, f64), Vec<((f64, f64), usize)>)> {
         let fin = |v: &[f64]| {
             v.iter()

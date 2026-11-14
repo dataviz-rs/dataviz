@@ -127,6 +127,34 @@ impl Line {
         self
     }
 
+    /// Replaces the data.
+    pub fn set_data(&mut self, x: impl super::IntoValues, y: impl super::IntoValues) -> &mut Self {
+        let (x, y) = (x.into_values(), y.into_values());
+        let n = x.len().min(y.len());
+        self.x = x[..n].to_vec();
+        self.y = y[..n].to_vec();
+        self
+    }
+    /// Appends a point (streaming data).
+    pub fn push(&mut self, x: f64, y: f64) -> &mut Self {
+        self.x.push(x);
+        self.y.push(y);
+        self
+    }
+    /// Drops old points so that at most `n` remain (rolling window).
+    pub fn keep_last(&mut self, n: usize) -> &mut Self {
+        if self.x.len() > n {
+            let k = self.x.len() - n;
+            self.x.drain(..k);
+            self.y.drain(..k);
+        }
+        self
+    }
+    /// The data points.
+    pub fn data(&self) -> (&[f64], &[f64]) {
+        (&self.x, &self.y)
+    }
+
     fn points(&self) -> impl Iterator<Item = (f64, f64)> + '_ {
         self.x.iter().copied().zip(self.y.iter().copied())
     }
