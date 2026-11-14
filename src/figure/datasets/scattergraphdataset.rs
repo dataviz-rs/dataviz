@@ -1,6 +1,7 @@
 use crate::figure::utilities::scatterdottype::ScatterDotType;
 
 /// A dataset for scatter graphs, representing points and their appearance.
+#[derive(Clone, Debug, PartialEq)]
 pub struct ScatterGraphDataset {
     /// A collection of `(x, y)` data points for the scatter graph.
     pub points: Vec<(f64, f64)>,

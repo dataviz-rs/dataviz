@@ -2,8 +2,8 @@ use crate::figure::{
     canvas::pixelcanvas::PixelCanvas,
     configuration::figureconfig::FigureConfig,
     datasets::bardataset::BarDataset,
-    drawers::drawer::Drawer,
-    utilities::{axistype::AxisType, orientation::Orientation},
+    render::{pixel, ticks, AxesSpec, Bounds, Ticks},
+    utilities::orientation::Orientation,
 };
 
 /// A grouped bar chart representation, supporting horizontal and vertical orientations.
@@ -83,7 +83,9 @@ impl GroupBarChart {
     /// - `canvas`: The `PixelCanvas` to render the bar chart on.
     ///
     /// # Details
-    /// This method draws a horizontally oriented bar chart with grouped bars.
+    /// This method draws a horizontally oriented bar chart with grouped bars:
+    /// one group per distinct x value of the datasets (from bottom to top),
+    /// one bar per dataset in each group.
     /// It uses the `FigureConfig` settings for appearance and adjusts the canvas accordingly.
     ///
     /// # Example
@@ -91,103 +93,7 @@ impl GroupBarChart {
     /// bar_chart.draw_horizontal(&mut canvas);
     /// ```
     pub fn draw_horizontal(&self, canvas: &mut PixelCanvas) {
-        canvas.clear();
-        self.fill_background(canvas, &self.config);
-
-        let margin = canvas.margin;
-        let width = canvas.width;
-        let height = canvas.height;
-        let cfg = &self.config;
-
-        // Draw the title
-        self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);
-
-        // Get unique y-axis values
-        let unique_y_values: Vec<u32> = self
-            .datasets
-            .iter()
-            .flat_map(|dataset| dataset.data.iter().map(|(y, _)| *y as u32))
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
-
-        let y_count = unique_y_values.len();
-
-        let (x_min, x_max) = self
-            .datasets
-            .iter()
-            .flat_map(|dataset| dataset.data.iter().map(|&(_, y)| y))
-            .fold((0.0_f64, 0.0_f64), |(min, max), y| (min.min(y), max.max(y)));
-
-        // Adjust limits to include (0, 0)
-        let x_min = x_min.min(0.0);
-
-        // Calculate scales
-        let scale_y = (height - 2 * margin) as f64 / y_count as f64;
-        let scale_x = (width - 2 * margin) as f64 / x_max;
-
-        // Draw grids
-        self.draw_grid(canvas, cfg);
-
-        // Draw axes
-        let origin_x = margin;
-        let origin_y = height - margin;
-
-        self.draw_label(canvas, cfg, width - margin / 2, origin_y, &self.y_label);
-        self.draw_label(canvas, cfg, margin, margin / 2, &self.x_label);
-
-        // X-axis ticks
-        let x_tick_step = (x_max - x_min) / cfg.num_axis_ticks as f64;
-        for i in 0..=cfg.num_axis_ticks {
-            let value_x = x_min + i as f64 * x_tick_step;
-            let tick_x = origin_x + ((value_x - x_min) * scale_x) as u32;
-
-            let value_label = format!("{value_x:.1}");
-
-            self.draw_axis_value(canvas, cfg, tick_x, origin_y, &value_label, AxisType::AxisX);
-        }
-
-        // Draw grouped horizontal bars
-        let group_height = scale_y * 0.8; // Height of each group
-        let bar_height = group_height / self.datasets.len() as f64; // Height of each bar
-
-        for (group_index, y_label) in unique_y_values.iter().enumerate() {
-            let group_center_y = origin_y - ((group_index as f64 + 0.5) * scale_y) as u32;
-
-            self.draw_axis_value(
-                canvas,
-                cfg,
-                origin_x - 10,
-                group_center_y,
-                &y_label.to_string(),
-                AxisType::AxisY,
-            );
-
-            // Draw bars for each company in the group
-            for (company_index, dataset) in self.datasets.iter().enumerate() {
-                if let Some(&(_, value)) = dataset
-                    .data
-                    .iter()
-                    .find(|(y, _)| (*y as u32).to_string() == y_label.to_string())
-                {
-                    let bar_length = (value * scale_x) as u32;
-                    let bar_top = group_center_y - (group_height / 2.0) as u32
-                        + (company_index as f64 * bar_height) as u32;
-                    let bar_bottom = bar_top + bar_height as u32;
-
-                    for x in origin_x..(origin_x + bar_length) {
-                        for y in bar_top..bar_bottom {
-                            canvas.draw_pixel(x, y, dataset.color);
-                        }
-                    }
-                }
-            }
-        }
-
-        canvas.draw_vertical_line(margin, cfg.color_axis);
-        canvas.draw_horizontal_line(height - margin, cfg.color_axis);
-        // Draw legend
-        self.draw_legend(canvas);
+        self.draw_pixel(canvas, &Orientation::Horizontal);
     }
 
     /// Draws a vertical grouped bar chart.
@@ -196,7 +102,9 @@ impl GroupBarChart {
     /// - `canvas`: The `PixelCanvas` to render the bar chart on.
     ///
     /// # Details
-    /// This method draws a vertically oriented bar chart with grouped bars.
+    /// This method draws a vertically oriented bar chart with grouped bars:
+    /// one group per distinct x value of the datasets (from left to right),
+    /// one bar per dataset in each group.
     /// It uses the `FigureConfig` settings for appearance and adjusts the canvas accordingly.
     ///
     /// # Example
@@ -204,108 +112,147 @@ impl GroupBarChart {
     /// bar_chart.draw_vertical(&mut canvas);
     /// ```
     pub fn draw_vertical(&self, canvas: &mut PixelCanvas) {
-        canvas.clear();
-        self.fill_background(canvas, &self.config);
+        self.draw_pixel(canvas, &Orientation::Vertical);
+    }
 
-        let margin = canvas.margin;
-        let width = canvas.width;
-        let height = canvas.height;
-        let cfg = &self.config;
-
-        // Draw the title
-        self.draw_title(canvas, cfg, width / 2, margin / 2, &self.title);
-
-        // Get unique x-axis values
-        let unique_x_values: Vec<u32> = self
-            .datasets
-            .iter()
-            .flat_map(|d| d.data.iter().map(|(x, _)| *x as u32))
-            .collect::<std::collections::BTreeSet<_>>()
-            .into_iter()
-            .collect();
-
-        let x_count = unique_x_values.len();
-        let y_max = self
-            .datasets
-            .iter()
-            .flat_map(|d| d.data.iter().map(|(_, y)| *y))
-            .fold(0.0_f64, |max, y| max.max(y));
-
-        // Calculate scales
-        let scale_x = (width - 2 * margin) as f64 / x_count as f64;
-        let scale_y = (height - 2 * margin) as f64 / y_max;
-        let origin_x = margin;
-        let origin_y = height - margin;
-
-        // Draw grids
-        self.draw_grid(canvas, cfg);
-
-        // Draw axes
-        canvas.draw_vertical_line(margin, cfg.color_axis);
-        canvas.draw_vertical_line(width - margin, cfg.color_axis);
-        canvas.draw_horizontal_line(height - margin, cfg.color_axis);
-        canvas.draw_horizontal_line(margin, cfg.color_axis);
-
-        // Draw axis labels
-        self.draw_label(canvas, cfg, width - margin / 2, origin_y, &self.x_label);
-        self.draw_label(canvas, cfg, margin, margin / 2, &self.y_label);
-
-        // Y-axis ticks
-        let y_tick_step = y_max / cfg.num_axis_ticks as f64;
-        for i in 0..=cfg.num_axis_ticks {
-            let value_y = i as f64 * y_tick_step;
-            let tick_y = origin_y - (value_y * scale_y) as u32;
-
-            let value_label = format!("{value_y:.2}");
-
-            self.draw_axis_value(
-                canvas,
-                cfg,
-                origin_x - 5,
-                tick_y,
-                &value_label,
-                AxisType::AxisY,
-            );
+    fn draw_pixel(&self, canvas: &mut PixelCanvas, orientation: &Orientation) {
+        let spec = self.spec(orientation);
+        let m = pixel::begin(canvas, &spec);
+        for bar in self.bars() {
+            let (p0, p1) = bar.corners(orientation);
+            let (x0, y0) = m.point(p0);
+            let (x1, y1) = m.point(p1);
+            pixel::fill_rect(canvas, x0, y0, x1, y1, bar.color);
         }
+        pixel::finish(canvas, &spec, &m);
+    }
 
-        // Draw x-axis labels and grouped bars
-        let group_width = scale_x * 0.8; // Width of each group of bars
-        let bar_width = group_width / self.datasets.len() as f64; // Width of each bar
+    /// Distinct, finite x values of all datasets, sorted ascending.
+    pub(crate) fn categories(&self) -> Vec<f64> {
+        let mut c: Vec<f64> = self
+            .datasets
+            .iter()
+            .flat_map(|d| d.data.iter().map(|&(x, _)| x))
+            .filter(|x| x.is_finite())
+            .collect();
+        c.sort_by(f64::total_cmp);
+        c.dedup();
+        c
+    }
 
-        for (group_index, x_label) in unique_x_values.iter().enumerate() {
-            let group_center_x = origin_x + (((group_index as f64 + 0.5) * scale_x) as u32);
-
-            self.draw_axis_value(
-                canvas,
-                cfg,
-                group_center_x,
-                origin_y,
-                &x_label.to_string(),
-                AxisType::AxisX,
-            );
-
-            // Draw bars for each company in the group
-            for (company_index, dataset) in self.datasets.iter().enumerate() {
-                if let Some(&(_, income)) = dataset
+    /// Every bar, in category units: group `i` spans `i..i + 1`, the bars of
+    /// a group share the middle 80 % of it.
+    pub(crate) fn bars(&self) -> Vec<Bar> {
+        let categories = self.categories();
+        let n = self.datasets.len().max(1) as f64;
+        let width = 0.8 / n;
+        let mut bars = Vec::new();
+        for (i, &category) in categories.iter().enumerate() {
+            for (j, d) in self.datasets.iter().enumerate() {
+                let value = d
                     .data
                     .iter()
-                    .find(|(x, _)| (*x as u32).to_string() == x_label.to_string())
-                {
-                    let bar_height = (income * scale_y) as u32;
-                    let bar_left = group_center_x - (group_width / 2.0) as u32
-                        + (company_index as f64 * bar_width) as u32;
-                    let bar_right = bar_left + bar_width as u32;
-
-                    for x in bar_left..=bar_right {
-                        for y in (origin_y - bar_height)..origin_y {
-                            canvas.draw_pixel(x, y, dataset.color);
-                        }
-                    }
+                    .find(|&&(x, _)| x == category)
+                    .map(|&(_, v)| v);
+                if let Some(value) = value.filter(|v| v.is_finite()) {
+                    let start = i as f64 + 0.1 + j as f64 * width;
+                    bars.push(Bar {
+                        category,
+                        start,
+                        end: start + width,
+                        value,
+                        color: d.color,
+                        label: d.label.clone(),
+                    });
                 }
             }
         }
+        bars
+    }
 
-        // Draw legend
-        self.draw_legend(canvas);
+    /// Bounds used for drawing and hit-testing.
+    pub(crate) fn bounds_for(&self, orientation: &Orientation) -> Bounds {
+        let slots = self.categories().len().max(1) as f64;
+        let values = self
+            .datasets
+            .iter()
+            .flat_map(|d| d.data.iter().map(|&(_, v)| v))
+            .filter(|v| v.is_finite());
+        let (lo, hi) = values.fold((0.0_f64, 0.0_f64), |(lo, hi), v| (lo.min(v), hi.max(v)));
+        let hi = if lo == hi { lo + 1.0 } else { hi };
+        match orientation {
+            Orientation::Vertical => Bounds {
+                x_min: 0.0,
+                x_max: slots,
+                y_min: lo,
+                y_max: hi,
+            },
+            Orientation::Horizontal => Bounds {
+                x_min: lo,
+                x_max: hi,
+                y_min: 0.0,
+                y_max: slots,
+            },
+        }
+    }
+
+    pub(crate) fn spec(&self, orientation: &Orientation) -> AxesSpec<'_> {
+        let categories = Ticks::Labels(
+            self.categories()
+                .iter()
+                .enumerate()
+                .map(|(i, &c)| (i as f64 + 0.5, ticks::format_category(c)))
+                .collect(),
+        );
+        let values = Ticks::Linear(self.config.num_axis_ticks);
+        let legend = self
+            .datasets
+            .iter()
+            .map(|d| (d.label.clone(), d.color))
+            .collect();
+        let bounds = self.bounds_for(orientation);
+        match orientation {
+            Orientation::Vertical => AxesSpec {
+                title: &self.title,
+                x_label: &self.x_label,
+                y_label: &self.y_label,
+                config: &self.config,
+                bounds,
+                x_ticks: categories,
+                y_ticks: values,
+                legend,
+            },
+            // The categories (`x_label`) are on the vertical axis.
+            Orientation::Horizontal => AxesSpec {
+                title: &self.title,
+                x_label: &self.y_label,
+                y_label: &self.x_label,
+                config: &self.config,
+                bounds,
+                x_ticks: values,
+                y_ticks: categories,
+                legend,
+            },
+        }
+    }
+}
+
+/// One bar of a [`GroupBarChart`], in category units.
+pub(crate) struct Bar {
+    pub category: f64,
+    pub start: f64,
+    pub end: f64,
+    pub value: f64,
+    pub color: [u8; 3],
+    pub label: String,
+}
+
+impl Bar {
+    /// Opposite corners of the bar in data coordinates.
+    pub(crate) fn corners(&self, orientation: &Orientation) -> ((f64, f64), (f64, f64)) {
+        match orientation {
+            Orientation::Vertical => ((self.start, 0.0), (self.end, self.value)),
+            Orientation::Horizontal => ((0.0, self.start), (self.value, self.end)),
+        }
     }
 }

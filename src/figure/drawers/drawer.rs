@@ -1,15 +1,22 @@
-use ab_glyph::{FontRef, PxScale};
-use imageproc::drawing::text_size;
-
 use crate::figure::{
     canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
     configuration::figureconfig::FigureConfig,
+    render::{
+        font,
+        pixel::{self, HAlign, VAlign},
+        svg,
+    },
     utilities::{axistype::AxisType, linetype::LineType},
 };
 
 use std::any::Any;
 
 /// A trait for rendering charts and graphs, supporting multiple output formats.
+///
+/// Text on a [`PixelCanvas`] is rendered with the fonts in
+/// [`FigureConfig::font_label`] / [`FigureConfig::font_title`]. When they are
+/// not set (or cannot be loaded) a sans-serif system font is used; if no
+/// font is available at all, text is skipped.
 pub trait Drawer: Any {
     fn as_any(&mut self) -> &mut (dyn Any + 'static);
     fn get_figure_config(&self) -> &FigureConfig;
@@ -21,6 +28,7 @@ pub trait Drawer: Any {
     fn draw(&mut self, canvas: &mut PixelCanvas);
 
     /// Draws the legend for the plot on a `PixelCanvas`.
+    /// [`Drawer::draw`] already draws it; calling this again is harmless.
     ///
     /// # Parameters
     /// - `canvas`: The `PixelCanvas` to draw the legend on.
@@ -40,7 +48,7 @@ pub trait Drawer: Any {
     /// # Returns
     /// A string in format `"rgb(r,g,b)"`.
     fn rgb_to_svg_color(&self, color: [u8; 3]) -> String {
-        format!("rgb({},{},{})", color[0], color[1], color[2])
+        svg::rgb(color)
     }
 
     /// Fills the SVG chart background area (inside margins) with the background color.
@@ -49,17 +57,13 @@ pub trait Drawer: Any {
     /// - `svg_canvas`: The `SvgCanvas` to draw on.
     /// - `config`: The `FigureConfig` containing the background color.
     fn fill_svg_background(&self, svg_canvas: &mut SvgCanvas, config: &FigureConfig) {
-        let margin = svg_canvas.margin as f64;
-        let width = svg_canvas.width as f64;
-        let height = svg_canvas.height as f64;
-        let bg_color = self.rgb_to_svg_color(config.color_background);
-
+        let f = svg::frame(svg_canvas);
         svg_canvas.draw_rect(
-            margin,
-            margin,
-            width - 2.0 * margin,
-            height - 2.0 * margin,
-            &bg_color,
+            f.left,
+            f.top,
+            f.width(),
+            f.height(),
+            &svg::rgb(config.color_background),
             "none",
             0.0,
             1.0,
@@ -72,23 +76,25 @@ pub trait Drawer: Any {
     /// - `canvas`: The `PixelCanvas` to fill.
     /// - `config`: The `FigureConfig` containing the background color.
     fn fill_background(&self, canvas: &mut PixelCanvas, config: &FigureConfig) {
-        for y in canvas.margin..canvas.height - canvas.margin {
-            for x in canvas.margin..canvas.width - canvas.margin {
-                canvas.draw_pixel(x, y, config.color_background);
-            }
-        }
+        let f = pixel::frame(canvas);
+        pixel::fill_rect(
+            canvas,
+            f.left,
+            f.top,
+            f.right,
+            f.bottom,
+            config.color_background,
+        );
     }
 
-    /// Draws the grid for the plot based on the provided configuration.
+    /// Draws the grid for the plot: `num_grid_vertical` vertical and
+    /// `num_grid_horizontal` horizontal divisions of the plot area.
     ///
     /// # Parameters
     /// - `canvas`: The `PixelCanvas` to draw the grid on.
     /// - `config`: The `FigureConfig` containing grid appearance settings.
     fn draw_grid(&self, canvas: &mut PixelCanvas, config: &FigureConfig) {
-        canvas.draw_grid(
-            &[config.num_grid_horizontal, config.num_grid_vertical],
-            config.color_grid,
-        );
+        pixel::grid(canvas, config);
     }
 
     /// Draws an axis line on the canvas.
@@ -125,23 +131,16 @@ pub trait Drawer: Any {
         y: u32,
         text: &str,
     ) {
-        let font_path = config.font_label.as_ref().expect("Font path is not set");
-        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
-        let font = FontRef::try_from_slice(&font_bytes).unwrap();
-        let scale = ab_glyph::PxScale {
-            x: config.font_size_label,
-            y: config.font_size_label,
-        };
-
-        let (w, h) = text_size(scale, &font, text);
-
-        canvas.draw_text(
-            x.saturating_sub(w / 2),
-            y.saturating_sub(h / 2),
+        let font = font::load(config.font_label.as_deref());
+        pixel::text(
+            canvas,
+            font.as_ref(),
+            config.font_size_label,
+            x as f64,
+            y as f64,
             text,
             config.color_axis,
-            &font,
-            scale,
+            (HAlign::Center, VAlign::Middle),
         );
     }
 
@@ -160,23 +159,21 @@ pub trait Drawer: Any {
         y: u32,
         text: &str,
     ) {
-        let font_path = config.font_title.as_ref().expect("Font path is not set");
-        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
-        let font = FontRef::try_from_slice(&font_bytes).unwrap();
-        let scale = PxScale {
-            x: config.font_size_title,
-            y: config.font_size_title,
-        };
-
-        let (w, h) = text_size(scale, &font, text);
-
-        canvas.draw_text(
-            x.saturating_sub(w / 2),
-            y.saturating_sub(h / 2),
+        let font = font::load(
+            config
+                .font_title
+                .as_deref()
+                .or(config.font_label.as_deref()),
+        );
+        pixel::text(
+            canvas,
+            font.as_ref(),
+            config.font_size_title,
+            x as f64,
+            y as f64,
             text,
             config.color_title,
-            &font,
-            scale,
+            (HAlign::Center, VAlign::Middle),
         );
     }
 
@@ -187,7 +184,8 @@ pub trait Drawer: Any {
     /// - `config`: The `FigureConfig` containing axis value appearance settings.
     /// - `x`, `y`: The position to draw the value.
     /// - `text`: The text of the axis value.
-    /// - `axis`: The type of axis (`AxisType::AxisX` or `AxisType::AxisY`).
+    /// - `axis`: The type of axis (`AxisType::AxisX`: centered below `(x, y)`;
+    ///   `AxisType::AxisY`: right-aligned and vertically centered on `(x, y)`).
     fn draw_axis_value(
         &self,
         canvas: &mut PixelCanvas,
@@ -197,28 +195,26 @@ pub trait Drawer: Any {
         text: &str,
         axis: AxisType,
     ) {
-        let font_path = config.font_label.as_ref().expect("Font path is not set");
-        let font_bytes = std::fs::read(font_path).expect("Failed to read font file");
-        let font = FontRef::try_from_slice(&font_bytes).unwrap();
-        let scale = ab_glyph::PxScale {
-            x: config.font_size_axis,
-            y: config.font_size_axis,
+        let font = font::load(config.font_label.as_deref());
+        let (h, v) = match axis {
+            AxisType::AxisX => (HAlign::Center, VAlign::Top),
+            AxisType::AxisY => (HAlign::Right, VAlign::Middle),
         };
-
-        let (w, h) = text_size(scale, &font, text);
-        let mut x = x;
-        let mut y = y;
-        match axis {
+        let y = match axis {
             AxisType::AxisX => {
-                x = x.saturating_sub(w / 2);
-                y = y.saturating_add(h);
+                y as f64 + pixel::measure(font.as_ref(), config.font_size_axis, text).1
             }
-            AxisType::AxisY => {
-                x = x.saturating_sub(w);
-                y = y.saturating_sub(h / 2);
-            }
-        }
-
-        canvas.draw_text(x, y, text, config.color_axis, &font, scale);
+            AxisType::AxisY => y as f64,
+        };
+        pixel::text(
+            canvas,
+            font.as_ref(),
+            config.font_size_axis,
+            x as f64,
+            y,
+            text,
+            config.color_axis,
+            (h, v),
+        );
     }
 }

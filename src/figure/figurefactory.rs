@@ -49,10 +49,10 @@ impl FigureFactory {
     /// A boxed `Drawer` object representing the created plot.
     ///
     /// # Example
-    /// ```rust,ignore
+    /// ```
     /// use dataviz::figure::figurefactory::{FigureFactory, FigureType};
     ///
-    /// let bar_chart = FigureFactory::create_figure(FigureType::BarChart);
+    /// let bar_chart = FigureFactory::create_figure(FigureType::GroupBarChartVertical);
     /// ```
     pub fn create_figure(plot_type: FigureType) -> Box<dyn Drawer> {
         match plot_type {
@@ -93,7 +93,7 @@ impl FigureFactory {
                 "Histogram",
                 "Bins",
                 "Frequency",
-                0,
+                10,
                 [0, 0, 255],
                 FigureConfig::default(),
             )),

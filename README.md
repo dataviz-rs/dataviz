@@ -11,7 +11,9 @@
 </a>
 
 
-A modular, customizable, and feature-rich 2D plotting library written in Rust. With **DataViz**, you can create a wide variety of plots tailored to your needs, supporting both raster (PNG) and vector (SVG) outputs. You can save and display(interactive or real-time) your DataViz figures.
+A modular, customizable, and feature-rich 2D plotting library written in Rust. With **DataViz**, you can create a wide variety of plots tailored to your needs, supporting both raster (PNG) and vector (SVG) outputs. You can save and display (interactive or real-time) your DataViz figures.
+
+PNG and SVG output share the same layout and honour every `FigureConfig` setting: tick and grid counts, colors and font sizes.
 
 ---
 
@@ -32,13 +34,15 @@ A modular, customizable, and feature-rich 2D plotting library written in Rust. W
 - **Colors**: Customize colors for the background, axes, and data elements.  
 - **Margins**: Add space around the plot for better visibility.  
 - **Line and Dot Styles**: Customize line types (solid, dashed, dotted) and dot shapes (circle, square, cross, triangle).  
+- **Point Markers**: Optionally mark every data point of a line graph (`draw_with_markers` / `draw_svg_with_markers`).  
+- **Fonts**: Use your own TTF/OTF files, or nothing at all — an installed sans-serif font is used by default.  
 
 ### **Output Formats**  
 - **Raster (PNG)**: Save high-quality images of your plots.  
 - **Vector (SVG)**: Generate scalable vector graphics for precision and scalability.  
 
 ### **Interactive Capabilities**  
-- Hover effects(Press C key to see it) and real-time updates.
+- Hover tooltips (press **C**), key hints (press **H**) and real-time updates.
 
 ---
 
@@ -46,8 +50,57 @@ A modular, customizable, and feature-rich 2D plotting library written in Rust. W
 Add the following dependencies to your `Cargo.toml` file:
 ```toml
 [dependencies]
-dataviz = "0.1.9"
+dataviz = "0.1.10"
 ```
+
+Requires Rust 1.89 or newer.
+
+## **Quick Start**
+
+```rust no_run
+use dataviz::figure::{
+    canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
+    configuration::figureconfig::FigureConfig,
+    datasets::{cartesiangraphdataset::CartesianDataset, dataset::Dataset},
+    drawers::drawer::Drawer,
+    figuretypes::quadrant1graph::Quadrant1Graph,
+    utilities::{linetype::LineType, scatterdottype::ScatterDotType},
+};
+
+fn main() -> std::io::Result<()> {
+    let config = FigureConfig {
+        num_axis_ticks: 5,      // 5 intervals -> 6 labels per axis
+        num_grid_horizontal: 5,
+        num_grid_vertical: 10,
+        ..FigureConfig::default()
+    };
+    let mut graph = Quadrant1Graph::new("Throughput", "Seconds", "MB", config);
+
+    let mut upload = CartesianDataset::new([30, 144, 255], "upload", LineType::Solid);
+    let mut download = CartesianDataset::new([220, 20, 60], "download", LineType::Dashed(8));
+    for t in 0..=60 {
+        let t = t as f64;
+        upload.add_point((t, t * 1.5));
+        download.add_point((t, (t * 40.0).sqrt() * 4.0));
+    }
+    graph.add_dataset(upload);
+    graph.add_dataset(download);
+
+    // PNG
+    let mut png = PixelCanvas::new(800, 600, [255, 255, 255], 80);
+    graph.draw(&mut png);
+    png.try_save_as_image("throughput.png")?;
+
+    // SVG, with a marker at every data point
+    let mut svg = SvgCanvas::new(800, 600, "white", 80);
+    graph.draw_svg_with_markers(&mut svg, ScatterDotType::Circle(2));
+    svg.save("throughput.svg")?;
+    Ok(())
+}
+```
+
+Run `cargo run --example gallery -- out/` in this repository to render every
+chart type to PNG and SVG.
 
 ## **Examples**  
 To see more examples you can visit: https://github.com/dataviz-rs/dataviz-examples
@@ -145,6 +198,9 @@ To see more examples you can visit: https://github.com/dataviz-rs/dataviz-exampl
 <img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/area_chart.svg?raw=true" alt="" width="300px">
 <img src="https://github.com/dataviz-rs/dataviz-screenshots/blob/main/histogram.svg?raw=true" alt="" width="300px">
 
+
+## **Changelog**  
+See [CHANGELOG.md](CHANGELOG.md).
 
 ## **License**  
 This project is licensed under the **MIT**. See the `LICENSE` file for details.

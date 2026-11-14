@@ -1,11 +1,12 @@
 /// Configuration structure for customizing the appearance of a figure.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct FigureConfig {
-    /// Number of ticks along the axes.
+    /// Number of tick intervals along each value axis (`n` intervals give
+    /// `n + 1` labelled ticks). Labels that would overlap are thinned out.
     pub num_axis_ticks: usize,
-    /// Number of horizontal grid lines.
+    /// Number of intervals between horizontal grid lines.
     pub num_grid_horizontal: usize,
-    /// Number of vertical grid lines.
+    /// Number of intervals between vertical grid lines.
     pub num_grid_vertical: usize,
     /// Color of the grid lines in RGB format.
     pub color_grid: [u8; 3],
@@ -23,9 +24,12 @@ pub struct FigureConfig {
     pub font_size_legend: f32,
     /// Font size for axis labels.
     pub font_size_axis: f32,
-    /// File path to the font used for labels.
+    /// File path to the font (TTF/OTF) used for labels, tick values and
+    /// legends on a `PixelCanvas`. When `None` or unreadable, an installed
+    /// sans-serif font is used.
     pub font_label: Option<String>,
-    /// File path to the font used for the title.
+    /// File path to the font used for the title on a `PixelCanvas`. When
+    /// `None`, `font_label` (or a system font) is used.
     pub font_title: Option<String>,
 }
 
@@ -44,8 +48,8 @@ impl Default for FigureConfig {
     /// - `font_size_title`: 24.0
     /// - `font_size_legend`: 10.0
     /// - `font_size_axis`: 10.0
-    /// - `font_label`: `../../resources/fonts/Arial.ttf`
-    /// - `font_title`: `../../resources/fonts/Arial.ttf`
+    /// - `font_label`: `None` (an installed sans-serif font is used)
+    /// - `font_title`: `None` (falls back to `font_label`, then to a system font)
     ///
     /// # Returns
     /// A `FigureConfig` instance with default settings.
@@ -69,11 +73,15 @@ impl Default for FigureConfig {
 }
 
 impl FigureConfig {
+    /// Sets both font paths.
     pub fn set_font_paths(&mut self, label_path: String, title_path: String) {
         self.font_label = Some(label_path);
         self.font_title = Some(title_path);
     }
 
+    /// Returns an error unless both font paths are set. Fonts are optional
+    /// for drawing (a system font is used instead), so this is only useful
+    /// to require explicit fonts.
     pub fn validate(&self) -> Result<(), String> {
         if self.font_label.is_none() || self.font_title.is_none() {
             Err("Both font_label and font_title must be provided.".to_string())

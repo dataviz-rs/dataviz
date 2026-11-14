@@ -3,48 +3,48 @@ on:
   push:
   pull_request:
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
-    env:
-      # default toolchain used if nothing is supplied
-      TOOLCHAIN: stable
+env:
+  CARGO_TERM_COLOR: always
 
+jobs:
+  test:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Cache cargo registry and build
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-
+      - name: Install system dependencies (minifb, fonts)
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev fonts-dejavu-core
 
       - name: Set up Rust toolchain
-        # official actions-rs/toolchain handles rustup install reliably
-        uses: actions-rs/toolchain@v1
+        uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: ${{ env.TOOLCHAIN }}
-          profile: minimal
           components: clippy, rustfmt
-          override: true
 
-      - name: Verify rustc & cargo
-        run: |
-          rustc --version
-          cargo --version
+      - name: Cache cargo registry and build
+        uses: Swatinem/rust-cache@v2
 
-      - name: Build
-        run: cargo build --verbose
+      - name: Check formatting
+        run: cargo fmt --all -- --check
 
-      - name: Run clippy (optional)
-        run: cargo clippy -- -D warnings
-        continue-on-error: false
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
 
-      - name: Run tests
+      - name: Tests (unit, integration, doc, README)
         run: cargo test --verbose
+
+      - name: Docs
+        run: cargo doc --no-deps
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  msrv:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev
+      - uses: dtolnay/rust-toolchain@1.89
+      - uses: Swatinem/rust-cache@v2
+      - name: Build with the minimum supported Rust version
+        run: cargo build --all-targets

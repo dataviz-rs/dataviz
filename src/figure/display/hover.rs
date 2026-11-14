@@ -6,16 +6,21 @@ use ab_glyph::FontRef;
 pub trait Hover {
     /// Finds the closest point to the mouse position on the plot.
     ///
+    /// The mapping between data and canvas is exactly the one used by
+    /// `Drawer::draw` for the same canvas.
+    ///
     /// # Parameters
     /// - `mouse_x`: The x-coordinate of the mouse position in canvas space.
     /// - `mouse_y`: The y-coordinate of the mouse position in canvas space.
     /// - `canvas`: The `PixelCanvas` being used for rendering the plot.
     ///
     /// # Returns
-    /// An optional tuple containing:
-    /// - `((f64, f64), f64)`:
-    ///   - The `(x, y)` coordinates of the closest point.
-    ///   - The distance from the mouse position to the point.
+    /// An optional tuple `((f64, f64), f64)` whose meaning depends on the chart:
+    /// - line, area and scatter charts: the `(x, y)` data point and its
+    ///   distance to the mouse in pixels;
+    /// - grouped bar charts: `(x, value)` of the bar and its value;
+    /// - histograms: `(bin_start, bin_end)` and the bin frequency;
+    /// - pie charts: the canvas position of the slice label and the slice value.
     ///
     /// Returns `None` if no points are found.
     fn find_closest_point(

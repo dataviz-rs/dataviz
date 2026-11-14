@@ -1,4 +1,5 @@
 /// A dataset for an area chart, containing data points, appearance properties, and metadata.
+#[derive(Clone, Debug, PartialEq)]
 pub struct AreaChartDataset {
     /// Transparency level of the area fill (0.0 for fully transparent, 1.0 for fully opaque).
     pub alpha: f64,

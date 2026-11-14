@@ -66,20 +66,55 @@
 //! - [`winop`](crate::figure::display::winop): Manage window operations for interactive displays.
 //!
 //! ## Getting Started
-//! Here's a quick example of creating and rendering a pie chart:
+//! Every chart implements [`Drawer`](crate::figure::drawers::drawer::Drawer):
+//! `draw` renders it on a [`PixelCanvas`](crate::figure::canvas::pixelcanvas::PixelCanvas)
+//! (saved as PNG, JPEG, …) and `draw_svg` on an
+//! [`SvgCanvas`](crate::figure::canvas::svgcanvas::SvgCanvas). Both outputs
+//! use the same layout and honour every [`FigureConfig`] setting (tick and
+//! grid counts, colours, font sizes).
 //!
-//! ```rust,ignore
-//! use dataviz::figure::figuretypes::piechart::PieChart;
-//! use dataviz::figure::configuration::figureconfig::FigureConfig;
-//!
-//! let mut pie_chart = PieChart::new("Market Share", FigureConfig::default());
-//! pie_chart.add_slice("Product A", 40.0, [255, 0, 0]);
-//! pie_chart.add_slice("Product B", 30.0, [0, 255, 0]);
-//! pie_chart.add_slice("Product C", 30.0, [0, 0, 255]);
-//!
-//! // Render the pie chart
-//! pie_chart.draw();
 //! ```
+//! use dataviz::figure::{
+//!     canvas::{pixelcanvas::PixelCanvas, svgcanvas::SvgCanvas},
+//!     configuration::figureconfig::FigureConfig,
+//!     datasets::{cartesiangraphdataset::CartesianDataset, dataset::Dataset},
+//!     drawers::drawer::Drawer,
+//!     figuretypes::quadrant1graph::Quadrant1Graph,
+//!     utilities::{linetype::LineType, scatterdottype::ScatterDotType},
+//! };
+//!
+//! let config = FigureConfig {
+//!     num_axis_ticks: 5,
+//!     ..FigureConfig::default() // no font path needed: a system font is used
+//! };
+//! let mut graph = Quadrant1Graph::new("Throughput", "Seconds", "MB", config);
+//!
+//! let mut dataset = CartesianDataset::new([30, 144, 255], "upload", LineType::Dashed(8));
+//! for t in 0..=10 {
+//!     dataset.add_point((t as f64, (t * t) as f64));
+//! }
+//! graph.add_dataset(dataset);
+//!
+//! let mut png = PixelCanvas::new(800, 600, [255, 255, 255], 80);
+//! graph.draw(&mut png);
+//! // png.save_as_image("throughput.png");
+//!
+//! let mut svg = SvgCanvas::new(800, 600, "white", 80);
+//! graph.draw_svg_with_markers(&mut svg, ScatterDotType::Circle(3)); // or draw_svg()
+//! assert!(svg.get_svg_as_text().contains("<polyline"));
+//! // svg.save("throughput.svg")?;
+//! ```
+//!
+//! ## Fonts
+//! PNG text is rendered with the TrueType/OpenType files in
+//! [`FigureConfig::font_label`] and [`FigureConfig::font_title`]. If they are
+//! not set or cannot be read, an installed sans-serif font (DejaVu Sans,
+//! Liberation Sans, Arial, …) is used; without any font, text is skipped.
+//! SVG text uses the generic `sans-serif` family of the viewer.
+//!
+//! [`FigureConfig`]: crate::figure::configuration::figureconfig::FigureConfig
+//! [`FigureConfig::font_label`]: crate::figure::configuration::figureconfig::FigureConfig::font_label
+//! [`FigureConfig::font_title`]: crate::figure::configuration::figureconfig::FigureConfig::font_title
 //!
 //! ## License
 //! DataViz is open-source and licensed under the MIT license. Contributions are welcome!
@@ -143,4 +178,11 @@ pub mod figure {
     }
 
     pub mod figurefactory;
+
+    pub(crate) mod render;
 }
+
+// Compile and run the code examples of the README as doctests.
+#[cfg(doctest)]
+#[doc = include_str!("../README.md")]
+pub struct ReadmeDoctests;
