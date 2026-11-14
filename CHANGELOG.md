@@ -22,6 +22,19 @@
   `Axes::renko` and `Axes::trading_axis` (bars one after another, skipping
   weekends and nights, with date labels); `stats::vwap`, `stochastic`,
   `atr`, `ichimoku`, `drawdown`, `renko`.
+- **Biology, genomics and medicine** (`series::bio`):
+  `Axes::sequence_logo` (DNA/RNA/protein motifs, letters stretched to
+  their information content in bits), `Axes::gene_track` (exons, introns,
+  strand), `Axes::manhattan` (GWAS with genome-wide and suggestive
+  thresholds), `Axes::qq_pvalues` (with λ), `Axes::volcano` (labels of the
+  top genes, kept apart), `Axes::ma_plot`, `Figure::clustermap` (rows and
+  columns clustered, dendrograms on both sides), `Axes::embedding`
+  (UMAP/t-SNE cells colored and named by cluster), `Axes::dose_response`
+  (four-parameter logistic fit, IC50), `Axes::kaplan_meier` (95 % bands,
+  censoring marks, log-rank p) and `Axes::forest_plot` (pooled diamond);
+  functions `bio::logo_heights`, `kaplan_meier`, `logrank`, `fit_4pl`.
+- `Annotate::background`: a box behind text annotations (readable over
+  dense data).
 - `Figure::resize(width, height)` (figures embedded in resizable panels).
 
 ### Changed

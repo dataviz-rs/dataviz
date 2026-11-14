@@ -522,6 +522,8 @@ pub struct Annotate {
     pub(crate) anchor: Anchor,
     pub(crate) label: Option<String>,
     pub(crate) bold: bool,
+    /// Box behind a text annotation.
+    pub(crate) background: Option<Color>,
 }
 
 impl Annotate {
@@ -536,6 +538,7 @@ impl Annotate {
             anchor: Anchor::Start,
             label: None,
             bold: false,
+            background: None,
         }
     }
     /// Color.
@@ -571,6 +574,12 @@ impl Annotate {
     /// Bold text.
     pub fn bold(&mut self, b: bool) -> &mut Self {
         self.bold = b;
+        self
+    }
+    /// A rounded box of this color behind a text annotation (readable over
+    /// dense data).
+    pub fn background(&mut self, c: impl Into<Color>) -> &mut Self {
+        self.background = Some(c.into());
         self
     }
     /// Legend label (lines and spans).
@@ -620,6 +629,24 @@ impl Series for Annotate {
             Annotation::Text(x, y, t) => {
                 let (px, py) = ctx.point(*x, *y);
                 let size = self.size.unwrap_or(ctx.theme.annotation_size);
+                if let Some(bg) = self.background {
+                    let w = ctx.text_width(t, size);
+                    let left = match self.anchor {
+                        Anchor::Start => px,
+                        Anchor::Middle => px - w / 2.0,
+                        Anchor::End => px - w,
+                    };
+                    let (pad, h) = (4.0, size * 1.35);
+                    ctx.push(Node::Rect {
+                        x: left - pad,
+                        y: py - h / 2.0,
+                        w: w + 2.0 * pad,
+                        h,
+                        rx: 3.0,
+                        fill: Some(bg),
+                        stroke: None,
+                    });
+                }
                 ctx.push(Node::Text(TextNode {
                     x: px,
                     y: py,

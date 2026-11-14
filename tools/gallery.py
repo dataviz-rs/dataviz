@@ -15,8 +15,10 @@ SECTIONS = [
         ("plot-egui", "egui.png", "Inside an egui app"),
         ("plot-backends", "backends.png", "CPU, multi-core and GPU backends"),
     ]),
-    ("For data scientists, engineers and traders", [
+    ("For data scientists, biologists, engineers and traders", [
         ("plot-data-science", "data_science.png", "Data science: ROC, confusion matrix, regression"),
+        ("plot-biology", "biology.png", "Biology: DNA logo, GWAS, volcano, UMAP, survival"),
+        ("plot-biology", "clustermap.png", "Clustermap of gene expression"),
         ("plot-engineering", "engineering.png", "Engineering: spectrum, spectrogram, Nyquist, Smith"),
         ("plot-engineering", "bode.png", "Bode plot"),
         ("plot-trading", "trading.png", "Trading: Ichimoku, VWAP, volume profile, depth"),

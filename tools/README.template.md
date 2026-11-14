@@ -10,7 +10,7 @@
     <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
 </a>
 
-**Fast, pure-Rust plotting: 70+ chart types, interactive windows, live
+**Fast, pure-Rust plotting: 80+ chart types, interactive windows, live
 data, animations, maps, math and every language — with the least CPU and
 memory of the Rust plotting libraries.**
 
@@ -35,11 +35,14 @@ memory of the Rust plotting libraries.**
   matplotlib, and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
   Optional multi-core and GPU backends.
-- **Everything in one crate.** 70+ chart types — lines, bars, statistics,
+- **Everything in one crate.** 80+ chart types — lines, bars, statistics,
   heatmaps, contours, 3D, maps, sankey, networks — plus ready-made charts
   for **data scientists** (ROC/PR curves, confusion matrices, regression
-  bands, density contours, dendrograms), **engineers** (FFT spectra,
-  spectrograms, Bode, Nyquist, Smith charts) and **traders** (candlesticks,
+  bands, density contours, dendrograms), **biologists and clinicians**
+  (DNA sequence logos, gene tracks, Manhattan, volcano, clustermaps,
+  single-cell UMAPs, dose-response, Kaplan-Meier, forest plots),
+  **engineers** (FFT spectra, spectrograms, Bode, Nyquist, Smith charts)
+  and **traders** (candlesticks,
   Ichimoku, VWAP, RSI, MACD, volume profile, order book depth, drawdown,
   Renko), with themes, subplots, shared and broken axes.
 - **Interactive and live.** `fig.show()` opens a window with zoom, pan, a
@@ -125,6 +128,7 @@ and click work in your own GUI or web page through
 | Distributions | histogram (bin rules, density, cumulative, step), KDE, ECDF, box (notches), violin, strip, swarm, ridgeline, Q-Q, 2D histogram, hexbin |
 | Uncertainty & fits | error bars, error bands, polynomial regression with R², moving averages |
 | Machine learning | ROC curve (AUC), precision-recall curve, confusion matrix, regression with confidence band, LOESS, 2D density contours, dendrogram |
+| Biology & medicine | DNA/protein sequence logo, gene track, Manhattan plot, p-value Q-Q, volcano plot, MA plot, clustermap, single-cell embedding (UMAP/t-SNE), dose-response (IC50), Kaplan-Meier survival, forest plot |
 | Signals & control | FFT spectrum, spectrogram, Bode plot, Nyquist plot, Smith chart |
 | Finance & trading | candlestick, OHLC, Heikin-Ashi, Renko, Bollinger bands, Ichimoku cloud, VWAP, RSI, MACD, Stochastic, ATR, volume profile, order book depth, drawdown, trading-day axis |
 | Grids & fields | heatmap, correlation matrix, calendar heatmap, image, contour lines and fills, quiver, 3D surface/wireframe |
@@ -144,6 +148,20 @@ ax.confusion_matrix(["cat", "dog", "bird"], &actual, &predicted, true);
 ax.regplot(&x, &y);                                     // fit, 95 % band and R²
 ax.density_contour(&x, &y);                             // 2D KDE, millions of points
 ax.dendrogram(&names, &features);                       // hierarchical clustering
+```
+
+### For biologists and clinicians
+
+```rust ignore
+ax.sequence_logo(&aligned_sequences);                   // DNA, RNA or protein motif
+ax.gene_track(&genes);                                  // exons, introns, strand
+ax.manhattan(&chromosome, &position, &p_values);        // GWAS
+ax.volcano(&genes, &log2_fc, &p_values, 1.0, 1e-3, 10); // top 10 genes named
+fig.clustermap(&genes, &samples, &expression);          // clustered heatmap
+ax.embedding(&umap_x, &umap_y, &cell_types);            // single-cell clusters
+ax.dose_response(&concentration, &viability);           // 4PL fit and IC50
+ax.kaplan_meier([("control", t1, e1), ("treated", t2, e2)]); // log-rank p
+ax.forest_plot(&studies, &hr, &low, &high, 1.0);        // meta-analysis
 ```
 
 ### For engineers

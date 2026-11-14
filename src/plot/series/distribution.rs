@@ -417,7 +417,7 @@ pub fn normal_quantile(p: f64) -> f64 {
 /// Complementary error function (W. J. Cody's rational approximations via
 /// the Numerical Recipes Chebyshev fit; relative error < 1.2e-7, enough for
 /// one refinement step).
-fn erfc(x: f64) -> f64 {
+pub(crate) fn erfc(x: f64) -> f64 {
     let z = x.abs();
     let t = 1.0 / (1.0 + 0.5 * z);
     let r = t

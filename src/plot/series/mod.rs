@@ -9,6 +9,7 @@ use super::theme::Theme;
 use std::any::Any;
 
 pub mod bar;
+pub mod bio;
 pub mod contour;
 pub mod distribution;
 pub mod finance;
@@ -471,6 +472,9 @@ pub trait Series: Any {
             "Ridgeline" => "ridgeline",
             "Annotate" => "annotation",
             "SmithGrid" => "smith",
+            "SequenceLogo" => "sequence logo",
+            "GeneTrack" => "gene track",
+            "ForestPlot" => "forest",
             "Dendrogram" => "dendrogram",
             _ => "data",
         }

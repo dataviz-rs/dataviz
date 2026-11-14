@@ -162,6 +162,8 @@ pub struct Dendrogram {
     pub(crate) width: f64,
     /// Leaf indices in drawing order.
     pub order: Vec<usize>,
+    /// Leaves along y (from the top), heights along x.
+    pub(crate) horizontal: bool,
 }
 
 impl Dendrogram {
@@ -177,23 +179,38 @@ impl Dendrogram {
     }
 }
 
+impl Dendrogram {
+    /// Canvas position of (leaf position, height): leaves along x, or for a
+    /// horizontal dendrogram along y from the top (like heatmap rows).
+    fn at(&self, x: &AxisMap, y: &AxisMap, leaf: f64, height: f64) -> (f64, f64) {
+        if self.horizontal {
+            let n = self.order.len() as f64;
+            (x.px_clamped(height), y.px_clamped(n - 1.0 - leaf))
+        } else {
+            (x.px_clamped(leaf), y.px_clamped(height))
+        }
+    }
+}
+
 impl Series for Dendrogram {
     fn extent(&self) -> Option<Extent> {
         let top = self.links.iter().map(|l| l.4).fold(0.0, f64::max);
         let n = self.order.len() as f64;
         let mut e = Extent::point(-0.5, 0.0).include(n - 0.5, top * 1.05);
         e.sticky_y_min = true;
-        Some(e)
+        e.sticky_x_min = true;
+        e.sticky_x_max = true;
+        Some(if self.horizontal { e.transposed() } else { e })
     }
 
     fn draw(&self, ctx: &mut Context) {
         let s = Stroke::new(self.color, self.width);
         for &(x1, h1, x2, h2, h) in &self.links {
             let pts = [
-                ctx.point(x1, h1),
-                ctx.point(x1, h),
-                ctx.point(x2, h),
-                ctx.point(x2, h2),
+                self.at(ctx.x, ctx.y, x1, h1),
+                self.at(ctx.x, ctx.y, x1, h),
+                self.at(ctx.x, ctx.y, x2, h),
+                self.at(ctx.x, ctx.y, x2, h2),
             ];
             ctx.polyline(&pts, s.clone());
         }
@@ -203,7 +220,7 @@ impl Series for Dendrogram {
         self.links
             .iter()
             .map(|&(x1, _, x2, _, h)| {
-                let (cx, cy) = (x.px((x1 + x2) / 2.0), y.px(h));
+                let (cx, cy) = self.at(x, y, (x1 + x2) / 2.0, h);
                 Hit {
                     px: cx,
                     py: cy,
@@ -222,7 +239,7 @@ impl Series for Dendrogram {
 /// Average-linkage hierarchical clustering of the rows of `data`
 /// (Euclidean distances): links and the leaf order.
 #[allow(clippy::type_complexity)]
-fn cluster(data: &[Vec<f64>]) -> (Vec<(f64, f64, f64, f64, f64)>, Vec<usize>) {
+pub(crate) fn cluster(data: &[Vec<f64>]) -> (Vec<(f64, f64, f64, f64, f64)>, Vec<usize>) {
     let n = data.len();
     if n == 0 {
         return (Vec::new(), Vec::new());
@@ -479,6 +496,7 @@ impl Axes {
             color,
             width: 1.5,
             order,
+            horizontal: false,
         })
     }
 }
