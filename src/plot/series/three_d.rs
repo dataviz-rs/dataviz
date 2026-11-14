@@ -120,6 +120,9 @@ pub struct Camera {
     pub zoom: f64,
     /// Perspective strength (0 = orthographic, 1 = strong).
     pub perspective: f64,
+    /// Offset of the scene centre from the plot centre, in units of the
+    /// plot's smaller side (set by zooming at the cursor).
+    pub shift: (f64, f64),
 }
 
 impl Default for Camera {
@@ -142,6 +145,7 @@ impl Camera {
             ],
             zoom: 1.0,
             perspective: 0.0,
+            shift: (0.0, 0.0),
         }
     }
 
@@ -173,6 +177,7 @@ impl Camera {
             m: orthonormal([r0, r1, cross(r0, r1)]),
             zoom: 1.0,
             perspective: 0.0,
+            shift: (0.0, 0.0),
         }
     }
 
@@ -359,7 +364,11 @@ impl Projection3d {
             ext,
             cam,
             scale,
-            center: r.center(),
+            center: {
+                let (cx, cy) = r.center();
+                let m = r.w.min(r.h);
+                (cx + cam.shift.0 * m, cy + cam.shift.1 * m)
+            },
             radius,
             dist,
         }
@@ -1230,10 +1239,24 @@ impl Axes {
         self.view3d.camera.drag(dx, dy);
     }
 
-    /// Interactive zoom (`factor` < 1 zooms in).
-    pub(crate) fn zoom3d_by(&mut self, factor: f64) {
-        let z = &mut self.view3d.camera.zoom;
-        *z = (*z / factor).clamp(0.05, 50.0);
+    /// Interactive zoom (`factor` < 1 zooms in) keeping the point under
+    /// the canvas position `(px, py)` of the plot `plot` in place.
+    pub(crate) fn zoom3d_at(&mut self, plot: Rect, px: f64, py: f64, factor: f64) {
+        let c = &mut self.view3d.camera;
+        let old = c.zoom;
+        c.zoom = (old / factor).clamp(0.05, 50.0);
+        let r = c.zoom / old;
+        let m = plot.w.min(plot.h).max(1e-9);
+        let (cx, cy) = plot.center();
+        let (dx, dy) = (px - cx, py - cy);
+        c.shift = (
+            (dx - (dx - c.shift.0 * m) * r) / m,
+            (dy - (dy - c.shift.1 * m) * r) / m,
+        );
+        if c.zoom <= 1.0 + 1e-9 && r < 1.0 {
+            // Zoomed out to the whole scene: centre it again.
+            c.shift = (0.0, 0.0);
+        }
     }
 
     /// Back to the camera set in code.
@@ -2148,6 +2171,52 @@ mod tests {
         let c = Camera::principal(&pts);
         let dir = unit([0.1, 0.0, -0.3]);
         assert!(c.view(dir)[0].abs() > 0.99, "{:?}", c.view(dir));
+    }
+
+    #[test]
+    fn zoomed_scene_stays_in_its_plot() {
+        let mut fig = Figure::new(800, 400);
+        fig.grid(1, 2);
+        fig.at(0, 0).dna_helix("ATGCGTACGTTAGCATGC");
+        fig.at(0, 1).line([0.0, 1.0], [0.0, 1.0]);
+        let mut before = Pixels::default();
+        fig.render_into(&mut before).unwrap();
+        let (_, l) = fig.scene_and_layouts();
+        let p = l[0].plot;
+        for _ in 0..30 {
+            fig.zoom_at(p.x + p.w / 2.0, p.y + p.h / 2.0, 0.85);
+        }
+        let mut after = Pixels::default();
+        fig.render_into(&mut after).unwrap();
+        // Nothing changed right of the first plot.
+        let x0 = (p.right().ceil() as usize) + 1;
+        for y in 0..400usize {
+            for x in x0..800 {
+                let i = (y * 800 + x) * 4;
+                assert_eq!(before.rgba[i..i + 4], after.rgba[i..i + 4], "pixel {x},{y}");
+            }
+        }
+    }
+
+    #[test]
+    fn zoom_keeps_the_point_under_the_cursor() {
+        let mut fig = Figure::new(600, 500);
+        fig.axes()
+            .scatter3d([0.0, 1.0, 0.3], [0.0, 1.0, 0.8], [0.0, 1.0, 0.5]);
+        let mut px = Pixels::default();
+        fig.render_into(&mut px).unwrap();
+        let plot = fig.scene_and_layouts().1[0].plot;
+        let at = |fig: &mut Figure| fig.axes().projection3d(plot).project([0.3, 0.8, 0.5]);
+        let (x, y, _) = at(&mut fig);
+        for _ in 0..5 {
+            fig.zoom_at(x, y, 0.8);
+        }
+        let (x2, y2, _) = at(&mut fig);
+        assert!(
+            (x2 - x).abs() < 1e-6 && (y2 - y).abs() < 1e-6,
+            "{x},{y} -> {x2},{y2}"
+        );
+        assert!(fig.axes().current_camera().zoom > 2.0);
     }
 
     #[test]

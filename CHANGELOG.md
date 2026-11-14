@@ -40,14 +40,15 @@
   `Axes::rotate(Axis3, deg)` turns around the x, y or z axis,
   `Axes::roll`, `Axes::camera(azimuth, elevation)`, `Axes::set_camera`,
   `Camera::principal` (longest extent across the screen). In a window
-  dragging turns the scene, the wheel zooms and `X`/`Y`/`Z` rotate by 15°
+  dragging turns the scene, the wheel zooms toward the cursor and `X`/`Y`/`Z` rotate by 15°
   (Shift+key the other way); `Figure::rotate_view`, `pan_by` and `zoom_at`
   do the same in GUI and web apps; `R` / `reset_view` restore the camera.
   New 3D series: `Axes::spheres3d` (radii in data units),
   `Axes::mesh3d` / `trisurf` (smooth-shaded, translucent),
   `Axes::ellipsoid`, `Axes::text3d`; `Axes::z_label`, `z_limits`,
   `box3d`, `lighting`; `Points3d::values`, `label`, `shaded`;
-  `Surface::edges`, `opacity`. Custom series draw 3D through
+  `Surface::edges`, `opacity`. 3D scenes stay inside their plot area when
+  zoomed. Custom series draw 3D through
   `Series::bounds3d`, `draw3d` and `hit3d` (`Scene3d`).
 - **3D biology** (`series::bio3d`): `Axes::dna_helix` (B-DNA double helix
   with base pairs colored by base, highlighted regions, RNA pairs A–U),

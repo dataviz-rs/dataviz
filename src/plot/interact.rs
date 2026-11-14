@@ -24,7 +24,7 @@ impl Axes {
     /// Zooms around a canvas position by `factor` (< 1 zooms in).
     pub(crate) fn zoom_at(&mut self, lay: &Layout, px: f64, py: f64, factor: f64) {
         if self.kind == AxesKind::ThreeD {
-            self.zoom3d_by(factor);
+            self.zoom3d_at(lay.plot, px, py, factor);
             return;
         }
         if self.kind != AxesKind::Cartesian {

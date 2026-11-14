@@ -1135,8 +1135,10 @@ impl Axes {
             });
         }
         let anchors = anchor_points(&data);
+        // Data stays inside its plot area (a zoomed 3D scene must not
+        // spill over the neighbouring plots).
         let clip = match self.kind {
-            AxesKind::Cartesian => Some((p.x, p.y, p.w, p.h)),
+            AxesKind::Cartesian | AxesKind::ThreeD => Some((p.x, p.y, p.w, p.h)),
             _ => None,
         };
         out.push(Node::Group {
