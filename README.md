@@ -41,10 +41,11 @@ fn main() -> Result<(), Error> {
 | Lines & areas | line, step, smooth spline, area, fill-between, stacked / 100 % area, function plot, sparkline |
 | Points | scatter, colormapped scatter, bubble, 3D scatter |
 | Bars | vertical, horizontal, grouped, stacked, percent, overlay, value labels, waterfall, Gantt, lollipop |
-| Distributions | histogram (bin rules, density, cumulative, step), KDE, ECDF, box plot (notches), violin, 2D histogram, hexbin |
+| Distributions | histogram (bin rules, density, cumulative, step), KDE, ECDF, box plot (notches), violin, strip (jitter), swarm (beeswarm), ridgeline, Q-Q plot, 2D histogram, hexbin |
 | Uncertainty & fits | error bars (x/y, asymmetric), error bands, polynomial regression with R², moving average |
 | Grids & fields | heatmap (annotated), correlation matrix, calendar heatmap, image, contour lines, filled contours, quiver, 3D surface/wireframe |
-| Finance | candlestick, OHLC |
+| Finance | candlestick, OHLC, Heikin-Ashi, Bollinger bands, RSI, MACD |
+| Layouts | subplots with spans, shared and broken axes, facets (small multiples), pair plot (scatter matrix) |
 | Parts of a whole | pie, donut, treemap, sunburst, funnel, gauge |
 | Polar | polar line/scatter, radar (spider), rose / wind rose |
 | Relations & flows | sankey, network graph (force-directed), parallel coordinates |
