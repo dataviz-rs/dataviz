@@ -18,6 +18,13 @@ Performance: faster rendering with less CPU and memory, no new dependencies.
   9.3 ms with 80 ms CPU time on all cores). `Backend::gpu_available()`.
   Group opacity is applied per element on the GPU.
 - `examples/plot_backends.rs` compares the backends.
+- **Large data**: lines are decimated while they are mapped (no buffer of
+  every point: 50 M points 1.35 s → 1.02 s); dense opaque scatter plots skip
+  markers that would paint an already painted quarter-pixel position or lie
+  outside the plot (10 M points 1.63 s → 0.40 s, +1.3 GB → +0.33 GB RAM);
+  histogram min/max and counting in vectorizable multi-lane loops. The GPU
+  backend requests the adapter's largest buffers, reports geometry above the
+  limit as an error and never uses a software (CPU) adapter.
 - `Figure::render_into(&mut Pixels)` and `Figure::render_0rgb(&mut Vec<u32>)`
   render into reused buffers (real-time redraws without allocations);
   `Pixels::write_0rgb`.
