@@ -1,5 +1,5 @@
 /// Represents the shape and size of scatter plot points.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum ScatterDotType {
     /// A circular point.
     /// - The `u32` value specifies the radius of the circle in pixels.

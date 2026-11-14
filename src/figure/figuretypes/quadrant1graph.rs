@@ -1,5 +1,6 @@
 use crate::figure::{
     configuration::figureconfig::FigureConfig, datasets::cartesiangraphdataset::CartesianDataset,
+    render::Bounds,
 };
 
 /// Represents a graph limited to the first quadrant (x >= 0, y >= 0),
@@ -36,7 +37,7 @@ impl Quadrant1Graph {
     /// # Example
     /// ```rust,ignore
     /// use dataviz::figure::configuration::figureconfig::FigureConfig;
-    /// use dataviz::figure::quadrant1graph::Quadrant1Graph;
+    /// use dataviz::figure::figuretypes::quadrant1graph::Quadrant1Graph;
     ///
     /// let config = FigureConfig::default();
     /// let graph = Quadrant1Graph::new("First Quadrant Graph", "X Axis", "Y Axis", config);
@@ -92,50 +93,36 @@ impl Quadrant1Graph {
         self.update_range();
     }
 
+    /// Extends `x_max` / `y_max` to include every finite data point. The
+    /// minimums of a first-quadrant graph are always `0`.
     pub fn update_range(&mut self) {
         for dataset in &self.datasets {
             for &(x, y) in &dataset.points {
-                if x < self.x_min {
-                    self.x_min = x;
+                if !x.is_finite() || !y.is_finite() {
+                    continue;
                 }
-                if x > self.x_max {
-                    self.x_max = x;
-                }
-                if y < self.y_min {
-                    self.y_min = y;
-                }
-                if y > self.y_max {
-                    self.y_max = y;
-                }
+                self.x_max = self.x_max.max(x);
+                self.y_max = self.y_max.max(y);
             }
         }
-        let mut is_empty = self.datasets.is_empty();
-
-        for dataset in &self.datasets {
-            if dataset.points.is_empty() {
-                is_empty = true;
-                break;
-            }
+        if self.x_max.is_finite() || self.y_max.is_finite() {
+            self.x_min = 0.0;
+            self.y_min = 0.0;
+            self.x_max = self.x_max.max(0.0);
+            self.y_max = self.y_max.max(0.0);
         }
+    }
 
-        if !is_empty {
-            let abs_x_min = self.x_min.abs();
-            let abs_x_max = self.x_max.abs();
-
-            if abs_x_min > abs_x_max {
-                self.x_max = abs_x_min;
-            } else {
-                self.x_min = -abs_x_max;
-            }
-
-            let abs_y_min = self.y_min.abs();
-            let abs_y_max = self.y_max.abs();
-
-            if abs_y_min > abs_y_max {
-                self.y_max = abs_y_min;
-            } else {
-                self.y_min = -abs_y_max;
-            }
+    /// Bounds used for drawing and hit-testing: `0..max` on both axes,
+    /// computed from the data.
+    pub(crate) fn bounds(&self) -> Bounds {
+        let data = Bounds::from_points(self.datasets.iter().flat_map(|d| d.points.iter().copied()))
+            .unwrap_or_default();
+        Bounds {
+            x_min: 0.0,
+            x_max: data.x_max.max(0.0),
+            y_min: 0.0,
+            y_max: data.y_max.max(0.0),
         }
     }
 }

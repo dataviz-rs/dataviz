@@ -1,4 +1,4 @@
-use crate::figure::configuration::figureconfig::FigureConfig;
+use crate::figure::{configuration::figureconfig::FigureConfig, render::Bounds};
 
 /// Represents a histogram, including title, axis labels, bin configuration, and cached data.
 pub struct Histogram {
@@ -43,7 +43,7 @@ impl Histogram {
     /// # Example
     /// ```rust,ignore
     /// use dataviz::figure::configuration::figureconfig::FigureConfig;
-    /// use dataviz::figure::histogram::Histogram;
+    /// use dataviz::figure::figuretypes::histogram::Histogram;
     ///
     /// let config = FigureConfig::default();
     /// let histogram = Histogram::new("Data Distribution", "Values", "Frequency", 10, [255, 0, 0], config);
@@ -77,13 +77,15 @@ impl Histogram {
     /// - `values`: A vector of `f64` values to be added to the histogram.
     ///
     /// # Example
-    /// ```rust,ignore
-    /// histogram.add_data_vec(vec![1.2, 2.5, 3.1, 4.8]);
+    /// ```
+    /// # use dataviz::figure::{configuration::figureconfig::FigureConfig, figuretypes::histogram::Histogram};
+    /// let mut histogram = Histogram::new("h", "x", "n", 4, [0, 0, 255], FigureConfig::default());
+    /// histogram.add_data_vec(vec![1.0, 2.0, 3.0, 4.0, 5.0]);
+    /// assert_eq!(histogram.bin_counts, vec![1.0, 1.0, 1.0, 2.0]);
     /// ```
     pub fn add_data_vec(&mut self, values: Vec<f64>) {
-        for value in values {
-            self.add_data(value);
-        }
+        self.data.extend(values);
+        self.recalculate();
     }
 
     /// Adds a single data value to the histogram.
@@ -92,32 +94,50 @@ impl Histogram {
     /// - `value`: An `f64` value to be added to the histogram.
     ///
     /// # Details
-    /// - Updates the cached minimum and maximum values.
-    /// - Recalculates the bin width.
-    /// - Updates the appropriate bin count based on the value.
+    /// Updates the cached minimum/maximum, the bin width and the bin counts
+    /// (see [`Histogram::recalculate`]). When adding many values at once,
+    /// [`Histogram::add_data_vec`] is faster.
     ///
     /// # Example
-    /// ```rust,ignore
-    /// histogram.add_data(3.5);
+    /// ```
+    /// # use dataviz::figure::{configuration::figureconfig::FigureConfig, figuretypes::histogram::Histogram};
+    /// let mut histogram = Histogram::new("h", "x", "n", 2, [0, 0, 255], FigureConfig::default());
+    /// histogram.add_data(1.0);
+    /// histogram.add_data(3.0);
+    /// assert_eq!(histogram.bin_counts, vec![1.0, 1.0]);
     /// ```
     pub fn add_data(&mut self, value: f64) {
         self.data.push(value);
+        self.recalculate();
+    }
 
-        // Update min and max
-        if value < self.min {
-            self.min = value;
+    /// Recomputes `min`, `max`, `bin_width` and `bin_counts` from `data` and
+    /// `bins`. Call it after changing those fields directly.
+    ///
+    /// Every finite value is counted exactly once: the bins are
+    /// `[min + i * bin_width, min + (i + 1) * bin_width)`, and the last bin
+    /// also includes `max`. When all values are equal, they are counted in
+    /// the first bin and `bin_width` is `0`. Non-finite values are ignored.
+    pub fn recalculate(&mut self) {
+        let finite = || self.data.iter().copied().filter(|v| v.is_finite());
+        self.min = finite().fold(f64::INFINITY, f64::min);
+        self.max = finite().fold(f64::NEG_INFINITY, f64::max);
+        self.bin_counts = vec![0.0; self.bins];
+        self.bin_width = if self.bins > 0 && self.max > self.min {
+            (self.max - self.min) / self.bins as f64
+        } else {
+            0.0
+        };
+        if self.bins == 0 {
+            return;
         }
-        if value > self.max {
-            self.max = value;
-        }
-
-        // Recalculate bin width and update bin counts
-        self.bin_width = (self.max - self.min) / self.bins as f64;
-        if self.bin_width > 0.0 {
-            let bin_index = ((value - self.min) / self.bin_width).floor() as usize;
-            if bin_index < self.bins {
-                self.bin_counts[bin_index] += 1.0;
-            }
+        for v in self.data.iter().copied().filter(|v| v.is_finite()) {
+            let index = if self.bin_width > 0.0 {
+                (((v - self.min) / self.bin_width).floor() as usize).min(self.bins - 1)
+            } else {
+                0
+            };
+            self.bin_counts[index] += 1.0;
         }
     }
 
@@ -141,5 +161,30 @@ impl Histogram {
             .enumerate()
             .map(|(i, &freq)| (self.min + i as f64 * self.bin_width, freq))
             .collect()
+    }
+
+    /// Start and width of the drawn bins: the real ones, or `min..min+1`
+    /// split into `bins` when the data has no spread.
+    pub(crate) fn display_bins(&self) -> (f64, f64) {
+        let bins = self.bins.max(1) as f64;
+        if self.bin_width > 0.0 && self.min.is_finite() {
+            (self.min, self.bin_width)
+        } else if self.min.is_finite() {
+            (self.min, 1.0 / bins)
+        } else {
+            (0.0, 1.0 / bins)
+        }
+    }
+
+    /// Bounds used for drawing and hit-testing.
+    pub(crate) fn bounds(&self) -> Bounds {
+        let (start, width) = self.display_bins();
+        let y_max = self.bin_counts.iter().copied().fold(0.0, f64::max);
+        Bounds {
+            x_min: start,
+            x_max: start + width * self.bins.max(1) as f64,
+            y_min: 0.0,
+            y_max: if y_max > 0.0 { y_max } else { 1.0 },
+        }
     }
 }

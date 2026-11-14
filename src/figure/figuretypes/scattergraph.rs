@@ -1,6 +1,9 @@
 use crate::figure::{
-    canvas::pixelcanvas::PixelCanvas, configuration::figureconfig::FigureConfig,
-    datasets::scattergraphdataset::ScatterGraphDataset, utilities::scatterdottype::ScatterDotType,
+    canvas::pixelcanvas::PixelCanvas,
+    configuration::figureconfig::FigureConfig,
+    datasets::scattergraphdataset::ScatterGraphDataset,
+    render::{pixel, Bounds},
+    utilities::scatterdottype::ScatterDotType,
 };
 
 /// Represents a scatter graph, including title, axis labels, datasets, and configuration settings.
@@ -32,7 +35,7 @@ impl ScatterGraph {
     /// # Example
     /// ```rust,ignore
     /// use dataviz::figure::configuration::figureconfig::FigureConfig;
-    /// use dataviz::figure::scattergraph::ScatterGraph;
+    /// use dataviz::figure::figuretypes::scattergraph::ScatterGraph;
     ///
     /// let config = FigureConfig::default();
     /// let scatter_graph = ScatterGraph::new("Data Points", "X Axis", "Y Axis", config);
@@ -78,6 +81,8 @@ impl ScatterGraph {
     /// - `dot_type`: The shape and size of the dot (`ScatterDotType`).
     /// - `color`: The RGB color of the dot.
     ///
+    /// Pixels outside the canvas are skipped.
+    ///
     /// # Details
     /// Supports different dot types:
     /// - `Circle`: A circular dot with a specified radius.
@@ -97,37 +102,14 @@ impl ScatterGraph {
         dot_type: ScatterDotType,
         color: [u8; 3],
     ) {
-        match dot_type {
-            ScatterDotType::Circle(radius) => {
-                for dy in -(radius as i32)..=radius as i32 {
-                    for dx in -(radius as i32)..=radius as i32 {
-                        if dx * dx + dy * dy <= (radius * radius) as i32 {
-                            canvas.draw_pixel((x + dx) as u32, (y + dy) as u32, color);
-                        }
-                    }
-                }
-            }
-            ScatterDotType::Square(size) => {
-                for dy in -(size as i32) / 2..=(size as i32) / 2 {
-                    for dx in -(size as i32) / 2..=(size as i32) / 2 {
-                        canvas.draw_pixel((x + dx) as u32, (y + dy) as u32, color);
-                    }
-                }
-            }
-            ScatterDotType::Cross(thickness) => {
-                for i in -(thickness as i32)..=(thickness as i32) {
-                    canvas.draw_pixel((x + i) as u32, y as u32, color); // Horizontal line
-                    canvas.draw_pixel(x as u32, (y + i) as u32, color); // Vertical line
-                }
-            }
-            ScatterDotType::Triangle(base) => {
-                for dy in 0..=base as i32 {
-                    let dx = (base as f64 * (1.0 - dy as f64 / base as f64)) as i32;
-                    for x_offset in -dx..=dx {
-                        canvas.draw_pixel((x + x_offset) as u32, (y - dy) as u32, color);
-                    }
-                }
-            }
-        }
+        pixel::marker(canvas, x as f64, y as f64, &dot_type, color);
+    }
+
+    /// Bounds used for drawing and hit-testing: the data range, extended to
+    /// include the origin.
+    pub(crate) fn bounds(&self) -> Bounds {
+        Bounds::from_points(self.datasets.iter().flat_map(|d| d.points.iter().copied()))
+            .unwrap_or_default()
+            .with_origin()
     }
 }

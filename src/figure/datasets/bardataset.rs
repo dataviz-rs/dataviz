@@ -1,4 +1,5 @@
 /// A dataset for a bar chart, containing data points, appearance properties, and metadata.
+#[derive(Clone, Debug, PartialEq)]
 pub struct BarDataset {
     /// Label for the dataset, used in legends or annotations.
     pub label: String,

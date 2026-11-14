@@ -1,6 +1,7 @@
 use crate::figure::utilities::linetype::LineType;
 
 /// A dataset for Cartesian graphs, representing data points and line appearance properties.
+#[derive(Clone, Debug, PartialEq)]
 pub struct CartesianDataset {
     /// A collection of `(x, y)` data points for the Cartesian graph.
     pub points: Vec<(f64, f64)>,

@@ -1,7 +1,59 @@
 use crate::figure::{
     canvas::pixelcanvas::PixelCanvas, configuration::figureconfig::FigureConfig,
-    datasets::areachartdataset::AreaChartDataset,
+    datasets::areachartdataset::AreaChartDataset, render::Bounds,
 };
+
+/// Fills the area between the polyline through `points` (canvas coordinates,
+/// any order) and the horizontal line `baseline`, blending `color` with
+/// `alpha`. Non-finite points are ignored.
+pub(crate) fn fill_area(
+    canvas: &mut PixelCanvas,
+    points: &[(f64, f64)],
+    baseline: f64,
+    color: [u8; 3],
+    alpha: f64,
+) {
+    if !baseline.is_finite() {
+        return;
+    }
+    let mut pts: Vec<(f64, f64)> = points
+        .iter()
+        .copied()
+        .filter(|(x, y)| x.is_finite() && y.is_finite())
+        .collect();
+    if pts.len() < 2 {
+        return;
+    }
+    pts.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+    let (w, h) = (canvas.width as f64, canvas.height as f64);
+    let first = pts[0].0.ceil().max(0.0);
+    let last = pts[pts.len() - 1].0.floor().min(w - 1.0);
+    if first > last {
+        return;
+    }
+    let mut seg = 0;
+    let mut cx = first;
+    while cx <= last {
+        while seg + 2 < pts.len() && pts[seg + 1].0 < cx {
+            seg += 1;
+        }
+        let ((x1, y1), (x2, y2)) = (pts[seg], pts[seg + 1]);
+        let y = if x2 > x1 {
+            y1 + (cx - x1) * (y2 - y1) / (x2 - x1)
+        } else {
+            y1.min(y2)
+        };
+        let top = y.min(baseline).round().max(0.0);
+        let bottom = y.max(baseline).round().min(h - 1.0);
+        let mut cy = top;
+        while cy <= bottom {
+            canvas.blend(cx as i64, cy as i64, color, alpha);
+            cy += 1.0;
+        }
+        cx += 1.0;
+    }
+}
 
 /// Represents an area chart, including its title, axis labels, datasets, and configuration.
 pub struct AreaChart {
@@ -40,7 +92,7 @@ impl AreaChart {
     /// # Example
     /// ```rust,ignore
     /// use dataviz::figure::configuration::figureconfig::FigureConfig;
-    /// use dataviz::figure::areachart::AreaChart;
+    /// use dataviz::figure::figuretypes::areachart::AreaChart;
     ///
     /// let config = FigureConfig::default();
     /// let area_chart = AreaChart::new("Example Chart", "X Axis", "Y Axis", config);
@@ -89,8 +141,10 @@ impl AreaChart {
     /// - `scale_y`: The scaling factor for converting Y-axis values to canvas coordinates.
     ///
     /// # Details
-    /// The method interpolates between adjacent points in the dataset to fill the area
-    /// under the line segment and blend it into the canvas using the dataset's color and transparency.
+    /// The points are sorted by x, then every pixel column between the first and
+    /// the last point is filled from the interpolated line to `origin_y` (above
+    /// or below it), blended with the dataset's color and `alpha`. Each pixel
+    /// is blended exactly once, so the opacity is uniform.
     ///
     /// # Example
     /// ```rust,ignore
@@ -107,26 +161,26 @@ impl AreaChart {
         scale_x: f64,
         scale_y: f64,
     ) {
-        let mut points = dataset.points.clone();
-        points.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+        let points: Vec<(f64, f64)> = dataset
+            .points
+            .iter()
+            .map(|&(x, y)| (origin_x as f64 + x * scale_x, origin_y as f64 - y * scale_y))
+            .collect();
+        fill_area(
+            canvas,
+            &points,
+            origin_y as f64,
+            dataset.color,
+            dataset.alpha,
+        );
+    }
 
-        for window in points.windows(2) {
-            if let [p1, p2] = window {
-                let x1 = origin_x + ((p1.0) * scale_x) as i32;
-                let y1 = origin_y - ((p1.1) * scale_y) as i32;
-                let x2 = origin_x + ((p2.0) * scale_x) as i32;
-                let y2 = origin_y - ((p2.1) * scale_y) as i32;
-
-                // Fill the area under the line
-                for x in x1.min(x2)..=x1.max(x2) {
-                    let interpolated_y =
-                        y1 + ((x - x1) as f64 * (y2 - y1) as f64 / (x2 - x1).abs() as f64) as i32;
-                    for y in interpolated_y..=origin_y {
-                        canvas.blend_pixel(x as u32, y as u32, dataset.color, dataset.alpha);
-                    }
-                }
-            }
-        }
+    /// Bounds used for drawing and hit-testing: the data range, extended to
+    /// include the origin.
+    pub(crate) fn bounds(&self) -> Bounds {
+        Bounds::from_points(self.datasets.iter().flat_map(|d| d.points.iter().copied()))
+            .unwrap_or_default()
+            .with_origin()
     }
 
     pub fn update_range(&mut self) {

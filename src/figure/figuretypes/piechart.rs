@@ -1,4 +1,6 @@
-use crate::figure::{canvas::pixelcanvas::PixelCanvas, configuration::figureconfig::FigureConfig};
+use crate::figure::{
+    canvas::pixelcanvas::PixelCanvas, configuration::figureconfig::FigureConfig, render::Frame,
+};
 
 /// Represents a pie chart with title, datasets, and configuration settings.
 pub struct PieChart {
@@ -26,7 +28,7 @@ impl PieChart {
     /// # Example
     /// ```rust,ignore
     /// use dataviz::figure::configuration::figureconfig::FigureConfig;
-    /// use dataviz::figure::piechart::PieChart;
+    /// use dataviz::figure::figuretypes::piechart::PieChart;
     ///
     /// let config = FigureConfig::default();
     /// let pie_chart = PieChart::new("Market Share", config);
@@ -68,8 +70,10 @@ impl PieChart {
     /// - `color`: The RGB color of the slice.
     ///
     /// # Details
-    /// This method fills a portion of the circle defined by `start_angle` and `end_angle`.
-    /// It ensures that only points within the slice and the circle are drawn.
+    /// Angles are measured counter-clockwise from the positive x-axis (3
+    /// o'clock), in `0..=2π`. A slice ending at `2π` (or later) includes the
+    /// pixels just below the positive x-axis. Pixels outside the canvas are
+    /// skipped.
     ///
     /// # Example
     /// ```rust,ignore
@@ -86,28 +90,57 @@ impl PieChart {
         end_angle: f64,
         color: [u8; 3],
     ) {
-        let start_angle_rad = start_angle;
-        let end_angle_rad = end_angle;
-
-        for y in -radius..=radius {
-            for x in -radius..=radius {
-                // Check if the point is within the circle
-                let distance = (x * x + y * y) as f64;
-                if distance <= (radius * radius) as f64 {
-                    // Calculate the angle of the point
-                    let angle = (y as f64).atan2(x as f64);
-                    let normalized_angle = if angle < 0.0 {
-                        angle + 2.0 * std::f64::consts::PI
-                    } else {
-                        angle
-                    };
-
-                    // Check if the angle is within the slice range
-                    if normalized_angle >= start_angle_rad && normalized_angle < end_angle_rad {
-                        canvas.draw_pixel((center_x + x) as u32, (center_y - y) as u32, color);
-                    }
+        if radius <= 0 || !start_angle.is_finite() || !end_angle.is_finite() {
+            return;
+        }
+        let full = 2.0 * std::f64::consts::PI;
+        let r = radius as i64;
+        let (cx, cy) = (center_x as i64, center_y as i64);
+        for y in -r..=r {
+            for x in -r..=r {
+                if x * x + y * y > r * r {
+                    continue;
+                }
+                let mut angle = (y as f64).atan2(x as f64);
+                if angle < 0.0 {
+                    angle += full;
+                }
+                let inside =
+                    angle >= start_angle && (angle < end_angle || end_angle >= full - 1e-9);
+                if inside {
+                    canvas.put(cx + x, cy - y, color);
                 }
             }
         }
+    }
+
+    /// Slices as `(label, value, color, start angle, sweep)`; negative and
+    /// non-finite values count as `0`. Angles as in [`PieChart::draw_slice`].
+    pub(crate) fn slices(&self) -> Vec<(&str, f64, [u8; 3], f64, f64)> {
+        let value = |v: f64| if v.is_finite() && v > 0.0 { v } else { 0.0 };
+        let total: f64 = self.datasets.iter().map(|d| value(d.1)).sum();
+        let mut start = 0.0;
+        self.datasets
+            .iter()
+            .map(|(label, v, color)| {
+                let sweep = if total > 0.0 {
+                    value(*v) / total * 2.0 * std::f64::consts::PI
+                } else {
+                    0.0
+                };
+                let slice = (label.as_str(), *v, *color, start, sweep);
+                start += sweep;
+                slice
+            })
+            .collect()
+    }
+
+    /// Centre and radius of the pie inside the plot area.
+    pub(crate) fn geometry(width: u32, height: u32, margin: u32) -> ((f64, f64), f64) {
+        let f = Frame::new(width, height, margin);
+        (
+            ((f.left + f.right) / 2.0, (f.top + f.bottom) / 2.0),
+            (f.width().min(f.height()) / 2.0).max(1.0),
+        )
     }
 }

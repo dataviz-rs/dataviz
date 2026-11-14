@@ -1,5 +1,5 @@
 /// Represents the style of a line in a graph or chart.
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub enum LineType {
     /// A solid line with no gaps.
     Solid,

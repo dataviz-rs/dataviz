@@ -1,10 +1,14 @@
 use crate::figure::utilities::linetype::LineType;
 use std::{
     fs::File,
-    io::{self, Write},
+    io::{self, BufWriter, Write},
 };
 
 /// A structure for creating and managing an SVG-based drawing canvas.
+///
+/// `elements[0]` is the XML declaration and the opening `<svg>` tag; the
+/// closing tag is added by [`SvgCanvas::save`] and
+/// [`SvgCanvas::get_svg_as_text`].
 pub struct SvgCanvas {
     /// Width of the SVG canvas.
     pub width: u32,
@@ -14,8 +18,40 @@ pub struct SvgCanvas {
     pub elements: Vec<String>,
     /// Margin size for the SVG canvas.
     pub margin: u32,
-    /// Background color of the SVG canvas.
+    /// Background color of the SVG canvas (any SVG color, e.g. `"white"` or
+    /// `"#ffffff"`). The charts paint the area outside the plot with it; the
+    /// area inside the margins uses `FigureConfig::color_background`.
     pub background_color: String,
+}
+
+/// Escapes text for use in SVG element content and attribute values.
+pub(crate) fn escape_xml(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    for c in text.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&apos;"),
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// `stroke-dasharray` / `stroke-linecap` attributes for a line style.
+pub(crate) fn dash_attributes(line_type: &LineType, stroke_width: f64) -> String {
+    match *line_type {
+        LineType::Solid | LineType::Dashed(0) => String::new(),
+        LineType::Dashed(length) => format!(r#" stroke-dasharray="{length},{length}""#),
+        // Zero-length dashes with round caps render as round dots whose
+        // diameter is the stroke width, `spacing` apart.
+        LineType::Dotted(spacing) => format!(
+            r#" stroke-dasharray="0,{:.2}" stroke-linecap="round""#,
+            (spacing as f64).max(stroke_width * 1.5)
+        ),
+    }
 }
 
 impl SvgCanvas {
@@ -33,20 +69,24 @@ impl SvgCanvas {
         Self {
             width,
             height,
-            elements: vec![format!(
-                r#"<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {} {}">"#,
-                width, height
-            )],
+            elements: vec![Self::header(width, height)],
             margin,
             background_color: background_color.to_string(),
         }
     }
 
-    /// Clears the SVG canvas by removing all elements and reinitializing.
+    fn header(width: u32, height: u32) -> String {
+        format!(
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {width} {height}">"#
+        )
+    }
+
+    /// Clears the SVG canvas: removes every element and re-creates the
+    /// document header, so the canvas can be drawn on and saved again.
     pub fn clear(&mut self) {
-        // Clear all SVG elements
         self.elements.clear();
+        self.elements.push(Self::header(self.width, self.height));
     }
 
     /// Adds a line to the SVG canvas.
@@ -65,6 +105,7 @@ impl SvgCanvas {
         color: &str,
         stroke_width: f64,
     ) {
+        let color = escape_xml(color);
         self.elements.push(format!(
             r#"<line x1="{x1:.2}" y1="{y1:.2}" x2="{x2:.2}" y2="{y2:.2}" stroke="{color}" stroke-width="{stroke_width:.2}"/>"#
         ));
@@ -86,10 +127,7 @@ impl SvgCanvas {
         color: [u8; 3],
         stroke_width: f64,
     ) {
-        self.elements.push(format!(
-            r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}"/>"#,
-            x1, y1, x2, y2, color[0], color[1], color[2], stroke_width
-        ));
+        self.draw_line_rgb_styled(x1, y1, x2, y2, color, stroke_width, LineType::Solid);
     }
 
     /// Adds a line with RGB color and line style (solid, dashed, or dotted) to the SVG canvas.
@@ -111,24 +149,43 @@ impl SvgCanvas {
         stroke_width: f64,
         line_type: LineType,
     ) {
-        let stroke_dasharray = match line_type {
-            LineType::Solid => String::new(),
-            LineType::Dashed(length) => format!("{length},{length}"),
-            LineType::Dotted(spacing) => {
-                // For dots: small dash (3) followed by gap (spacing)
-                format!("3,{spacing}")
-            }
-        };
+        let dash = dash_attributes(&line_type, stroke_width);
+        self.elements.push(format!(
+            r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}"{dash}/>"#,
+            x1, y1, x2, y2, color[0], color[1], color[2], stroke_width
+        ));
+    }
 
-        if stroke_dasharray.is_empty() {
+    /// Adds a polyline (a line through all `points`) with RGB color and line
+    /// style. Unlike drawing each segment separately, the dash pattern runs
+    /// continuously along the whole line, so dense data still looks dashed or
+    /// dotted. Points with non-finite coordinates split the line.
+    ///
+    /// # Parameters
+    /// - `points`: Canvas coordinates of the vertices.
+    /// - `color`: The RGB color of the line.
+    /// - `stroke_width`: The width of the line stroke.
+    /// - `line_type`: The line style (Solid, Dashed, or Dotted).
+    pub fn draw_polyline_rgb_styled(
+        &mut self,
+        points: &[(f64, f64)],
+        color: [u8; 3],
+        stroke_width: f64,
+        line_type: LineType,
+    ) {
+        let dash = dash_attributes(&line_type, stroke_width);
+        for run in points.split(|(x, y)| !x.is_finite() || !y.is_finite()) {
+            if run.len() < 2 {
+                continue;
+            }
+            let pts = run
+                .iter()
+                .map(|(x, y)| format!("{x:.2},{y:.2}"))
+                .collect::<Vec<_>>()
+                .join(" ");
             self.elements.push(format!(
-                r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}"/>"#,
-                x1, y1, x2, y2, color[0], color[1], color[2], stroke_width
-            ));
-        } else {
-            self.elements.push(format!(
-                r#"<line x1="{:.2}" y1="{:.2}" x2="{:.2}" y2="{:.2}" stroke="rgb({},{},{})" stroke-width="{:.2}" stroke-dasharray="{}"/>"#,
-                x1, y1, x2, y2, color[0], color[1], color[2], stroke_width, stroke_dasharray
+                r#"<polyline points="{pts}" fill="none" stroke="rgb({},{},{})" stroke-width="{:.2}" stroke-linejoin="round"{dash}/>"#,
+                color[0], color[1], color[2], stroke_width
             ));
         }
     }
@@ -154,6 +211,19 @@ impl SvgCanvas {
         stroke_width: f64,
         opacity: f64,
     ) {
+        // SVG does not allow negative sizes; normalise the rectangle.
+        let (x, width) = if width < 0.0 {
+            (x + width, -width)
+        } else {
+            (x, width)
+        };
+        let (y, height) = if height < 0.0 {
+            (y + height, -height)
+        } else {
+            (y, height)
+        };
+        let fill_color = escape_xml(fill_color);
+        let stroke_color = escape_xml(stroke_color);
         self.elements.push(format!(
             r#"<rect x="{x:.2}" y="{y:.2}" width="{width:.2}" height="{height:.2}" fill="{fill_color}" stroke="{stroke_color}" stroke-width="{stroke_width:.2}" fill-opacity="{opacity}"/>"#
         ));
@@ -166,6 +236,9 @@ impl SvgCanvas {
     /// - `class_name`: CSS class name for applying the font.
     /// - `font_family`: Name of the font family.
     pub fn add_font_style(&mut self, font_url: &str, class_name: &str, font_family: &str) {
+        let font_url = escape_xml(font_url);
+        let class_name = escape_xml(class_name);
+        let font_family = escape_xml(font_family);
         self.elements.push(format!(
             r#"<style>
                 @import url('{font_url}');
@@ -183,12 +256,14 @@ impl SvgCanvas {
     /// - `r`: Radius of the circle.
     /// - `color`: Fill color of the circle.
     pub fn draw_circle(&mut self, cx: f64, cy: f64, r: f64, color: &str) {
+        let color = escape_xml(color);
         self.elements.push(format!(
             r#"<circle cx="{cx:.2}" cy="{cy:.2}" r="{r:.2}" fill="{color}"/>"#
         ));
     }
 
-    /// Adds a text element to the SVG canvas.
+    /// Adds a text element (centered on `x`) to the SVG canvas. The text is
+    /// XML-escaped.
     ///
     /// # Parameters
     /// - `x`, `y`: Coordinates of the text's position.
@@ -196,12 +271,15 @@ impl SvgCanvas {
     /// - `font_size`: Font size of the text.
     /// - `color`: Text color.
     pub fn draw_text(&mut self, x: f64, y: f64, text: &str, font_size: f64, color: &str) {
+        let text = escape_xml(text);
+        let color = escape_xml(color);
         self.elements.push(format!(
-            r#"<text x="{x:.2}" y="{y:.2}" font-size="{font_size:.2}" text-anchor="middle" fill="{color}">{text}</text>"#
+            r#"<text x="{x:.2}" y="{y:.2}" font-size="{font_size:.2}" font-family="sans-serif" text-anchor="middle" fill="{color}">{text}</text>"#
         ));
     }
 
-    /// Adds a text element to the SVG canvas.
+    /// Adds a title text element (centered on `x`) to the SVG canvas. The
+    /// text is XML-escaped.
     ///
     /// # Parameters
     /// - `x`, `y`: Coordinates of the text's position.
@@ -209,9 +287,7 @@ impl SvgCanvas {
     /// - `font_size`: Font size of the text.
     /// - `color`: Text color.
     pub fn draw_title(&mut self, x: f64, y: f64, text: &str, font_size: f64, color: &str) {
-        self.elements.push(format!(
-            r#"<text x="{x:.2}" y="{y:.2}" font-size="{font_size:.2}" text-anchor="middle" fill="{color}">{text}</text>"#
-        ));
+        self.draw_text(x, y, text, font_size, color);
     }
 
     /// Draws a grid on the SVG canvas.
@@ -219,8 +295,9 @@ impl SvgCanvas {
     /// # Parameters
     /// - `x_min`, `x_max`: Horizontal range for the grid.
     /// - `y_min`, `y_max`: Vertical range for the grid.
-    /// - `x_ticks`: Number of grid lines along the x-axis.
-    /// - `y_ticks`: Number of grid lines along the y-axis.
+    /// - `x_ticks`: Number of divisions along the x-axis (vertical lines).
+    /// - `y_ticks`: Number of divisions along the y-axis (horizontal lines).
+    ///   A value of `0` draws only the outer lines.
     /// - `color`: Color of the grid lines.
     #[allow(clippy::too_many_arguments)]
     pub fn draw_grid(
@@ -233,6 +310,8 @@ impl SvgCanvas {
         y_ticks: usize,
         color: &str,
     ) {
+        let x_ticks = x_ticks.max(1);
+        let y_ticks = y_ticks.max(1);
         let x_step = (x_max - x_min) / x_ticks as f64;
         let y_step = (y_max - y_min) / y_ticks as f64;
 
@@ -255,12 +334,12 @@ impl SvgCanvas {
     /// # Errors
     /// Returns an `io::Result` if saving fails.
     pub fn save(&self, file_path: &str) -> io::Result<()> {
-        let mut file = File::create(file_path)?;
+        let mut file = BufWriter::new(File::create(file_path)?);
         for element in &self.elements {
             writeln!(file, "{element}")?;
         }
         writeln!(file, "</svg>")?;
-        Ok(())
+        file.flush()
     }
 
     /// Retrieves the SVG content as a single string.
@@ -271,8 +350,70 @@ impl SvgCanvas {
         let mut svg = String::new();
         for element in &self.elements {
             svg.push_str(element);
+            svg.push('\n');
         }
         svg.push_str("</svg>");
         svg
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn text_is_escaped() {
+        let mut c = SvgCanvas::new(10, 10, "white", 0);
+        c.draw_text(0.0, 0.0, "a < b & \"c\"", 10.0, "black");
+        assert!(c.elements[1].contains("a &lt; b &amp; &quot;c&quot;"));
+    }
+
+    #[test]
+    fn clear_keeps_a_valid_document() {
+        let mut c = SvgCanvas::new(10, 20, "white", 0);
+        c.draw_circle(1.0, 1.0, 1.0, "red");
+        c.clear();
+        assert_eq!(c.elements.len(), 1);
+        assert!(c.get_svg_as_text().starts_with("<?xml"));
+        assert!(c.elements[0].contains(r#"viewBox="0 0 10 20""#));
+    }
+
+    #[test]
+    fn line_styles() {
+        let mut c = SvgCanvas::new(10, 10, "white", 0);
+        c.draw_line_rgb_styled(0.0, 0.0, 1.0, 1.0, [1, 2, 3], 1.0, LineType::Solid);
+        c.draw_line_rgb_styled(0.0, 0.0, 1.0, 1.0, [1, 2, 3], 1.0, LineType::Dashed(4));
+        c.draw_line_rgb_styled(0.0, 0.0, 1.0, 1.0, [1, 2, 3], 2.0, LineType::Dotted(6));
+        assert!(!c.elements[1].contains("dasharray"));
+        assert!(c.elements[2].contains(r#"stroke-dasharray="4,4""#));
+        assert!(c.elements[3].contains(r#"stroke-dasharray="0,6.00""#));
+        assert!(c.elements[3].contains(r#"stroke="rgb(1,2,3)""#));
+    }
+
+    #[test]
+    fn polyline_splits_on_non_finite_points() {
+        let mut c = SvgCanvas::new(10, 10, "white", 0);
+        c.draw_polyline_rgb_styled(
+            &[
+                (0.0, 0.0),
+                (1.0, 1.0),
+                (f64::NAN, 0.0),
+                (2.0, 2.0),
+                (3.0, 3.0),
+                (4.0, 4.0),
+            ],
+            [0, 0, 0],
+            1.0,
+            LineType::Solid,
+        );
+        assert_eq!(c.elements.len(), 3);
+        assert!(c.elements[2].contains("2.00,2.00 3.00,3.00 4.00,4.00"));
+    }
+
+    #[test]
+    fn negative_rect_is_normalised() {
+        let mut c = SvgCanvas::new(10, 10, "white", 0);
+        c.draw_rect(5.0, 5.0, -2.0, -3.0, "red", "none", 0.0, 1.0);
+        assert!(c.elements[1].contains(r#"x="3.00" y="2.00" width="2.00" height="3.00""#));
     }
 }
