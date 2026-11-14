@@ -17,6 +17,7 @@
 //! to PNG/JPEG/WebP/BMP, converted to PDF (`pdf` feature), shown in a window
 //! (`window` feature) or printed to a terminal.
 
+pub mod anim;
 pub mod axes;
 pub mod axis;
 pub mod color;

@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.6.0
+
+### Added
+- **Animations** (`plot::anim`): `Figure::record(path, fps, frames, update)`
+  and `Recorder` (`create`, `frame`, `push`, `push_at` for varying rates,
+  `finish`) write
+  - GIF: exact palette when a frame has at most 256 colors (typical for
+    charts), otherwise a weighted median-cut palette;
+  - animated PNG (`.png`/`.apng`): lossless, with transparency;
+  - MP4/MOV/MKV (H.264) and WebM (VP9) through the `ffmpeg` program when it
+    is on `PATH`.
+  Only the changed rectangle of each frame is stored and repeated frames
+  extend the previous one. 800×600, 120 frames: a moving sine wave takes
+  0.25 s and 1.0 MB (plotters 1.1 s / 3.2 MB, ruviz 3.7 s / 1.7 MB), a
+  growing line 0.08 s and 38 KB (plotters 2.4 s / 3.2 MB, ruviz 3.7 s /
+  1.7 MB).
+- Windows: `V` starts and stops recording a GIF of the plots (encoded on a
+  background thread; frames are dropped rather than slowing the window).
+- `Recorder` is in the prelude.
+
+### Changed
+- New direct dependencies `gif` and `png` (already used through `image`).
+
 ## 0.5.1
 
 ### Added
