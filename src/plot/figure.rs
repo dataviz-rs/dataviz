@@ -17,6 +17,16 @@ struct Cell {
     axes: Axes,
 }
 
+/// Limits of one plot: x, y and secondary y (min, max).
+pub(crate) type AxesLimitsSnapshot = (
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+);
+
 /// A figure with one or more plots.
 ///
 /// ```
@@ -45,6 +55,10 @@ pub struct Figure {
     share_y: bool,
     #[cfg(feature = "window")]
     pub(crate) selection: Option<super::window::Selection>,
+    /// Layouts of the last render (for `interact`).
+    pub(crate) last_layouts: Vec<super::axes::Layout>,
+    /// Limits before the first interactive zoom or pan.
+    pub(crate) home: Option<Vec<AxesLimitsSnapshot>>,
     /// Pixel buffer reused between renders (real-time redraws).
     pub(crate) pixmap: Option<resvg::tiny_skia::Pixmap>,
     pub(crate) backend: Backend,
@@ -75,6 +89,8 @@ impl Figure {
             share_y: false,
             #[cfg(feature = "window")]
             selection: None,
+            last_layouts: Vec::new(),
+            home: None,
             pixmap: None,
             backend: Backend::Auto,
         }
@@ -393,6 +409,7 @@ impl Figure {
                 scene.nodes.extend(nodes);
             }
             super::math::expand(&mut scene.nodes, &fonts);
+            fig.last_layouts = layouts.clone();
             (scene, layouts)
         })
     }

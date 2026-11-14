@@ -1031,7 +1031,7 @@ mod tests {
         // Over Brazil.
         let (x, y) = Projection::Robinson.project(-50.0, -10.0);
         let hit = fig
-            .cell_axes(0)
+            .axes_at(0)
             .unwrap()
             .hit(&l[0], l[0].x.px(x), l[0].y.px(y))
             .unwrap();

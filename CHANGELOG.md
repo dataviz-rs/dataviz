@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.14.0
+
+### Added
+- **Interaction without a window** (`plot::interact`), for GUI toolkits,
+  WebAssembly pages and custom windows that show the figure's pixels:
+  `Figure::zoom_at`, `pan_by`, `zoom_to_box`, `reset_view`, `hover`
+  (`Hover` with text and position), `click` (legend rows) and `plot_at`,
+  all in canvas pixels of the last render.
+- **WebAssembly**: builds for `wasm32-unknown-unknown` with
+  `default-features = false` (one thread in the browser); see the
+  `plot-wasm` example (canvas, streaming data, zoom/pan/hover in Rust, no
+  wasm-bindgen).
+
+### Changed
+- `image` is used with only the formats dataviz writes (PNG, JPEG, WebP,
+  BMP): no AVIF encoder or rayon in the dependency tree, faster builds,
+  smaller binaries and no wasm-bindgen imports on wasm32.
+
 ## 0.13.1
 
 ### Added

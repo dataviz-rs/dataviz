@@ -1570,7 +1570,6 @@ impl Axes {
     }
 
     /// Nearest data point to a canvas position (for hover).
-    #[cfg(feature = "window")]
     pub(crate) fn hit(&self, lay: &Layout, px: f64, py: f64) -> Option<super::series::Hit> {
         self.shown()
             .filter_map(|s| {
@@ -1589,7 +1588,7 @@ impl Axes {
     /// The data points under a vertical line at canvas `px` (one per
     /// series, nearest in x and within `tolerance` pixels), for the linked
     /// cursor of plots sharing an x range.
-    #[cfg(feature = "window")]
+    #[cfg_attr(not(feature = "window"), allow(dead_code))]
     pub(crate) fn hits_at_x(
         &self,
         lay: &Layout,
