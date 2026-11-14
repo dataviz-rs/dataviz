@@ -46,6 +46,63 @@ impl From<std::io::Error> for Error {
     }
 }
 
+/// Where raster images (PNG/JPEG/WebP/BMP, pixels, windows) are computed.
+///
+/// SVG and PDF output never depend on the backend.
+///
+/// ```
+/// use dataviz::prelude::*;
+/// let mut fig = Figure::new(400, 300);
+/// fig.axes().line([1.0, 2.0, 3.0], [2.0, 1.0, 3.0]);
+/// fig.backend(Backend::Cpu { threads: 0 }); // all cores
+/// let px = fig.to_pixels().unwrap();
+/// assert_eq!((px.width, px.height), (400, 300));
+/// ```
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub enum Backend {
+    /// The CPU: one thread below 1 megapixel (least total CPU time), one
+    /// thread per 250 000 pixels above (up to 16, at most one per core).
+    #[default]
+    Auto,
+    /// The CPU on `threads` threads (`0` = one per core, `1` = only the
+    /// calling thread). Output is the same for any thread count, up to
+    /// rounding at band borders.
+    Cpu {
+        /// Number of threads (0 = available parallelism).
+        threads: usize,
+    },
+    /// The GPU (`gpu` feature) through the system's Vulkan, Metal, DirectX 12
+    /// or OpenGL driver. Rendering fails with [`Error::Render`] when no GPU
+    /// is available.
+    Gpu,
+}
+
+impl Backend {
+    /// Whether [`Backend::Gpu`] can render on this machine (always `false`
+    /// without the `gpu` feature). The first call initializes the GPU.
+    pub fn gpu_available() -> bool {
+        #[cfg(feature = "gpu")]
+        return super::gpu::available();
+        #[cfg(not(feature = "gpu"))]
+        false
+    }
+
+    /// CPU threads to use for a `width × height` image.
+    pub(crate) fn cpu_threads(self, width: u32, height: u32) -> usize {
+        let cores = || std::thread::available_parallelism().map_or(1, |n| n.get());
+        match self {
+            Backend::Cpu { threads: 0 } => cores(),
+            Backend::Cpu { threads } => threads,
+            // One thread per 250k pixels from 1 megapixel on (≤ 16).
+            _ if (width as u64 * height as u64) >= 1_000_000 => cores()
+                .min((width as usize * height as usize) / 250_000)
+                .clamp(1, 16),
+            _ => 1,
+        }
+    }
+}
+
 /// Output file formats.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Format {
@@ -283,14 +340,6 @@ pub(crate) fn to_pdf(svg: &str, fonts: &FontSet) -> Result<Vec<u8>, Error> {
         svg2pdf::PageOptions::default(),
     )
     .map_err(|e| Error::Encode(e.to_string()))
-}
-
-/// Writes `scene` to `path`, choosing the format from the extension.
-pub(crate) fn save(scene: &Scene, fonts: &FontSet, path: &Path, scale: f64) -> Result<(), Error> {
-    let format = Format::from_path(path)?;
-    let bytes = encode(scene, fonts, format, scale)?;
-    std::fs::write(path, bytes)?;
-    Ok(())
 }
 
 /// Encodes `scene` in `format`.

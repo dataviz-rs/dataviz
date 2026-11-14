@@ -15,10 +15,11 @@ use super::scene::{
 use super::text::FontSet;
 use ab_glyph::{Font, GlyphId, OutlineCurve, ScaleFont};
 use resvg::tiny_skia::{
-    self as sk, FillRule, Mask, Paint, PathBuilder, Pixmap, PixmapPaint, Transform,
+    self as sk, FillRule, Mask, Paint, PathBuilder, Pixmap, PixmapMut, PixmapPaint, Transform,
 };
 use std::cell::RefCell;
 use std::hash::{BuildHasherDefault, Hasher};
+use std::sync::{Arc, LazyLock, RwLock};
 
 /// Small, fast non-cryptographic hasher (FxHash) for the internal caches;
 /// keys are trusted, so DoS-resistant hashing is unnecessary.
@@ -71,7 +72,7 @@ fn paint(c: Color) -> Paint<'static> {
     p
 }
 
-fn sk_stroke(s: &Stroke) -> sk::Stroke {
+pub(crate) fn sk_stroke(s: &Stroke) -> sk::Stroke {
     let mut st = sk::Stroke {
         width: s.width.max(0.0) as f32,
         line_cap: match s.cap {
@@ -165,7 +166,7 @@ fn arc_to(
     }
 }
 
-fn build_path(cmds: &[PathCmd]) -> Option<sk::Path> {
+pub(crate) fn build_path(cmds: &[PathCmd]) -> Option<sk::Path> {
     let mut pb = PathBuilder::with_capacity(cmds.len(), cmds.len());
     let mut cur = (0.0, 0.0);
     let mut start = (0.0, 0.0);
@@ -197,7 +198,7 @@ fn build_path(cmds: &[PathCmd]) -> Option<sk::Path> {
     pb.finish()
 }
 
-fn rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<sk::Path> {
+pub(crate) fn rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<sk::Path> {
     let r = r.min(w / 2.0).min(h / 2.0);
     if r <= 0.0 {
         return sk::Rect::from_xywh(x, y, w, h).map(PathBuilder::from_rect);
@@ -217,49 +218,58 @@ fn rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<sk::Path> {
     pb.finish()
 }
 
-thread_local! {
-    /// Glyph outlines in font units (y up), per font and glyph.
-    static GLYPHS: RefCell<HashMap<(usize, u16), Option<sk::Path>>> = RefCell::new(HashMap::default());
+/// A cache shared by the rendering threads (read-mostly).
+type SharedCache<K, V> = LazyLock<RwLock<HashMap<K, Option<Arc<V>>>>>;
+
+/// Looks `key` up in `cache`, computing and inserting it on a miss.
+fn cached<K: std::hash::Hash + Eq, V>(
+    cache: &RwLock<HashMap<K, Option<Arc<V>>>>,
+    key: K,
+    limit: usize,
+    make: impl FnOnce() -> Option<V>,
+) -> Option<Arc<V>> {
+    if let Some(v) = cache.read().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return v.clone();
+    }
+    let v = make().map(Arc::new);
+    let mut map = cache.write().unwrap_or_else(|e| e.into_inner());
+    if map.len() > limit {
+        map.clear();
+    }
+    map.entry(key).or_insert(v).clone()
 }
 
-fn glyph_path(font: &ab_glyph::FontArc, key: usize, id: GlyphId) -> Option<sk::Path> {
-    GLYPHS.with(|g| {
-        let mut g = g.borrow_mut();
-        if g.len() > 20_000 {
-            g.clear();
-        }
-        g.entry((key, id.0))
-            .or_insert_with(|| {
-                let outline = font.outline(id)?;
-                let mut pb = PathBuilder::new();
-                let mut last: Option<ab_glyph::Point> = None;
-                for c in &outline.curves {
-                    let (p0, end) = match c {
-                        OutlineCurve::Line(a, b) => (*a, *b),
-                        OutlineCurve::Quad(a, _, c) => (*a, *c),
-                        OutlineCurve::Cubic(a, _, _, d) => (*a, *d),
-                    };
-                    if last.is_none_or(|l| (l.x - p0.x).abs() > 1e-3 || (l.y - p0.y).abs() > 1e-3) {
-                        if last.is_some() {
-                            pb.close();
-                        }
-                        pb.move_to(p0.x, -p0.y);
-                    }
-                    match c {
-                        OutlineCurve::Line(_, b) => pb.line_to(b.x, -b.y),
-                        OutlineCurve::Quad(_, b, c) => pb.quad_to(b.x, -b.y, c.x, -c.y),
-                        OutlineCurve::Cubic(_, b, c, d) => {
-                            pb.cubic_to(b.x, -b.y, c.x, -c.y, d.x, -d.y)
-                        }
-                    }
-                    last = Some(end);
-                }
+/// Glyph outlines in font units (y up), per font and glyph.
+static GLYPHS: SharedCache<(usize, u16), sk::Path> = LazyLock::new(Default::default);
+
+fn glyph_path(font: &ab_glyph::FontArc, key: usize, id: GlyphId) -> Option<Arc<sk::Path>> {
+    cached(&GLYPHS, (key, id.0), 20_000, || {
+        let outline = font.outline(id)?;
+        let mut pb = PathBuilder::new();
+        let mut last: Option<ab_glyph::Point> = None;
+        for c in &outline.curves {
+            let (p0, end) = match c {
+                OutlineCurve::Line(a, b) => (*a, *b),
+                OutlineCurve::Quad(a, _, c) => (*a, *c),
+                OutlineCurve::Cubic(a, _, _, d) => (*a, *d),
+            };
+            if last.is_none_or(|l| (l.x - p0.x).abs() > 1e-3 || (l.y - p0.y).abs() > 1e-3) {
                 if last.is_some() {
                     pb.close();
                 }
-                pb.finish()
-            })
-            .clone()
+                pb.move_to(p0.x, -p0.y);
+            }
+            match c {
+                OutlineCurve::Line(_, b) => pb.line_to(b.x, -b.y),
+                OutlineCurve::Quad(_, b, c) => pb.quad_to(b.x, -b.y, c.x, -c.y),
+                OutlineCurve::Cubic(_, b, c, d) => pb.cubic_to(b.x, -b.y, c.x, -c.y, d.x, -d.y),
+            }
+            last = Some(end);
+        }
+        if last.is_some() {
+            pb.close();
+        }
+        pb.finish()
     })
 }
 
@@ -323,7 +333,7 @@ fn blend(dst: &mut [u8], rgb: [u32; 3], a: u32) {
 }
 
 /// Anti-aliased fill of the device rectangle `[x0,x1)×[y0,y1)`, clipped.
-fn fill_rect_aa(pm: &mut Pixmap, x0: f32, y0: f32, x1: f32, y1: f32, c: Color, clip: Clip) {
+fn fill_rect_aa(pm: &mut PixmapMut<'_>, x0: f32, y0: f32, x1: f32, y1: f32, c: Color, clip: Clip) {
     let (w, h) = (pm.width() as f32, pm.height() as f32);
     let x0 = x0.max(clip.l).max(0.0);
     let y0 = y0.max(clip.t).max(0.0);
@@ -387,7 +397,7 @@ fn div255(v: u32) -> u32 {
 }
 
 /// Source-over blit of a premultiplied sprite at integer position.
-fn blit(pm: &mut Pixmap, sprite: &Pixmap, x: i32, y: i32, clip: Clip) {
+fn blit(pm: &mut PixmapMut<'_>, sprite: &Pixmap, x: i32, y: i32, clip: Clip) {
     let (w, h) = (pm.width() as i32, pm.height() as i32);
     let (sw, sh) = (sprite.width() as i32, sprite.height() as i32);
     // Visible part of the sprite.
@@ -447,7 +457,7 @@ fn blit(pm: &mut Pixmap, sprite: &Pixmap, x: i32, y: i32, clip: Clip) {
 /// Blends a solid color through an alpha coverage map.
 #[allow(clippy::too_many_arguments)]
 fn blit_coverage(
-    pm: &mut Pixmap,
+    pm: &mut PixmapMut<'_>,
     cov: &[u8],
     cw: i32,
     ch: i32,
@@ -491,71 +501,167 @@ fn blit_coverage(
 
 /// Rasterized glyph: coverage, size and offset from the pen position.
 #[derive(Clone)]
-struct GlyphBitmap {
-    cov: Vec<u8>,
-    w: i32,
-    h: i32,
-    dx: i32,
-    dy: i32,
+pub(crate) struct GlyphBitmap {
+    pub cov: Vec<u8>,
+    pub w: i32,
+    pub h: i32,
+    pub dx: i32,
+    pub dy: i32,
 }
 
-type GlyphKey = (usize, u16, u32, u8, u8, bool);
+pub(crate) type GlyphKey = (usize, u16, u32, u8, u8, bool);
 
-thread_local! {
-    static GLYPH_BITMAPS: RefCell<HashMap<GlyphKey, Option<GlyphBitmap>>> = RefCell::new(HashMap::default());
-}
+static GLYPH_BITMAPS: SharedCache<GlyphKey, GlyphBitmap> = LazyLock::new(Default::default);
 
 /// Coverage of a glyph at pixel scale `k` (font units → px) with subpixel
 /// offset `(fx, fy)` in quarter pixels.
-fn glyph_bitmap(path: &sk::Path, key: GlyphKey, k: f32, bold_px: f32) -> Option<GlyphBitmap> {
-    GLYPH_BITMAPS.with(|g| {
-        let mut g = g.borrow_mut();
-        if g.len() > 50_000 {
-            g.clear();
+fn glyph_bitmap(path: &sk::Path, key: GlyphKey, k: f32, bold_px: f32) -> Option<Arc<GlyphBitmap>> {
+    cached(&GLYPH_BITMAPS, key, 50_000, || {
+        let (fx, fy) = (key.3 as f32 / 4.0, key.4 as f32 / 4.0);
+        let b = path.bounds();
+        let pad = 2.0 + bold_px;
+        let left = (b.left() * k + fx - pad).floor();
+        let top = (b.top() * k + fy - pad).floor();
+        let w = ((b.right() * k + fx + pad).ceil() - left).max(1.0) as u32;
+        let h = ((b.bottom() * k + fy + pad).ceil() - top).max(1.0) as u32;
+        let mut pm = Pixmap::new(w, h)?;
+        let ts = Transform::from_row(k, 0.0, 0.0, k, fx - left, fy - top);
+        let p = paint(Color::BLACK);
+        pm.fill_path(path, &p, FillRule::Winding, ts, None);
+        if bold_px > 0.0 {
+            let st = sk::Stroke {
+                width: bold_px / k,
+                ..sk::Stroke::default()
+            };
+            pm.stroke_path(path, &p, &st, ts, None);
         }
-        g.entry(key)
-            .or_insert_with(|| {
-                let (fx, fy) = (key.3 as f32 / 4.0, key.4 as f32 / 4.0);
-                let b = path.bounds();
-                let pad = 2.0 + bold_px;
-                let left = (b.left() * k + fx - pad).floor();
-                let top = (b.top() * k + fy - pad).floor();
-                let w = ((b.right() * k + fx + pad).ceil() - left).max(1.0) as u32;
-                let h = ((b.bottom() * k + fy + pad).ceil() - top).max(1.0) as u32;
-                let mut pm = Pixmap::new(w, h)?;
-                let ts = Transform::from_row(k, 0.0, 0.0, k, fx - left, fy - top);
-                let p = paint(Color::BLACK);
-                pm.fill_path(path, &p, FillRule::Winding, ts, None);
-                if bold_px > 0.0 {
-                    let st = sk::Stroke {
-                        width: bold_px / k,
-                        ..sk::Stroke::default()
-                    };
-                    pm.stroke_path(path, &p, &st, ts, None);
-                }
-                let cov = pm
-                    .data()
-                    .as_chunks::<4>()
-                    .0
-                    .iter()
-                    .map(|px| px[3])
-                    .collect();
-                Some(GlyphBitmap {
-                    cov,
-                    w: w as i32,
-                    h: h as i32,
-                    dx: left as i32,
-                    dy: top as i32,
-                })
-            })
-            .clone()
+        let cov = pm
+            .data()
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|px| px[3])
+            .collect();
+        Some(GlyphBitmap {
+            cov,
+            w: w as i32,
+            h: h as i32,
+            dx: left as i32,
+            dy: top as i32,
+        })
     })
+}
+
+/// One glyph of laid-out text.
+pub(crate) enum GlyphDraw {
+    /// Cached coverage bitmap with its top-left corner at device `(x, y)`.
+    Bitmap {
+        #[cfg_attr(not(feature = "gpu"), allow(dead_code))]
+        key: GlyphKey,
+        bitmap: Arc<GlyphBitmap>,
+        x: i32,
+        y: i32,
+    },
+    /// Outline (font units) drawn with transform `ts` (rotated text); `bold`
+    /// is the extra stroke width in font units.
+    Outline {
+        path: Arc<sk::Path>,
+        ts: Transform,
+        bold: Option<f32>,
+    },
+}
+
+/// Lays out `t` with the base transform `base` (scale + translation) and
+/// calls `draw` for each glyph. Shared by the CPU and GPU backends.
+pub(crate) fn layout_text(
+    fonts: &FontSet,
+    font_key: usize,
+    base: Transform,
+    t: &TextNode,
+    mut draw: impl FnMut(GlyphDraw),
+) {
+    let Some(font) = &fonts.font else { return };
+    if t.text.is_empty()
+        || t.size <= 0.0
+        || !t.x.is_finite()
+        || !t.y.is_finite()
+        || !t.color.is_visible()
+    {
+        return;
+    }
+    let width = fonts.width(&t.text, t.size);
+    let x0 = match t.anchor {
+        Anchor::Start => t.x,
+        Anchor::Middle => t.x - width / 2.0,
+        Anchor::End => t.x - width,
+    };
+    // Same baseline offsets as the SVG writer.
+    let dy = match t.baseline {
+        Baseline::Alphabetic => 0.0,
+        Baseline::Top => t.size * 0.76,
+        Baseline::Middle => t.size * 0.35,
+        Baseline::Bottom => -t.size * 0.24,
+    };
+    let baseline = t.y + dy;
+    let sf = font.as_scaled(fonts.scale(t.size));
+    let k = sf.h_scale_factor();
+    let mut ts = base;
+    if t.rotate != 0.0 {
+        ts = ts.pre_concat(Transform::from_rotate_at(
+            t.rotate as f32,
+            t.x as f32,
+            t.y as f32,
+        ));
+    }
+    let simple = t.rotate == 0.0 && base.kx == 0.0 && base.ky == 0.0;
+    let mut pen = x0 as f32;
+    let mut prev = None;
+    for ch in t.text.chars() {
+        let id = font.glyph_id(ch);
+        if let Some(pv) = prev {
+            pen += sf.kern(pv, id);
+        }
+        if let Some(path) = glyph_path(font, font_key, id) {
+            if simple {
+                // Cached coverage bitmaps at quarter-pixel positions.
+                let s = base.sx;
+                let gx = pen * s + base.tx;
+                let gy = baseline as f32 * s + base.ty;
+                let (ix, iy) = (gx.floor(), gy.floor());
+                let (fx, fy) = (
+                    ((gx - ix) * 4.0).floor() as u8,
+                    ((gy - iy) * 4.0).floor() as u8,
+                );
+                let bold_px = if t.bold {
+                    t.size as f32 * 0.07 * s
+                } else {
+                    0.0
+                };
+                let key: GlyphKey = (font_key, id.0, (k * s).to_bits(), fx, fy, t.bold);
+                if let Some(g) = glyph_bitmap(&path, key, k * s, bold_px) {
+                    let (x, y) = (ix as i32 + g.dx, iy as i32 + g.dy);
+                    draw(GlyphDraw::Bitmap {
+                        key,
+                        bitmap: g,
+                        x,
+                        y,
+                    });
+                }
+            } else {
+                let gt = ts.pre_concat(Transform::from_row(k, 0.0, 0.0, k, pen, baseline as f32));
+                let bold = t.bold.then(|| (t.size as f32 * 0.07) / k);
+                draw(GlyphDraw::Outline { path, ts: gt, bold });
+            }
+        }
+        pen += sf.h_advance(id);
+        prev = Some(id);
+    }
 }
 
 /// Axis-aligned 2-point segments of a path (grid lines, ticks, frames).
 type Segment = ((f64, f64), (f64, f64));
 
-fn axis_aligned_segments(cmds: &[PathCmd]) -> Option<Vec<Segment>> {
+pub(crate) fn axis_aligned_segments(cmds: &[PathCmd]) -> Option<Vec<Segment>> {
     if !cmds.len().is_multiple_of(2) {
         return None;
     }
@@ -574,7 +680,13 @@ fn axis_aligned_segments(cmds: &[PathCmd]) -> Option<Vec<Segment>> {
 /// the cells it crosses, a running sum per row gives the coverage. Cost is
 /// linear in edge length plus the bounding box, independent of how jagged
 /// the outline is. Returns `false` when the path is not eligible.
-fn fill_polygon(pm: &mut Pixmap, cmds: &[PathCmd], c: Color, ts: Transform, clip: Clip) -> bool {
+fn fill_polygon(
+    pm: &mut PixmapMut<'_>,
+    cmds: &[PathCmd],
+    c: Color,
+    ts: Transform,
+    clip: Clip,
+) -> bool {
     if cmds.len() < 16
         || ts.kx != 0.0
         || ts.ky != 0.0
@@ -746,7 +858,7 @@ thread_local! {
 /// Much cheaper than generic stroking for long, jagged data lines. Returns
 /// `false` when the path is not eligible.
 fn stroke_polyline(
-    pm: &mut Pixmap,
+    pm: &mut PixmapMut<'_>,
     cmds: &[PathCmd],
     s: &Stroke,
     ts: Transform,
@@ -919,7 +1031,7 @@ fn stroke_polyline(
 
 /// Fills and/or strokes a path with tiny-skia.
 fn fill_stroke_path(
-    pm: &mut Pixmap,
+    pm: &mut PixmapMut<'_>,
     path: &sk::Path,
     fill: Option<Color>,
     stroke: &Option<Stroke>,
@@ -974,7 +1086,7 @@ fn circle_key(r: f64, fill: Option<Color>, stroke: &Option<Stroke>) -> Option<Ci
 impl Ctx<'_> {
     fn draw(
         &mut self,
-        pm: &mut Pixmap,
+        pm: &mut PixmapMut<'_>,
         nodes: &[Node],
         circle_counts: &HashMap<(u32, u32, u32, u32), usize>,
     ) {
@@ -988,8 +1100,8 @@ impl Ctx<'_> {
     /// cached until the clip changes.
     fn with_mask<R>(
         &mut self,
-        pm: &mut Pixmap,
-        f: impl FnOnce(&Self, &mut Pixmap, Option<&Mask>) -> R,
+        pm: &mut PixmapMut<'_>,
+        f: impl FnOnce(&Self, &mut PixmapMut<'_>, Option<&Mask>) -> R,
     ) -> R {
         let full = Clip::new(0.0, 0.0, pm.width() as f32, pm.height() as f32);
         if self.clip.intersect(full) == full {
@@ -1020,7 +1132,7 @@ impl Ctx<'_> {
     }
 
     /// Solid axis-aligned rectangle (user space, scale/translate transform).
-    fn fill_rect(&self, pm: &mut Pixmap, r: sk::Rect, c: Color, ts: Transform) {
+    fn fill_rect(&self, pm: &mut PixmapMut<'_>, r: sk::Rect, c: Color, ts: Transform) {
         let (l, t) = (r.left() * ts.sx + ts.tx, r.top() * ts.sy + ts.ty);
         let (rr, b) = (r.right() * ts.sx + ts.tx, r.bottom() * ts.sy + ts.ty);
         fill_rect_aa(pm, l.min(rr), t.min(b), l.max(rr), t.max(b), c, self.clip);
@@ -1029,7 +1141,7 @@ impl Ctx<'_> {
     #[allow(clippy::too_many_arguments)]
     fn fill_stroke(
         &self,
-        pm: &mut Pixmap,
+        pm: &mut PixmapMut<'_>,
         path: &sk::Path,
         fill: Option<Color>,
         stroke: &Option<Stroke>,
@@ -1039,7 +1151,12 @@ impl Ctx<'_> {
         fill_stroke_path(pm, path, fill, stroke, ts, mask);
     }
 
-    fn node(&mut self, pm: &mut Pixmap, n: &Node, counts: &HashMap<(u32, u32, u32, u32), usize>) {
+    fn node(
+        &mut self,
+        pm: &mut PixmapMut<'_>,
+        n: &Node,
+        counts: &HashMap<(u32, u32, u32, u32), usize>,
+    ) {
         let ts = self.base;
         match n {
             Node::Path { cmds, fill, stroke } => {
@@ -1234,7 +1351,7 @@ impl Ctx<'_> {
                                         ..s.clone()
                                     });
                                     fill_stroke_path(
-                                        &mut sp,
+                                        &mut sp.as_mut(),
                                         &p,
                                         *fill,
                                         &st,
@@ -1281,7 +1398,7 @@ impl Ctx<'_> {
                 }
                 if *opacity < 1.0 {
                     if let Some(mut layer) = Pixmap::new(pm.width(), pm.height()) {
-                        self.draw(&mut layer, children, counts);
+                        self.draw(&mut layer.as_mut(), children, counts);
                         let p = PixmapPaint {
                             opacity: opacity.clamp(0.0, 1.0) as f32,
                             ..PixmapPaint::default()
@@ -1299,7 +1416,7 @@ impl Ctx<'_> {
     #[allow(clippy::too_many_arguments)]
     fn image(
         &self,
-        pm: &mut Pixmap,
+        pm: &mut PixmapMut<'_>,
         x: f64,
         y: f64,
         w: f64,
@@ -1353,98 +1470,23 @@ impl Ctx<'_> {
         }
     }
 
-    fn text(&self, pm: &mut Pixmap, t: &TextNode, mask: Option<&Mask>) {
-        let Some(font) = &self.fonts.font else { return };
-        if t.text.is_empty()
-            || t.size <= 0.0
-            || !t.x.is_finite()
-            || !t.y.is_finite()
-            || !t.color.is_visible()
-        {
-            return;
-        }
-        let width = self.fonts.width(&t.text, t.size);
-        let x0 = match t.anchor {
-            Anchor::Start => t.x,
-            Anchor::Middle => t.x - width / 2.0,
-            Anchor::End => t.x - width,
-        };
-        // Same baseline offsets as the SVG writer.
-        let dy = match t.baseline {
-            Baseline::Alphabetic => 0.0,
-            Baseline::Top => t.size * 0.76,
-            Baseline::Middle => t.size * 0.35,
-            Baseline::Bottom => -t.size * 0.24,
-        };
-        let baseline = t.y + dy;
-        let scale = self.fonts.scale(t.size);
-        let sf = font.as_scaled(scale);
-        let k = sf.h_scale_factor();
-        let mut ts = self.base;
-        if t.rotate != 0.0 {
-            ts = ts.pre_concat(Transform::from_rotate_at(
-                t.rotate as f32,
-                t.x as f32,
-                t.y as f32,
-            ));
-        }
+    fn text(&self, pm: &mut PixmapMut<'_>, t: &TextNode, mask: Option<&Mask>) {
         let p = paint(t.color);
-        let mut pen = x0 as f32;
-        let mut prev = None;
-        let simple = t.rotate == 0.0 && self.base.kx == 0.0 && self.base.ky == 0.0;
-        for ch in t.text.chars() {
-            let id = font.glyph_id(ch);
-            if let Some(pv) = prev {
-                pen += sf.kern(pv, id);
-            }
-            if simple {
-                // Cached coverage bitmaps at quarter-pixel positions.
-                let (s, tx, ty) = (self.base.sx, self.base.tx, self.base.ty);
-                let gx = pen * s + tx;
-                let gy = baseline as f32 * s + ty;
-                let (ix, iy) = (gx.floor(), gy.floor());
-                let (fx, fy) = (
-                    ((gx - ix) * 4.0).floor() as u8,
-                    ((gy - iy) * 4.0).floor() as u8,
-                );
-                let bold_px = if t.bold {
-                    t.size as f32 * 0.07 * s
-                } else {
-                    0.0
-                };
-                let key: GlyphKey = (self.font_key, id.0, (k * s).to_bits(), fx, fy, t.bold);
-                if let Some(path) = glyph_path(font, self.font_key, id) {
-                    if let Some(g) = glyph_bitmap(&path, key, k * s, bold_px) {
-                        blit_coverage(
-                            pm,
-                            &g.cov,
-                            g.w,
-                            g.h,
-                            ix as i32 + g.dx,
-                            iy as i32 + g.dy,
-                            t.color,
-                            self.clip,
-                        );
-                    }
-                }
-                pen += sf.h_advance(id);
-                prev = Some(id);
-                continue;
-            }
-            if let Some(path) = glyph_path(font, self.font_key, id) {
-                let gt = ts.pre_concat(Transform::from_row(k, 0.0, 0.0, k, pen, baseline as f32));
-                pm.fill_path(&path, &p, FillRule::Winding, gt, mask);
-                if t.bold {
+        layout_text(self.fonts, self.font_key, self.base, t, |g| match g {
+            GlyphDraw::Bitmap {
+                bitmap: g, x, y, ..
+            } => blit_coverage(pm, &g.cov, g.w, g.h, x, y, t.color, self.clip),
+            GlyphDraw::Outline { path, ts, bold } => {
+                pm.fill_path(&path, &p, FillRule::Winding, ts, mask);
+                if let Some(width) = bold {
                     let st = sk::Stroke {
-                        width: (t.size as f32 * 0.07) / k,
+                        width,
                         ..sk::Stroke::default()
                     };
-                    pm.stroke_path(&path, &p, &st, gt, mask);
+                    pm.stroke_path(&path, &p, &st, ts, mask);
                 }
             }
-            pen += sf.h_advance(id);
-            prev = Some(id);
-        }
+        });
     }
 }
 
@@ -1464,12 +1506,27 @@ fn count_circles(nodes: &[Node], out: &mut HashMap<(u32, u32, u32, u32), usize>)
     }
 }
 
-/// Renders `scene` at `scale` into `pixmap` (resized if needed).
+/// Renders `scene` at `scale` into `pixmap` (resized if needed), on one
+/// thread.
 pub(crate) fn render_pixmap(
     scene: &Scene,
     fonts: &FontSet,
     scale: f64,
     pixmap: &mut Option<Pixmap>,
+) -> Option<()> {
+    render_pixmap_threads(scene, fonts, scale, pixmap, 1)
+}
+
+/// Like [`render_pixmap`], splitting the image into horizontal bands drawn
+/// by up to `threads` threads (each band at least 64 rows). Every band
+/// draws the whole scene clipped to its rows, so the result equals the
+/// single-threaded one.
+pub(crate) fn render_pixmap_threads(
+    scene: &Scene,
+    fonts: &FontSet,
+    scale: f64,
+    pixmap: &mut Option<Pixmap>,
+    threads: usize,
 ) -> Option<()> {
     let scale = if scale.is_finite() && scale > 0.0 {
         scale
@@ -1485,55 +1542,168 @@ pub(crate) fn render_pixmap(
         *pixmap = Pixmap::new(w, h);
     }
     let pm = pixmap.as_mut()?;
-    pm.fill(scene.background.map_or(sk::Color::TRANSPARENT, color));
     let mut counts = HashMap::default();
     count_circles(&scene.nodes, &mut counts);
     let font_key = fonts.font.as_ref().map_or(0, |f| f as *const _ as usize);
-    let mut ctx = Ctx {
-        fonts,
-        font_key,
-        base: Transform::from_scale(scale as f32, scale as f32),
-        sprites: Vec::new(),
-        last_sprite: 0,
-        last_count: None,
-        clip: Clip::new(0.0, 0.0, pm.width() as f32, pm.height() as f32),
-        mask: None,
+    let background = scene.background.map_or(sk::Color::TRANSPARENT, color);
+    let bands = threads.clamp(1, (h as usize / 64).max(1));
+    let rows = (h as usize).div_ceil(bands);
+    let draw_band = |y0: usize, data: &mut [u8]| {
+        let bh = (data.len() / (w as usize * 4)) as u32;
+        let Some(mut band) = PixmapMut::from_bytes(data, w, bh) else {
+            return;
+        };
+        band.fill(background);
+        let mut ctx = Ctx {
+            fonts,
+            font_key,
+            base: Transform::from_row(scale as f32, 0.0, 0.0, scale as f32, 0.0, -(y0 as f32)),
+            sprites: Vec::new(),
+            last_sprite: 0,
+            last_count: None,
+            clip: Clip::new(0.0, 0.0, w as f32, bh as f32),
+            mask: None,
+        };
+        ctx.draw(&mut band, &scene.nodes, &counts);
     };
-    ctx.draw(pm, &scene.nodes, &counts);
+    let chunk = rows * w as usize * 4;
+    if bands == 1 {
+        draw_band(0, pm.data_mut());
+    } else {
+        std::thread::scope(|sc| {
+            for (i, data) in pm.data_mut().chunks_mut(chunk).enumerate() {
+                let draw_band = &draw_band;
+                sc.spawn(move || draw_band(i * rows, data));
+            }
+        });
+    }
     Some(())
 }
 
+/// Converts premultiplied RGBA rows (`stride` bytes apart) row by row on
+/// up to `threads` threads: `f(src_row, dst_row)` with `n` destination
+/// items per row.
+fn par_rows<D: Send>(
+    src: &[u8],
+    stride: usize,
+    h: usize,
+    dst: &mut [D],
+    n: usize,
+    threads: usize,
+    f: impl Fn(&[u8], &mut [D]) + Sync,
+) {
+    let threads = threads.clamp(1, (dst.len() / 65_536).max(1));
+    let rows = h.div_ceil(threads).max(1);
+    let run = |y0: usize, d: &mut [D]| {
+        for (y, row) in d.chunks_mut(n).enumerate() {
+            let at = (y0 + y) * stride;
+            f(&src[at..at + stride.min(src.len() - at)], row);
+        }
+    };
+    if threads == 1 {
+        return run(0, dst);
+    }
+    std::thread::scope(|sc| {
+        for (i, d) in dst.chunks_mut(rows * n).enumerate() {
+            let run = &run;
+            sc.spawn(move || run(i * rows, d));
+        }
+    });
+}
+
+/// Copies `h` rows of `row` bytes (`stride` bytes apart) into `out`.
+#[cfg(feature = "gpu")]
+pub(crate) fn copy_rows(
+    src: &[u8],
+    stride: usize,
+    row: usize,
+    h: usize,
+    out: &mut Vec<u8>,
+    threads: usize,
+) {
+    out.resize(row * h, 0);
+    par_rows(src, stride, h, out, row, threads, |s, d| {
+        d.copy_from_slice(&s[..d.len()])
+    });
+}
+
+/// Copies rows of little-endian `u32` pixels into `out`.
+#[cfg(feature = "gpu")]
+pub(crate) fn copy_rows_u32(
+    src: &[u8],
+    stride: usize,
+    w: usize,
+    h: usize,
+    out: &mut Vec<u32>,
+    threads: usize,
+) {
+    out.resize(w * h, 0);
+    par_rows(src, stride, h, out, w, threads, |s, d| {
+        for (o, p) in d.iter_mut().zip(s.as_chunks::<4>().0) {
+            *o = u32::from_le_bytes(*p);
+        }
+    });
+}
+
+/// Premultiplied RGBA rows → `0x00RRGGBB` composited on white.
+pub(crate) fn premul_to_0rgb(
+    src: &[u8],
+    stride: usize,
+    w: usize,
+    h: usize,
+    out: &mut Vec<u32>,
+    threads: usize,
+) {
+    out.resize(w * h, 0);
+    par_rows(src, stride, h, out, w, threads, |s, d| {
+        for (o, p) in d.iter_mut().zip(s.as_chunks::<4>().0) {
+            let inv = 255 - p[3] as u32;
+            let c = |v: u8| (v as u32 + inv).min(255);
+            *o = c(p[0]) << 16 | c(p[1]) << 8 | c(p[2]);
+        }
+    });
+}
+
+/// Premultiplied RGBA rows → straight-alpha [`Pixels`].
+pub(crate) fn premul_to_pixels(
+    src: &[u8],
+    stride: usize,
+    w: usize,
+    h: usize,
+    out: &mut Pixels,
+    threads: usize,
+) {
+    out.width = w as u32;
+    out.height = h as u32;
+    out.rgba.resize(w * h * 4, 0);
+    par_rows(src, stride, h, &mut out.rgba, w * 4, threads, |s, d| {
+        for (dst, s) in d
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(s.as_chunks::<4>().0)
+        {
+            let a = s[3];
+            *dst = if a == 255 || a == 0 {
+                *s
+            } else {
+                let un = |c: u8| ((c as u16 * 255 + a as u16 / 2) / a as u16).min(255) as u8;
+                [un(s[0]), un(s[1]), un(s[2]), a]
+            };
+        }
+    });
+}
+
 /// Converts a premultiplied pixmap into `0x00RRGGBB` composited on white.
-pub(crate) fn to_0rgb(pm: &Pixmap, out: &mut Vec<u32>) {
-    out.clear();
-    out.extend(pm.data().as_chunks::<4>().0.iter().map(|p| {
-        let inv = 255 - p[3] as u32;
-        let c = |v: u8| (v as u32 + inv).min(255);
-        c(p[0]) << 16 | c(p[1]) << 8 | c(p[2])
-    }));
+pub(crate) fn to_0rgb(pm: &Pixmap, out: &mut Vec<u32>, threads: usize) {
+    let w = pm.width() as usize;
+    premul_to_0rgb(pm.data(), w * 4, w, pm.height() as usize, out, threads);
 }
 
 /// Copies a premultiplied pixmap into straight-alpha RGBA.
-pub(crate) fn to_pixels(pm: &Pixmap, out: &mut Pixels) {
-    out.width = pm.width();
-    out.height = pm.height();
-    let data = pm.data();
-    out.rgba.resize(data.len(), 0);
-    for (dst, s) in out
-        .rgba
-        .as_chunks_mut::<4>()
-        .0
-        .iter_mut()
-        .zip(data.as_chunks::<4>().0)
-    {
-        let a = s[3];
-        *dst = if a == 255 || a == 0 {
-            *s
-        } else {
-            let un = |c: u8| ((c as u16 * 255 + a as u16 / 2) / a as u16).min(255) as u8;
-            [un(s[0]), un(s[1]), un(s[2]), a]
-        };
-    }
+pub(crate) fn to_pixels(pm: &Pixmap, out: &mut Pixels, threads: usize) {
+    let w = pm.width() as usize;
+    premul_to_pixels(pm.data(), w * 4, w, pm.height() as usize, out, threads);
 }
 
 /// Rasterizes a scene into straight-alpha RGBA pixels.
@@ -1545,13 +1715,46 @@ pub(crate) fn rasterize(scene: &Scene, fonts: &FontSet, scale: f64) -> Option<Pi
         height: 0,
         rgba: Vec::new(),
     };
-    to_pixels(pm.as_ref()?, &mut px);
+    to_pixels(pm.as_ref()?, &mut px, 1);
     Some(px)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn bands_match_single_thread() {
+        use crate::prelude::*;
+        let mut fig = Figure::new(500, 400);
+        fig.title("Bands");
+        let ax = fig.axes();
+        let x: Vec<f64> = (0..3000).map(|i| i as f64 / 100.0).collect();
+        ax.line(&x, x.iter().map(|v| v.sin() * (v * 13.0).cos()));
+        ax.scatter(&x[..300], x[..300].iter().map(|v| v.cos()))
+            .size(6.0);
+        ax.bar([5.0, 15.0, 25.0], [0.5, -0.7, 0.3]);
+        ax.text(12.0, 0.8, "label");
+        ax.y_label("rotated y label");
+        let scene = fig.to_scene();
+        let fonts = FontSet::resolve(None);
+        let (mut a, mut b) = (None, None);
+        render_pixmap_threads(&scene, &fonts, 1.5, &mut a, 1).unwrap();
+        render_pixmap_threads(&scene, &fonts, 1.5, &mut b, 7).unwrap();
+        let (a, b) = (a.unwrap(), b.unwrap());
+        // Own fillers give identical bands; tiny-skia paths (rotated text
+        // here) may differ slightly where its edge clipper splits curves at
+        // a band border.
+        let diff: Vec<i32> = a
+            .data()
+            .iter()
+            .zip(b.data())
+            .map(|(p, q)| (*p as i32 - *q as i32).abs())
+            .collect();
+        let off = diff.iter().filter(|d| **d > 2).count();
+        assert!(off * 2000 < diff.len(), "{off} differing channels");
+        assert!(diff.iter().max() <= Some(&64));
+    }
 
     #[test]
     fn polygon_fill_matches_tiny_skia() {
@@ -1580,7 +1783,13 @@ mod tests {
             let mut a = Pixmap::new(60, 60).unwrap();
             a.fill(sk::Color::WHITE);
             let mut b = a.clone();
-            assert!(fill_polygon(&mut a, &cmds, c, Transform::identity(), clip));
+            assert!(fill_polygon(
+                &mut a.as_mut(),
+                &cmds,
+                c,
+                Transform::identity(),
+                clip
+            ));
             let mut m = Mask::new(60, 60).unwrap();
             let r = sk::Rect::from_ltrb(clip.l, clip.t, clip.r, clip.b).unwrap();
             m.fill_path(
@@ -1625,7 +1834,7 @@ mod tests {
             let mut b = Pixmap::new(20, 20).unwrap();
             a.fill(sk::Color::WHITE);
             b.fill(sk::Color::WHITE);
-            fill_rect_aa(&mut a, x0, y0, x1, y1, c, full);
+            fill_rect_aa(&mut a.as_mut(), x0, y0, x1, y1, c, full);
             let r = sk::Rect::from_ltrb(x0, y0, x1, y1).unwrap();
             b.fill_rect(r, &paint(c), Transform::identity(), None);
             for (p, q) in a.data().iter().zip(b.data()) {

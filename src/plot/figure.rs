@@ -1,7 +1,7 @@
 //! The figure: canvas size, theme, title and a grid of axes.
 
 use super::axes::{Axes, Layout};
-use super::output::{self, Error, Format, Pixels};
+use super::output::{self, Backend, Error, Format, Pixels};
 use super::scene::{Anchor, Baseline, Node, Scene};
 use super::series::Rect;
 use super::text::FontSet;
@@ -45,6 +45,7 @@ pub struct Figure {
     share_y: bool,
     /// Pixel buffer reused between renders (real-time redraws).
     pub(crate) pixmap: Option<resvg::tiny_skia::Pixmap>,
+    pub(crate) backend: Backend,
 }
 
 impl Figure {
@@ -63,6 +64,7 @@ impl Figure {
             share_x: false,
             share_y: false,
             pixmap: None,
+            backend: Backend::Auto,
         }
     }
 
@@ -340,38 +342,51 @@ impl Figure {
     /// Rasterizes the figure into `out`, reusing its allocation and the
     /// figure's internal pixel buffer. Use this for real-time redraws.
     pub fn render_into(&mut self, out: &mut Pixels) -> Result<(), Error> {
-        let pm = self.render_pixmap()?;
-        super::raster::to_pixels(pm, out);
-        Ok(())
+        self.render_out(super::render::Out::Pixels(out))
     }
 
     /// Rasterizes the figure into `0x00RRGGBB` pixels composited on white
     /// (the layout of window frame buffers), reusing `out`'s allocation.
     pub fn render_0rgb(&mut self, out: &mut Vec<u32>) -> Result<(), Error> {
-        let pm = self.render_pixmap()?;
-        super::raster::to_0rgb(pm, out);
-        Ok(())
+        self.render_out(super::render::Out::Orgb(out))
     }
 
-    fn render_pixmap(&mut self) -> Result<&resvg::tiny_skia::Pixmap, Error> {
+    pub(crate) fn render_out(&mut self, out: super::render::Out<'_>) -> Result<(), Error> {
         let scene = self.to_scene();
         let fonts = self.fonts();
-        super::raster::render_pixmap(&scene, &fonts, self.scale, &mut self.pixmap)
-            .and(self.pixmap.as_ref())
-            .ok_or_else(|| Error::Render("empty image".into()))
+        super::render::render_to(
+            &scene,
+            &fonts,
+            self.scale,
+            self.backend,
+            &mut self.pixmap,
+            out,
+        )
+    }
+
+    /// Where raster output is computed (default [`Backend::Auto`]).
+    pub fn backend(&mut self, backend: Backend) -> &mut Self {
+        self.backend = backend;
+        self
     }
 
     /// Encodes the figure in a format.
     pub fn encode(&mut self, format: Format) -> Result<Vec<u8>, Error> {
-        let scene = self.to_scene();
-        output::encode(&scene, &self.fonts(), format, self.scale)
+        match format {
+            Format::Svg | Format::Pdf => {
+                let scene = self.to_scene();
+                output::encode(&scene, &self.fonts(), format, self.scale)
+            }
+            raster => self.to_pixels()?.encode(raster),
+        }
     }
 
     /// Saves the figure; the format follows the extension (`.svg`, `.png`,
     /// `.jpg`, `.webp`, `.bmp`, `.pdf` with the `pdf` feature).
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<(), Error> {
-        let scene = self.to_scene();
-        output::save(&scene, &self.fonts(), path.as_ref(), self.scale)
+        let bytes = self.encode(Format::from_path(path.as_ref())?)?;
+        std::fs::write(path, bytes)?;
+        Ok(())
     }
 
     #[cfg(feature = "window")]
