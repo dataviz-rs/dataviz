@@ -699,12 +699,7 @@ impl Axes {
         self.axis_limits_with(&self.x, &self.y, self.fit_y)
     }
 
-    fn axis_limits_with(
-        &self,
-        x_axis: &Axis,
-        y_axis: &Axis,
-        fit_y: bool,
-    ) -> AllLimits {
+    fn axis_limits_with(&self, x_axis: &Axis, y_axis: &Axis, fit_y: bool) -> AllLimits {
         let e = self.extent(false);
         let xl = e.map(|e| (e.x_min, e.sticky_x_min));
         let xh = e.map(|e| (e.x_max, e.sticky_x_max));
@@ -1090,23 +1085,35 @@ impl Axes {
             self.polar.draw_frame(self, &lay, theme, fonts, out, true);
         }
 
-        // Series, clipped to the plot area.
+        // Series, clipped to the plot area; each in a group with an id
+        // (`s<index>`, for interactive output).
         let mut data = Vec::new();
-        for s in self.shown() {
+        for (k, s) in self.series.iter().enumerate() {
+            if !self.is_visible(k) {
+                continue;
+            }
             let y = if s.secondary() {
                 lay.y2.as_ref().unwrap_or(&lay.y)
             } else {
                 &lay.y
             };
+            let mut nodes = Vec::new();
             let mut ctx = Context {
                 x: &lay.x,
                 y,
                 rect: p,
                 theme,
                 fonts,
-                out: &mut data,
+                out: &mut nodes,
             };
             s.draw(&mut ctx);
+            data.push(Node::Group {
+                children: nodes,
+                clip: None,
+                opacity: 1.0,
+                tooltip: None,
+                id: Some(format!("s{k}")),
+            });
         }
         let anchors = anchor_points(&data);
         let clip = match self.kind {
@@ -1118,6 +1125,7 @@ impl Axes {
             clip,
             opacity: 1.0,
             tooltip: None,
+            id: None,
         });
 
         if self.kind == AxesKind::Cartesian {
@@ -1221,6 +1229,7 @@ impl Axes {
             clip: Some((r.x, r.y, r.w, r.h)),
             opacity: 0.6,
             tooltip: None,
+            id: None,
         });
         // Shade what is not shown; mark the window's edges.
         let a = xmap.px(lay.x.min).clamp(r.x, r.right());
@@ -1576,11 +1585,11 @@ impl Axes {
     }
 }
 
-#[cfg(feature = "window")]
 impl Axes {
     /// The data points under a vertical line at canvas `px` (one per
     /// series, nearest in x and within `tolerance` pixels), for the linked
     /// cursor of plots sharing an x range.
+    #[cfg(feature = "window")]
     pub(crate) fn hits_at_x(
         &self,
         lay: &Layout,

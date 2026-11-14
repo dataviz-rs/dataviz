@@ -265,6 +265,16 @@ impl Figure {
             .collect()
     }
 
+    /// The plot created `i`-th (grid order of creation).
+    pub(crate) fn axes_at(&self, i: usize) -> Option<&Axes> {
+        self.cells.get(i).map(|c| &c.axes)
+    }
+
+    /// The figure title.
+    pub(crate) fn title_text(&self) -> Option<String> {
+        self.title.clone()
+    }
+
     /// Lines up the plot areas of a grid: plots starting in the same
     /// column get the same left edge, plots ending in the same column the
     /// same right edge, and likewise for rows.
@@ -376,9 +386,10 @@ impl Figure {
             let rects = fig.cell_rects(&fonts);
             fig.align_cells(&rects, &fonts);
             let mut layouts = Vec::new();
-            for (c, r) in fig.cells.iter().zip(rects) {
+            for (i, (c, r)) in fig.cells.iter().zip(rects).enumerate() {
                 let mut nodes: Vec<Node> = Vec::new();
                 layouts.push(c.axes.render(r, &fig.theme, &fonts, &mut nodes));
+                prefix_ids(&mut nodes, i);
                 scene.nodes.extend(nodes);
             }
             super::math::expand(&mut scene.nodes, &fonts);
@@ -436,6 +447,7 @@ impl Figure {
     /// Encodes the figure in a format.
     pub fn encode(&mut self, format: Format) -> Result<Vec<u8>, Error> {
         match format {
+            Format::Html => Ok(self.to_html().into_bytes()),
             Format::Svg | Format::Pdf => {
                 let scene = self.to_scene();
                 output::encode(&scene, &self.fonts(), format, self.scale)
@@ -455,7 +467,8 @@ impl Figure {
     }
 
     /// Saves the figure; the format follows the extension (`.svg`, `.png`,
-    /// `.jpg`, `.webp`, `.bmp`, `.pdf` with the `pdf` feature).
+    /// `.jpg`, `.webp`, `.bmp`, `.html` (interactive), `.pdf` with the `pdf`
+    /// feature).
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<(), Error> {
         let bytes = self.encode(Format::from_path(path.as_ref())?)?;
         std::fs::write(path, bytes)?;
@@ -465,5 +478,17 @@ impl Figure {
     #[cfg(feature = "window")]
     pub(crate) fn cell_axes(&mut self, i: usize) -> Option<&mut Axes> {
         self.cells.get_mut(i).map(|c| &mut c.axes)
+    }
+}
+
+/// Series group ids `s<k>` of plot `i` become `p<i>-s<k>`.
+fn prefix_ids(nodes: &mut [Node], i: usize) {
+    for n in nodes {
+        if let Node::Group { children, id, .. } = n {
+            if let Some(s) = id.as_mut().filter(|s| s.starts_with('s')) {
+                *s = format!("p{i}-{s}");
+            }
+            prefix_ids(children, i);
+        }
     }
 }

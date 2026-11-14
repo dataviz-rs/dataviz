@@ -224,6 +224,7 @@ impl Series for Bars {
                     clip: None,
                     opacity: 1.0,
                     tooltip: Some(t),
+                    id: None,
                 },
                 None => rect,
             });
@@ -340,6 +341,20 @@ impl Series for Bars {
 
     fn secondary(&self) -> bool {
         self.secondary
+    }
+
+    fn data_points(&self, max: usize) -> Vec<(f64, f64)> {
+        if self.horizontal {
+            return Vec::new();
+        }
+        let x: Vec<f64> = self.pos.iter().map(|p| p + self.offset).collect();
+        let y: Vec<f64> = self
+            .heights
+            .iter()
+            .zip(&self.bottoms)
+            .map(|(h, b)| h + b)
+            .collect();
+        super::spread_points(&x, &y, max)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

@@ -185,6 +185,7 @@ pub(crate) fn draw(
                     clip: None,
                     opacity: 0.3,
                     tooltip: None,
+                    id: None,
                 });
             }
         }

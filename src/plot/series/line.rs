@@ -564,6 +564,10 @@ impl Series for Line {
         self.secondary
     }
 
+    fn data_points(&self, max: usize) -> Vec<(f64, f64)> {
+        super::spread_points(&self.x, &self.y, max)
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

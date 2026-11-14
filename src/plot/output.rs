@@ -163,6 +163,9 @@ pub enum Format {
     Bmp,
     /// Portable Document Format (requires the `pdf` feature).
     Pdf,
+    /// Interactive, self-contained HTML page (figures only; see
+    /// [`crate::plot::html`]).
+    Html,
 }
 
 impl Format {
@@ -180,6 +183,7 @@ impl Format {
             "webp" => Format::WebP,
             "bmp" => Format::Bmp,
             "pdf" => Format::Pdf,
+            "html" | "htm" => Format::Html,
             other => return Err(Error::UnsupportedFormat(format!(".{other}"))),
         })
     }
@@ -396,6 +400,9 @@ pub(crate) fn encode(
 ) -> Result<Vec<u8>, Error> {
     match format {
         Format::Svg => Ok(scene.to_svg().into_bytes()),
+        Format::Html => Err(Error::UnsupportedFormat(
+            "HTML output is made from a figure (Figure::to_html)".into(),
+        )),
         Format::Pdf => {
             #[cfg(feature = "pdf")]
             {

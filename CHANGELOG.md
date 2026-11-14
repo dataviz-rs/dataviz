@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.13.0
+
+### Added
+- **Interactive HTML**: `fig.save("chart.html")` / `Figure::to_html()` write
+  one self-contained page (no network access, no external scripts): the
+  figure as SVG plus a small script with a crosshair and axis values, a
+  tooltip with every series' value at the cursor's x, clicking legend rows
+  to hide series, and a "save as PNG" button. `Format::Html`.
+- `Series::name` and `Series::data_points` (hover data; implemented by
+  lines, scatter, bars and candlesticks).
+- `Node::Group::id`: series are drawn in groups with ids (`p<plot>-s<k>`)
+  in SVG output.
+
 ## 0.12.0
 
 ### Added

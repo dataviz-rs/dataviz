@@ -1397,9 +1397,15 @@ mod tests {
         assert!(r.y > l[0].plot.bottom());
         let (a, b) = (map.px(20.0), map.px(60.0));
         let mid = r.y + r.h / 2.0;
-        assert_eq!(slider_at(&l, (a, mid)).map(|s| s.1), Some(SliderGrab::Start));
+        assert_eq!(
+            slider_at(&l, (a, mid)).map(|s| s.1),
+            Some(SliderGrab::Start)
+        );
         assert_eq!(slider_at(&l, (b, mid)).map(|s| s.1), Some(SliderGrab::End));
-        assert_eq!(slider_at(&l, ((a + b) / 2.0, mid)).map(|s| s.1), Some(SliderGrab::Move));
+        assert_eq!(
+            slider_at(&l, ((a + b) / 2.0, mid)).map(|s| s.1),
+            Some(SliderGrab::Move)
+        );
         assert!(slider_at(&l, (a, r.y - 5.0)).is_none());
         // The slider covers all data, not just the shown range.
         assert!(map.min <= 0.0 && map.max >= 99.0);
@@ -1409,14 +1415,21 @@ mod tests {
     fn measurement_and_selection() {
         assert_eq!(duration(3.0 * 3600.0 + 120.0), "3 h 2 min");
         assert_eq!(duration(-90.0), "−1 min 30 s");
-        let s = Selection { plot: 0, x: (0.0, 1.0), y: (2.0, 3.0) };
+        let s = Selection {
+            plot: 0,
+            x: (0.0, 1.0),
+            y: (2.0, 3.0),
+        };
         assert!(s.contains(0.5, 2.5) && !s.contains(1.5, 2.5));
         let mut f = Figure::new(400, 300);
         f.axes().line(vec![0.0, 10.0], vec![100.0, 110.0]);
         let (_, l) = f.scene_and_layouts();
         let fonts = f.fonts();
         let mut nodes = Vec::new();
-        let (a, b) = ((l[0].x.px(0.0), l[0].y.px(100.0)), (l[0].x.px(10.0), l[0].y.px(110.0)));
+        let (a, b) = (
+            (l[0].x.px(0.0), l[0].y.px(100.0)),
+            (l[0].x.px(10.0), l[0].y.px(110.0)),
+        );
         f.measure_overlay(&fonts, &l, 0, a, b, &mut nodes);
         let texts: Vec<String> = nodes
             .iter()

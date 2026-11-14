@@ -448,8 +448,33 @@ pub trait Series: Any {
     fn y_range_in(&self, _x0: f64, _x1: f64) -> Option<Option<(f64, f64)>> {
         None
     }
+    /// Name shown for the series (legend label) in interactive output.
+    fn name(&self) -> Option<String> {
+        self.legend().into_iter().next().map(|e| e.label)
+    }
+    /// Up to about `max` data points (x, y) of the series, evenly spread,
+    /// for hover readouts in interactive output (HTML). Default: none.
+    fn data_points(&self, _max: usize) -> Vec<(f64, f64)> {
+        Vec::new()
+    }
     /// For downcasting to the concrete type.
     fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+/// Up to about `max` of the points `(x[i], y[i])`, evenly spread (the
+/// first and last always included).
+pub(crate) fn spread_points(x: &[f64], y: &[f64], max: usize) -> Vec<(f64, f64)> {
+    let n = x.len().min(y.len());
+    if n == 0 || max == 0 {
+        return Vec::new();
+    }
+    let step = n.div_ceil(max).max(1);
+    let mut v: Vec<(f64, f64)> = (0..n).step_by(step).map(|i| (x[i], y[i])).collect();
+    if !(n - 1).is_multiple_of(step) {
+        v.push((x[n - 1], y[n - 1]));
+    }
+    v.retain(|(a, b)| a.is_finite() && b.is_finite());
+    v
 }
 
 /// Conversion of numeric types to `f64`.

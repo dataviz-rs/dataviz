@@ -151,6 +151,10 @@ impl Series for Candles {
             .min_by(|a, b| a.distance.total_cmp(&b.distance))
     }
 
+    fn data_points(&self, max: usize) -> Vec<(f64, f64)> {
+        super::spread_points(&self.x, &self.close, max)
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

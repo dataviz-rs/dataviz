@@ -309,6 +309,7 @@ impl Series for Scatter {
                         short(self.x[i]),
                         short(self.y[i])
                     )),
+                    id: None,
                 }),
                 None => ctx.push(node),
             }
@@ -367,6 +368,10 @@ impl Series for Scatter {
     fn color_scale(&self) -> Option<ColorScale> {
         self.colorbar.as_ref()?;
         self.scale()
+    }
+
+    fn data_points(&self, max: usize) -> Vec<(f64, f64)> {
+        super::spread_points(&self.x, &self.y, max)
     }
 
     fn as_any_mut(&mut self) -> &mut dyn Any {

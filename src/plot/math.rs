@@ -1037,6 +1037,7 @@ fn text_node(t: &TextNode, fonts: &FontSet) -> Node {
         clip: None,
         opacity: 1.0,
         tooltip: None,
+        id: None,
     }
 }
 
