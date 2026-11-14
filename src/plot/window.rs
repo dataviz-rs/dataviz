@@ -95,13 +95,17 @@ impl Figure {
     fn frame(&mut self, px: &mut Pixels) -> Result<Vec<Layout>, Error> {
         let (scene, layouts) = self.scene_and_layouts();
         let mut pm = self.pixmap.take();
-        let r = super::raster::render_pixmap(&scene, &self.fonts(), 1.0, &mut pm);
-        if let (Some(()), Some(p)) = (r, pm.as_ref()) {
-            super::raster::to_pixels(p, px);
-        }
+        let fonts = self.fonts();
+        let r = super::render::render_to(
+            &scene,
+            &fonts,
+            1.0,
+            self.backend,
+            &mut pm,
+            super::render::Out::Pixels(px),
+        );
         self.pixmap = pm;
         r.map(|_| layouts)
-            .ok_or_else(|| Error::Render("empty image".into()))
     }
 
     /// Opens an interactive window showing the figure; returns when it is

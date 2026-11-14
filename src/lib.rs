@@ -196,8 +196,8 @@ pub mod prelude {
     pub use crate::plot::series::line::Step;
     pub use crate::plot::time::{date, datetime, parse_datetime};
     pub use crate::plot::{
-        Axes, AxesKind, Axis, Color, Colormap, Dash, Error, Figure, Format, LegendPosition, Marker,
-        Palette, Scale, Series, Theme, TickFormat, TickSpec,
+        Axes, AxesKind, Axis, Backend, Color, Colormap, Dash, Error, Figure, Format,
+        LegendPosition, Marker, Palette, Scale, Series, Theme, TickFormat, TickSpec,
     };
 }
 

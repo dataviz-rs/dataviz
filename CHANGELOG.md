@@ -5,6 +5,19 @@
 Performance: faster rendering with less CPU and memory, no new dependencies.
 
 ### Added
+- **Backends**: `Figure::backend(Backend)` chooses where raster output is
+  computed: `Backend::Auto` (default; CPU, all cores from 1 megapixel on),
+  `Backend::Cpu { threads }` (0 = all cores) or `Backend::Gpu`.
+- **Multi-core CPU rendering**: the image is split into horizontal bands
+  drawn in parallel (4K frame: 50 ms → 9 ms); pixel conversions are
+  parallel too.
+- **GPU rendering** (`gpu` feature, wgpu on Vulkan/Metal/DX12/OpenGL):
+  analytic anti-aliased circles and rectangles, glyph atlas, stencil-and-cover
+  fills with 4× MSAA, analytic clipping, conversion to the output format on
+  the GPU. Real-time 4K frame: 5.9 ms with 4.8 ms CPU time (CPU backends:
+  9.3 ms with 80 ms CPU time on all cores). `Backend::gpu_available()`.
+  Group opacity is applied per element on the GPU.
+- `examples/plot_backends.rs` compares the backends.
 - `Figure::render_into(&mut Pixels)` and `Figure::render_0rgb(&mut Vec<u32>)`
   render into reused buffers (real-time redraws without allocations);
   `Pixels::write_0rgb`.

@@ -78,7 +78,7 @@ Every image links to its example in
 - **Output**: SVG, PNG, JPEG, WebP, BMP, PDF (`pdf` feature), raw RGBA pixels, high-DPI scaling, terminal (`fig.print()`).
 - **Interactive**: `fig.show(..)` (zoom, pan, box zoom, reset, hover, save) and `fig.show_live(..)` for streaming data.
 - **Data**: any numeric slice/vector/iterator, CSV/TSV with dates (`plot::data::Table`), statistics helpers, custom chart types via the `Series` trait.
-- **Features**: `window` (default, interactive windows via `minifb`), `pdf` (PDF output). `default-features = false` builds headless.
+- **Features**: `window` (default, interactive windows via `minifb`), `pdf` (PDF output), `gpu` (GPU rasterization via `wgpu`). `default-features = false` builds headless.
 
 ## **Performance**
 
@@ -99,6 +99,33 @@ per frame (Linux x86-64, single thread):
 
 Static PNG (warm, encode included): line with 1 M points 24 ms,
 histogram of 1 M values 6 ms, scatter with 100 k points 14 ms.
+
+### Backends: CPU, multi-core CPU, GPU
+
+```rust
+use dataviz::prelude::*;
+let mut fig = Figure::new(800, 600);
+fig.backend(Backend::Auto);                // default: CPU, all cores from 1 megapixel on
+fig.backend(Backend::Cpu { threads: 1 });  // least CPU time on the CPU, lowest memory
+fig.backend(Backend::Cpu { threads: 0 });  // all cores: lowest latency without a GPU
+fig.backend(Backend::Gpu);                 // `gpu` feature: Vulkan / Metal / DX12 / OpenGL
+```
+
+The same real-time chart (line, rolling 100 000 points), latency p50 and
+CPU time per frame (RTX 5070 Ti laptop GPU, 20-core CPU):
+
+| Resolution | CPU 1 thread | CPU all cores | GPU |
+|---|---|---|---|
+| 800×600 | 2.3 ms / 2.4 ms CPU | 1.9 ms / 4.2 ms CPU | 1.7 ms / 1.4 ms CPU |
+| 1920×1080 | 11.7 ms / 11.8 ms CPU | 3.5 ms / 19.1 ms CPU | 2.5 ms / 2.2 ms CPU |
+| 3840×2160 | 49.7 ms / 50.8 ms CPU | 9.3 ms / 80.1 ms CPU | 5.9 ms / 4.8 ms CPU |
+
+The GPU backend needs the least CPU time and is fastest for large images
+and many markers; it costs ~30 ms of start-up and ~230 MB of driver memory
+(peak RSS 240–290 MB vs 9–110 MB on the CPU), so the default stays on the
+CPU. Output of all backends matches within anti-aliasing differences
+(`Backend::gpu_available()` tells whether a GPU can be used). Try
+`cargo run --release --example plot_backends --features gpu`.
 
 ## **Installation**
 ```toml
