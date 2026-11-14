@@ -25,26 +25,32 @@ pub struct Histogram {
     pub(crate) edge: Option<Color>,
     pub(crate) opacity: f32,
     pub(crate) label: Option<String>,
+    /// Edges and heights, computed once (reset by the binning setters).
+    pub(crate) cache: std::sync::OnceLock<(Vec<f64>, Vec<f64>)>,
 }
 
 impl Histogram {
     /// Binning rule (default: automatic).
     pub fn bins(&mut self, bins: Bins) -> &mut Self {
+        self.cache = Default::default();
         self.bins = bins;
         self
     }
     /// Number of equal-width bins.
     pub fn bin_count(&mut self, n: usize) -> &mut Self {
+        self.cache = Default::default();
         self.bins = Bins::Count(n);
         self
     }
     /// Normalizes so the area is 1 (probability density).
     pub fn density(&mut self, on: bool) -> &mut Self {
+        self.cache = Default::default();
         self.density = on;
         self
     }
     /// Cumulative counts.
     pub fn cumulative(&mut self, on: bool) -> &mut Self {
+        self.cache = Default::default();
         self.cumulative = on;
         self
     }
@@ -81,6 +87,10 @@ impl Histogram {
 
     /// Bin edges and heights as drawn.
     pub fn computed(&self) -> (Vec<f64>, Vec<f64>) {
+        self.cache.get_or_init(|| self.compute()).clone()
+    }
+
+    fn compute(&self) -> (Vec<f64>, Vec<f64>) {
         let edges = stats::bin_edges(&self.values, &self.bins);
         let mut h = stats::histogram(&self.values, &edges);
         if self.cumulative {
@@ -709,6 +719,7 @@ impl Axes {
             edge: None,
             opacity: 1.0,
             label: None,
+            cache: Default::default(),
         })
     }
 

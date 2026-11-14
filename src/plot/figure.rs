@@ -43,6 +43,8 @@ pub struct Figure {
     spacing: f64,
     share_x: bool,
     share_y: bool,
+    /// Pixel buffer reused between renders (real-time redraws).
+    pub(crate) pixmap: Option<resvg::tiny_skia::Pixmap>,
 }
 
 impl Figure {
@@ -60,6 +62,7 @@ impl Figure {
             spacing: 16.0,
             share_x: false,
             share_y: false,
+            pixmap: None,
         }
     }
 
@@ -325,8 +328,37 @@ impl Figure {
 
     /// Rasterizes the figure (at [`Figure::scale`]).
     pub fn to_pixels(&mut self) -> Result<Pixels, Error> {
+        let mut px = Pixels {
+            width: 0,
+            height: 0,
+            rgba: Vec::new(),
+        };
+        self.render_into(&mut px)?;
+        Ok(px)
+    }
+
+    /// Rasterizes the figure into `out`, reusing its allocation and the
+    /// figure's internal pixel buffer. Use this for real-time redraws.
+    pub fn render_into(&mut self, out: &mut Pixels) -> Result<(), Error> {
+        let pm = self.render_pixmap()?;
+        super::raster::to_pixels(pm, out);
+        Ok(())
+    }
+
+    /// Rasterizes the figure into `0x00RRGGBB` pixels composited on white
+    /// (the layout of window frame buffers), reusing `out`'s allocation.
+    pub fn render_0rgb(&mut self, out: &mut Vec<u32>) -> Result<(), Error> {
+        let pm = self.render_pixmap()?;
+        super::raster::to_0rgb(pm, out);
+        Ok(())
+    }
+
+    fn render_pixmap(&mut self) -> Result<&resvg::tiny_skia::Pixmap, Error> {
         let scene = self.to_scene();
-        output::rasterize(&scene, &self.fonts(), self.scale)
+        let fonts = self.fonts();
+        super::raster::render_pixmap(&scene, &fonts, self.scale, &mut self.pixmap)
+            .and(self.pixmap.as_ref())
+            .ok_or_else(|| Error::Render("empty image".into()))
     }
 
     /// Encodes the figure in a format.
@@ -342,6 +374,7 @@ impl Figure {
         output::save(&scene, &self.fonts(), path.as_ref(), self.scale)
     }
 
+    #[cfg(feature = "window")]
     pub(crate) fn cell_axes(&mut self, i: usize) -> Option<&mut Axes> {
         self.cells.get_mut(i).map(|c| &mut c.axes)
     }

@@ -80,6 +80,26 @@ Every image links to its example in
 - **Data**: any numeric slice/vector/iterator, CSV/TSV with dates (`plot::data::Table`), statistics helpers, custom chart types via the `Series` trait.
 - **Features**: `window` (default, interactive windows via `minifb`), `pdf` (PDF output). `default-features = false` builds headless.
 
+## **Performance**
+
+A built-in rasterizer draws the scene directly into pixels (embedded DejaVu
+Sans font, no system font scan, reusable pixel buffers via
+`Figure::render_into` / `Figure::render_0rgb`). Dense lines are drawn as
+per-pixel-column envelopes, so the cost does not grow with the number of
+points on screen.
+
+Real-time chart, 800×600, rolling window, one new point and a full redraw
+per frame (Linux x86-64, single thread):
+
+| points | p50 latency | p95 latency | CPU / frame | peak RSS |
+|-------:|------------:|------------:|------------:|---------:|
+| 1 000 | 1.6 ms | 1.6 ms | 1.6 ms | 8 MB |
+| 10 000 | 1.5 ms | 1.8 ms | 1.5 ms | 10 MB |
+| 100 000 | 2.3 ms | 2.4 ms | 2.4 ms | 15 MB |
+
+Static PNG (warm, encode included): line with 1 M points 24 ms,
+histogram of 1 M values 6 ms, scatter with 100 k points 14 ms.
+
 ## **Installation**
 ```toml
 [dependencies]

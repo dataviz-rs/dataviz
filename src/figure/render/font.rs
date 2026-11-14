@@ -61,6 +61,7 @@ const PREFERRED: [&str; 8] = [
 /// Font database for rendering SVG text: system fonts plus `font_path`, with
 /// the generic `sans-serif` family (used by the generated SVG) mapped to
 /// `font_path`'s family or to an installed sans-serif font.
+#[cfg(feature = "window")]
 pub(crate) fn svg_font_database(font_path: Option<&str>) -> resvg::usvg::fontdb::Database {
     use resvg::usvg::fontdb::Database;
 

@@ -9,7 +9,7 @@ use super::series::bar::{BarMode, Bars};
 use super::series::line::{FillBetween, Line};
 use super::series::scatter::Scatter;
 use super::series::{
-    ColorScale, Context, Extent, Hit, IntoLabels, IntoValues, LegendEntry, Rect, Series,
+    ColorScale, Context, Extent, IntoLabels, IntoValues, LegendEntry, Rect, Series,
 };
 use super::text::FontSet;
 use super::theme::Theme;
@@ -1186,7 +1186,8 @@ impl Axes {
     }
 
     /// Nearest data point to a canvas position (for hover).
-    pub(crate) fn hit(&self, lay: &Layout, px: f64, py: f64) -> Option<Hit> {
+    #[cfg(feature = "window")]
+    pub(crate) fn hit(&self, lay: &Layout, px: f64, py: f64) -> Option<super::series::Hit> {
         self.series
             .iter()
             .filter_map(|s| {

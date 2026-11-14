@@ -277,6 +277,66 @@ fn catmull_rom(p: &[(f64, f64)]) -> Vec<(f64, f64)> {
     out
 }
 
+/// Envelope polygon of a dense polyline (canvas points sorted by x):
+/// per pixel column the vertical extent of the line, widened by half the
+/// line width. `None` when the line is not dense enough (< 2 vertices per
+/// column on average) or not sorted by x.
+#[allow(clippy::needless_range_loop)]
+pub(crate) fn envelope(pts: &[(f64, f64)], width: f64) -> Option<Vec<(f64, f64)>> {
+    if pts.len() < 64 || !pts.windows(2).all(|w| w[1].0 >= w[0].0) {
+        return None;
+    }
+    let (x0, x1) = (pts[0].0, pts[pts.len() - 1].0);
+    let c0 = x0.floor() as i64;
+    let cols = (x1.floor() as i64 - c0 + 1).max(1) as usize;
+    if (pts.len() as f64) < cols as f64 * 2.0 || cols > 20_000 {
+        return None;
+    }
+    let mut lo = vec![f64::INFINITY; cols];
+    let mut hi = vec![f64::NEG_INFINITY; cols];
+    let mut put = |c: i64, y: f64| {
+        let i = (c - c0).clamp(0, cols as i64 - 1) as usize;
+        lo[i] = lo[i].min(y);
+        hi[i] = hi[i].max(y);
+    };
+    for w in pts.windows(2) {
+        let ((ax, ay), (bx, by)) = (w[0], w[1]);
+        let (ca, cb) = (ax.floor() as i64, bx.floor() as i64);
+        put(ca, ay);
+        put(cb, by);
+        // Columns crossed by the segment get the interpolated y at the edges.
+        if cb > ca {
+            for c in ca + 1..=cb {
+                let t = (c as f64 - ax) / (bx - ax);
+                let y = ay + (by - ay) * t;
+                put(c - 1, y);
+                put(c, y);
+            }
+        }
+    }
+    let hw = (width / 2.0).max(0.5);
+    let mut poly = Vec::with_capacity(cols * 4);
+    for i in 0..cols {
+        let x = (c0 + i as i64) as f64;
+        let (l, r) = (
+            if i == 0 { x0 } else { x },
+            if i + 1 == cols { x1 } else { x + 1.0 },
+        );
+        poly.push((l, lo[i] - hw));
+        poly.push((r, lo[i] - hw));
+    }
+    for i in (0..cols).rev() {
+        let x = (c0 + i as i64) as f64;
+        let (l, r) = (
+            if i == 0 { x0 } else { x },
+            if i + 1 == cols { x1 } else { x + 1.0 },
+        );
+        poly.push((r, hi[i] + hw));
+        poly.push((l, hi[i] + hw));
+    }
+    Some(poly)
+}
+
 /// Min/max decimation per pixel column for x-sorted canvas points.
 pub(crate) fn decimate(pts: Vec<(f64, f64)>, width_px: f64) -> Vec<(f64, f64)> {
     if (pts.len() as f64) < width_px * 4.0
@@ -352,8 +412,16 @@ impl Series for Line {
         }
         if self.width > 0.0 {
             let stroke = self.dash.stroke(self.color, self.width);
+            let plain =
+                self.decimate && self.step.is_none() && !self.smooth && self.dash == Dash::Solid;
             for run in &runs {
-                ctx.polyline(run, stroke.clone());
+                // Dense, x-sorted solid lines are drawn as their pixel-column
+                // envelope (one filled polygon) instead of stroking thousands
+                // of overlapping segments: same picture, a fraction of the cost.
+                match plain.then(|| envelope(run, self.width)).flatten() {
+                    Some(poly) => ctx.polygon(&poly, Some(self.color), None),
+                    None => ctx.polyline(run, stroke.clone()),
+                }
             }
         }
         if self.marker != Marker::None {
@@ -598,6 +666,20 @@ mod tests {
         assert_eq!(s[0], p[0]);
         assert_eq!(*s.last().unwrap(), p[3]);
         assert!(s.iter().all(|(_, y)| *y <= 10.0 + 1e-9 && *y >= -1e-9));
+    }
+
+    #[test]
+    fn envelope_covers_the_line() {
+        let pts: Vec<(f64, f64)> = (0..2000)
+            .map(|i| (i as f64 / 10.0, (i % 7) as f64 * 3.0))
+            .collect();
+        let poly = envelope(&pts, 2.0).unwrap();
+        let top = poly.iter().map(|p| p.1).fold(f64::INFINITY, f64::min);
+        let bottom = poly.iter().map(|p| p.1).fold(f64::NEG_INFINITY, f64::max);
+        assert_eq!((top, bottom), (-1.0, 19.0));
+        assert!(envelope(&pts[..50], 2.0).is_none());
+        let sparse: Vec<(f64, f64)> = (0..100).map(|i| (i as f64 * 10.0, 0.0)).collect();
+        assert!(envelope(&sparse, 2.0).is_none());
     }
 
     #[test]

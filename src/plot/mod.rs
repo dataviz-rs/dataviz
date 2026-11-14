@@ -24,6 +24,7 @@ pub mod data;
 pub mod figure;
 pub mod legend;
 pub mod output;
+pub(crate) mod raster;
 pub mod scale;
 pub mod scene;
 pub mod series;

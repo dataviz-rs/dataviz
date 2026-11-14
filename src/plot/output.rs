@@ -2,10 +2,10 @@
 
 use super::scene::Scene;
 use super::text::FontSet;
+#[cfg(test)]
 use resvg::{tiny_skia, usvg};
 use std::fmt;
 use std::path::Path;
-use std::sync::Arc;
 
 /// Errors from rendering or saving a figure.
 #[derive(Debug)]
@@ -111,16 +111,22 @@ impl Pixels {
 
     /// `0x00RRGGBB` pixels composited on white (the layout `minifb` expects).
     pub fn to_0rgb(&self) -> Vec<u32> {
-        self.rgba
-            .as_chunks::<4>()
-            .0
-            .iter()
-            .map(|p| {
-                let a = p[3] as u32;
-                let c = |v: u8| (v as u32 * a + 255 * (255 - a)) / 255;
-                c(p[0]) << 16 | c(p[1]) << 8 | c(p[2])
-            })
-            .collect()
+        let mut out = Vec::new();
+        self.write_0rgb(&mut out);
+        out
+    }
+
+    /// Like [`Pixels::to_0rgb`], writing into `out` (reusing its allocation).
+    pub fn write_0rgb(&self, out: &mut Vec<u32>) {
+        out.clear();
+        out.extend(self.rgba.as_chunks::<4>().0.iter().map(|p| {
+            let a = p[3] as u32;
+            if a == 255 {
+                return (p[0] as u32) << 16 | (p[1] as u32) << 8 | p[2] as u32;
+            }
+            let c = |v: u8| (v as u32 * a + 255 * (255 - a)) / 255;
+            c(p[0]) << 16 | c(p[1]) << 8 | c(p[2])
+        }));
     }
 
     /// Encodes the image (PNG, JPEG, WebP or BMP).
@@ -132,7 +138,37 @@ impl Pixels {
                 .ok_or_else(|| Error::Encode("buffer size mismatch".into()))?;
         let enc = |e: image::ImageError| Error::Encode(e.to_string());
         match format {
-            Format::Png => rgba.write_to(&mut out, ImageFormat::Png).map_err(enc)?,
+            Format::Png => {
+                use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+                use image::{ExtendedColorType, ImageEncoder};
+                // Fast compression; drop the alpha channel when fully opaque.
+                let enc_png = PngEncoder::new_with_quality(
+                    &mut out,
+                    CompressionType::Fast,
+                    FilterType::Adaptive,
+                );
+                if self.rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 255) {
+                    let rgb: Vec<u8> = self
+                        .rgba
+                        .as_chunks::<4>()
+                        .0
+                        .iter()
+                        .flat_map(|p| [p[0], p[1], p[2]])
+                        .collect();
+                    enc_png
+                        .write_image(&rgb, self.width, self.height, ExtendedColorType::Rgb8)
+                        .map_err(enc)?;
+                } else {
+                    enc_png
+                        .write_image(
+                            &self.rgba,
+                            self.width,
+                            self.height,
+                            ExtendedColorType::Rgba8,
+                        )
+                        .map_err(enc)?;
+                }
+            }
             Format::WebP => rgba.write_to(&mut out, ImageFormat::WebP).map_err(enc)?,
             Format::Jpeg | Format::Bmp => {
                 // No alpha channel: composite on white.
@@ -163,18 +199,20 @@ impl Pixels {
 /// Rasterizes a scene at `scale` (1.0 = one pixel per unit, 2.0 for
 /// high-DPI output).
 pub(crate) fn rasterize(scene: &Scene, fonts: &FontSet, scale: f64) -> Result<Pixels, Error> {
-    let svg = scene.to_svg();
-    rasterize_svg(&svg, fonts, scale)
+    super::raster::rasterize(scene, fonts, scale).ok_or_else(|| Error::Render("empty image".into()))
 }
 
+#[cfg(test)]
 pub(crate) fn usvg_options(fonts: &FontSet) -> usvg::Options<'static> {
     usvg::Options {
-        fontdb: Arc::clone(&fonts.db),
+        fontdb: fonts.db(),
         font_family: fonts.family.clone(),
         ..usvg::Options::default()
     }
 }
 
+/// Rasterizes SVG text with resvg (reference renderer for the tests).
+#[cfg(test)]
 pub(crate) fn rasterize_svg(svg: &str, fonts: &FontSet, scale: f64) -> Result<Pixels, Error> {
     let opt = usvg_options(fonts);
     let tree = usvg::Tree::from_str(svg, &opt).map_err(|e| Error::Render(e.to_string()))?;
@@ -209,7 +247,7 @@ pub(crate) fn rasterize_svg(svg: &str, fonts: &FontSet, scale: f64) -> Result<Pi
 pub(crate) fn to_pdf(svg: &str, fonts: &FontSet) -> Result<Vec<u8>, Error> {
     // svg2pdf bundles its own usvg version, so it gets its own font database.
     use std::collections::HashMap;
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::{Arc, Mutex, OnceLock};
     use svg2pdf::usvg as pusvg;
     static DBS: OnceLock<Mutex<HashMap<String, Arc<pusvg::fontdb::Database>>>> = OnceLock::new();
     let db = {
@@ -222,12 +260,11 @@ pub(crate) fn to_pdf(svg: &str, fonts: &FontSet) -> Result<Vec<u8>, Error> {
                 let mut db = pusvg::fontdb::Database::new();
                 db.load_system_fonts();
                 // Fonts loaded from files (custom theme fonts).
-                for face in fonts.db.faces() {
-                    if let resvg::usvg::fontdb::Source::File(path) = &face.source {
-                        if face.families.iter().any(|f| f.0 == fonts.family) {
-                            let _ = db.load_font_file(path);
-                        }
+                match fonts.path() {
+                    Some(p) => {
+                        let _ = db.load_font_file(p);
                     }
+                    None => db.load_font_data(super::text::DEFAULT_FONT.to_vec()),
                 }
                 db.set_sans_serif_family(fonts.family.clone());
                 Arc::new(db)
@@ -278,5 +315,43 @@ pub(crate) fn encode(
             }
         }
         raster => rasterize(scene, fonts, scale)?.encode(raster),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+
+    /// The direct rasterizer must match resvg rendering the SVG output.
+    #[test]
+    fn direct_rasterizer_matches_resvg() {
+        let mut fig = Figure::new(400, 300);
+        fig.title("Title");
+        let ax = fig.axes();
+        let x: Vec<f64> = (0..400).map(|i| i as f64 / 20.0).collect();
+        let y: Vec<f64> = x.iter().map(|v| v.sin() + (v * 7.0).cos() * 0.2).collect();
+        ax.line(&x, &y).label("line");
+        ax.scatter(&x[..60], &y[..60]).size(5.0);
+        ax.bar([2.0, 6.0, 10.0], [0.5, -0.4, 0.8]).label("bars");
+        ax.hist(&y).bin_count(10);
+        ax.x_label("x axis").y_label("y axis");
+        let scene = fig.to_scene();
+        let fonts = FontSet::resolve(None);
+        let a = rasterize(&scene, &fonts, 1.0).unwrap();
+        let b = rasterize_svg(&scene.to_svg(), &fonts, 1.0).unwrap();
+        assert_eq!((a.width, a.height), (b.width, b.height));
+        let n = (a.width * a.height) as f64;
+        let (mut sum, mut big) = (0.0, 0usize);
+        for (p, q) in a.rgba.chunks(4).zip(b.rgba.chunks(4)) {
+            let d = (0..3)
+                .map(|i| (p[i] as i32 - q[i] as i32).abs())
+                .max()
+                .unwrap_or(0);
+            sum += d as f64;
+            big += (d > 64) as usize;
+        }
+        assert!(sum / n < 2.0, "mean difference {}", sum / n);
+        assert!((big as f64) / n < 0.01, "{big} very different pixels");
     }
 }
