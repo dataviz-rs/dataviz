@@ -29,6 +29,33 @@ pub fn std_dev(values: &[f64]) -> f64 {
     (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (v.len() - 1) as f64).sqrt()
 }
 
+/// Count, minimum and maximum of the finite values, in one vectorizable
+/// pass (8 independent lanes).
+fn finite_min_max(values: &[f64]) -> (usize, f64, f64) {
+    let mut lo = [f64::INFINITY; 8];
+    let mut hi = [f64::NEG_INFINITY; 8];
+    let mut n = [0usize; 8];
+    let (chunks, rest) = values.as_chunks::<8>();
+    for c in chunks {
+        for j in 0..8 {
+            let v = c[j];
+            let ok = v.is_finite();
+            lo[j] = if ok && v < lo[j] { v } else { lo[j] };
+            hi[j] = if ok && v > hi[j] { v } else { hi[j] };
+            n[j] += ok as usize;
+        }
+    }
+    let (mut l, mut h, mut k) = (f64::INFINITY, f64::NEG_INFINITY, n.iter().sum::<usize>());
+    for j in 0..8 {
+        l = l.min(lo[j]);
+        h = h.max(hi[j]);
+    }
+    for &v in rest.iter().filter(|v| v.is_finite()) {
+        (l, h, k) = (l.min(v), h.max(v), k + 1);
+    }
+    (k, l, h)
+}
+
 /// Like [`quantile_sorted`] for unsorted finite data, in O(n) (reorders `v`).
 fn quantile_select(v: &mut [f64], q: f64) -> f64 {
     let n = v.len();
@@ -196,10 +223,7 @@ pub enum Bins {
 /// Bin edges for data according to a rule.
 pub fn bin_edges(values: &[f64], bins: &Bins) -> Vec<f64> {
     // One pass for count/min/max; quartiles (FD/Auto) by selection, no sort.
-    let (cnt, lo, hi) = values.iter().filter(|x| x.is_finite()).fold(
-        (0usize, f64::INFINITY, f64::NEG_INFINITY),
-        |(c, a, b), &v| (c + 1, a.min(v), b.max(v)),
-    );
+    let (cnt, lo, hi) = finite_min_max(values);
     if cnt == 0 {
         return match bins {
             Bins::Edges(e) => e.clone(),
@@ -279,22 +303,35 @@ pub fn histogram(values: &[f64], edges: &[f64]) -> Vec<f64> {
             .windows(2)
             .all(|w| ((w[1] - w[0]) - step).abs() <= step * 1e-9);
     if uniform {
-        let mut n = vec![0u32; nb];
+        // Four sub-histograms so that runs of equal bins do not serialize
+        // on one counter; values outside [e0, en] (and NaN) go to slot nb.
+        let mut n = vec![0u32; (nb + 1) * 4];
         let inv = 1.0 / step;
-        for v in values.iter().copied() {
+        let bin = |v: f64| -> usize {
             if !(v >= e0 && v <= en) {
-                continue;
+                return nb;
             }
             let mut i = (((v - e0) * inv) as usize).min(nb - 1);
-            while i > 0 && v < edges[i] {
+            // Rounding near an edge: match the binary search exactly.
+            if v < edges[i] {
                 i -= 1;
-            }
-            while i + 1 < nb && v >= edges[i + 1] {
+            } else if i + 1 < nb && v >= edges[i + 1] {
                 i += 1;
             }
-            n[i] += 1;
+            i
+        };
+        let (chunks, rest) = values.as_chunks::<4>();
+        for c in chunks {
+            for j in 0..4 {
+                n[j * (nb + 1) + bin(c[j])] += 1;
+            }
         }
-        return n.into_iter().map(f64::from).collect();
+        for &v in rest {
+            n[bin(v)] += 1;
+        }
+        return (0..nb)
+            .map(|i| (0..4).map(|j| n[j * (nb + 1) + i] as f64).sum())
+            .collect();
     }
     for v in values.iter().copied().filter(|v| v.is_finite()) {
         if v < edges[0] || v > edges[nb] {

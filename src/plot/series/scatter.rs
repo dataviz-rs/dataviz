@@ -207,8 +207,39 @@ impl Series for Scatter {
 
     fn draw(&self, ctx: &mut Context) {
         let scale = self.scale();
+        // Many identical opaque markers: a marker in the same quarter-unit
+        // cell as an earlier one paints the same pixels (the CPU rasterizer
+        // places markers on a quarter-pixel grid; exact at scale 1, within
+        // a quarter pixel otherwise), and markers far outside the clipped
+        // plot area are invisible; skip both.
+        let base = self.color.with_alpha(self.color.a * self.opacity);
+        let dedupe = self.x.len() > 20_000
+            && self.sizes.is_none()
+            && self.values.is_none()
+            && self.names.is_none()
+            && base.a >= 1.0;
+        let margin = self.size * 2.0 + self.edge.as_ref().map_or(0.0, |e| e.width) + 4.0;
+        let (gx, gy) = (ctx.rect.x - margin, ctx.rect.y - margin);
+        let gw = ((ctx.rect.w + 2.0 * margin) * 4.0).ceil().max(1.0) as usize;
+        let gh = ((ctx.rect.h + 2.0 * margin) * 4.0).ceil().max(1.0) as usize;
+        let mut seen = if dedupe {
+            vec![0u64; (gw * gh).div_ceil(64)]
+        } else {
+            Vec::new()
+        };
         for i in 0..self.x.len() {
             let (px, py) = ctx.point(self.x[i], self.y[i]);
+            if dedupe {
+                let (qx, qy) = (((px - gx) * 4.0).floor(), ((py - gy) * 4.0).floor());
+                if !(qx >= 0.0 && qy >= 0.0 && (qx as usize) < gw && (qy as usize) < gh) {
+                    continue;
+                }
+                let k = qy as usize * gw + qx as usize;
+                if seen[k / 64] & (1 << (k % 64)) != 0 {
+                    continue;
+                }
+                seen[k / 64] |= 1 << (k % 64);
+            }
             let size = self
                 .sizes
                 .as_ref()
@@ -288,5 +319,56 @@ impl Series for Scatter {
 
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
+    }
+}
+
+#[cfg(test)]
+mod dedupe_tests {
+    use crate::prelude::*;
+
+    /// Skipping markers that land on an already drawn position must not
+    /// change the image.
+    #[test]
+    fn dense_scatter_dedupe_is_invisible() {
+        let n = 60_000;
+        let x: Vec<f64> = (0..n)
+            .map(|i| ((i * 7919) % 1000) as f64 / 10.0 + (i % 3) as f64 * 0.001)
+            .collect();
+        let y: Vec<f64> = (0..n)
+            .map(|i| ((i * 104_729) % 997) as f64 / 10.0)
+            .collect();
+        let render = |x: &[f64], y: &[f64]| {
+            let mut fig = Figure::new(300, 200);
+            fig.axes()
+                .scatter(x, y)
+                .size(3.0)
+                .color(Color::rgb(30, 90, 200));
+            fig.axes().x_limits(0.0, 100.0).y_limits(0.0, 100.0);
+            fig.backend(Backend::Cpu { threads: 1 })
+                .to_pixels()
+                .unwrap()
+        };
+        // Deduplicated (n > 20 000) vs drawn in 4 batches below the threshold.
+        let full = render(&x, &y);
+        let mut fig = Figure::new(300, 200);
+        for k in 0..4 {
+            let r = k * n / 4..(k + 1) * n / 4;
+            fig.axes()
+                .scatter(&x[r.clone()], &y[r])
+                .size(3.0)
+                .color(Color::rgb(30, 90, 200));
+        }
+        fig.axes().x_limits(0.0, 100.0).y_limits(0.0, 100.0);
+        let parts = fig
+            .backend(Backend::Cpu { threads: 1 })
+            .to_pixels()
+            .unwrap();
+        let worst = full
+            .rgba
+            .iter()
+            .zip(&parts.rgba)
+            .map(|(a, b)| a.abs_diff(*b))
+            .max();
+        assert!(worst <= Some(1), "max difference {worst:?}");
     }
 }

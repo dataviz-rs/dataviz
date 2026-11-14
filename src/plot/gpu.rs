@@ -179,9 +179,21 @@ impl Gpu {
             ..Default::default()
         }))
         .map_err(|e| e.to_string())?;
+        // A software rasterizer (llvmpipe, lavapipe, WARP) is slower than the
+        // CPU backends; report no GPU instead.
+        if adapter.get_info().device_type == wgpu::DeviceType::Cpu {
+            return Err(format!(
+                "only a software adapter is available ({})",
+                adapter.get_info().name
+            ));
+        }
         let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
             label: Some("dataviz"),
-            required_limits: wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits()),
+            required_limits: wgpu::Limits {
+                // Large data: as big vertex buffers as the adapter allows.
+                max_buffer_size: adapter.limits().max_buffer_size,
+                ..wgpu::Limits::downlevel_defaults().using_resolution(adapter.limits())
+            },
             ..Default::default()
         }))
         .map_err(|e| e.to_string())?;
@@ -560,22 +572,32 @@ impl Gpu {
         &self,
         slot: &'a mut Option<wgpu::Buffer>,
         data: &[f32],
-    ) -> Option<&'a wgpu::Buffer> {
+    ) -> Result<Option<&'a wgpu::Buffer>, Error> {
         if data.is_empty() {
-            return None;
+            return Ok(None);
         }
         let size = std::mem::size_of_val(data) as u64;
+        let max = self.device.limits().max_buffer_size;
+        if size > max {
+            return Err(Error::Render(format!(
+                "GPU: {} MB of geometry exceeds the {} MB buffer limit",
+                size >> 20,
+                max >> 20
+            )));
+        }
         if slot.as_ref().is_none_or(|b| b.size() < size) {
             *slot = Some(self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: None,
-                size: size.next_power_of_two().max(4096),
+                size: size.next_power_of_two().clamp(4096, max.max(4096)),
                 usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
                 mapped_at_creation: false,
             }));
         }
-        let b = slot.as_ref()?;
+        let Some(b) = slot.as_ref() else {
+            return Ok(None);
+        };
         self.queue.write_buffer(b, 0, bytes(data));
-        Some(b)
+        Ok(Some(b))
     }
 }
 
@@ -1227,11 +1249,11 @@ fn render_inner(
     gpu.queue
         .write_buffer(&gpu.globals, 0, bytes(&[w as f32, h as f32, mode, 0.0]));
     let [b_stencil, b_cover, b_shapes, b_glyphs, b_images] = &mut state.buffers;
-    let stencil = gpu.upload(b_stencil, &frame.stencil);
-    let cover = gpu.upload(b_cover, &frame.cover);
-    let shapes = gpu.upload(b_shapes, &frame.shapes);
-    let glyphs = gpu.upload(b_glyphs, &frame.glyphs);
-    let images = gpu.upload(b_images, &frame.images);
+    let stencil = gpu.upload(b_stencil, &frame.stencil)?;
+    let cover = gpu.upload(b_cover, &frame.cover)?;
+    let shapes = gpu.upload(b_shapes, &frame.shapes)?;
+    let glyphs = gpu.upload(b_glyphs, &frame.glyphs)?;
+    let images = gpu.upload(b_images, &frame.images)?;
 
     let bg = scene.background.map_or([0.0; 4], |c| premul(c, 1.0));
     let mut enc = gpu.device.create_command_encoder(&Default::default());

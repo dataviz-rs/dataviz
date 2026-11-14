@@ -338,6 +338,62 @@ pub(crate) fn envelope(pts: &[(f64, f64)], width: f64) -> Option<Vec<(f64, f64)>
 }
 
 /// Min/max decimation per pixel column for x-sorted canvas points.
+/// Streaming form of [`decimate`] for x-sorted points: keeps the first,
+/// lowest, highest and last point of every pixel column (and every
+/// non-finite break) while reading the points once. `None` when the points
+/// are not sorted by x (the caller then falls back to [`decimate`]).
+pub(crate) fn decimate_stream(pts: impl Iterator<Item = (f64, f64)>) -> Option<Vec<(f64, f64)>> {
+    let mut out = Vec::new();
+    // Current column: (column, first, lowest, highest, last).
+    let mut cur: Option<(f64, [(f64, f64); 4])> = None;
+    let flush = |out: &mut Vec<(f64, f64)>, c: [(f64, f64); 4]| {
+        // first, then lo/hi in x order, then last; duplicates removed.
+        let (lo, hi) = (c[1], c[2]);
+        let mid = if lo.0 <= hi.0 { [lo, hi] } else { [hi, lo] };
+        for p in [c[0], mid[0], mid[1], c[3]] {
+            if out.last() != Some(&p) {
+                out.push(p);
+            }
+        }
+    };
+    let mut last_x = f64::NEG_INFINITY;
+    for p in pts {
+        if !p.0.is_finite() || !p.1.is_finite() {
+            if let Some((_, c)) = cur.take() {
+                flush(&mut out, c);
+            }
+            out.push(p);
+            continue;
+        }
+        if p.0 < last_x {
+            return None;
+        }
+        last_x = p.0;
+        let col = p.0.floor();
+        match &mut cur {
+            Some((c, g)) if *c == col => {
+                if p.1 < g[1].1 {
+                    g[1] = p;
+                }
+                if p.1 > g[2].1 {
+                    g[2] = p;
+                }
+                g[3] = p;
+            }
+            _ => {
+                if let Some((_, c)) = cur.take() {
+                    flush(&mut out, c);
+                }
+                cur = Some((col, [p; 4]));
+            }
+        }
+    }
+    if let Some((_, c)) = cur {
+        flush(&mut out, c);
+    }
+    Some(out)
+}
+
 pub(crate) fn decimate(pts: Vec<(f64, f64)>, width_px: f64) -> Vec<(f64, f64)> {
     if (pts.len() as f64) < width_px * 4.0
         || !pts
@@ -389,10 +445,26 @@ impl Series for Line {
     }
 
     fn draw(&self, ctx: &mut Context) {
-        let mut pts: Vec<(f64, f64)> = self.points().map(|(x, y)| ctx.point(x, y)).collect();
-        if self.decimate && self.step.is_none() && !self.smooth {
-            pts = decimate(pts, ctx.rect.w);
-        }
+        let mapped = || self.points().map(|(x, y)| ctx.point(x, y));
+        // Large x-sorted data is reduced while it is mapped, without holding
+        // every mapped point in memory.
+        let streamed = (self.decimate
+            && self.step.is_none()
+            && !self.smooth
+            && self.x.len() as f64 >= ctx.rect.w * 4.0)
+            .then(|| decimate_stream(mapped()))
+            .flatten();
+        let pts = match streamed {
+            Some(p) => p,
+            None => {
+                let pts: Vec<(f64, f64)> = mapped().collect();
+                if self.decimate && self.step.is_none() && !self.smooth {
+                    decimate(pts, ctx.rect.w)
+                } else {
+                    pts
+                }
+            }
+        };
         let runs = line_path(&pts, self.step, self.smooth);
         if let Some(base) = self.fill {
             let by = ctx.y.px_clamped(base);
@@ -666,6 +738,24 @@ mod tests {
         assert_eq!(s[0], p[0]);
         assert_eq!(*s.last().unwrap(), p[3]);
         assert!(s.iter().all(|(_, y)| *y <= 10.0 + 1e-9 && *y >= -1e-9));
+    }
+
+    #[test]
+    fn streaming_decimation_matches() {
+        let mut pts: Vec<(f64, f64)> = (0..20_000)
+            .map(|i| (i as f64 / 37.0, ((i * 7919) % 101) as f64 - (i % 13) as f64))
+            .collect();
+        pts[5000].1 = f64::NAN;
+        pts[5001].1 = f64::NAN;
+        let a = decimate(pts.clone(), 100.0);
+        let b = decimate_stream(pts.iter().copied()).unwrap();
+        let same = |p: &(f64, f64), q: &(f64, f64)| {
+            p.0 == q.0 && (p.1 == q.1 || p.1.is_nan() && q.1.is_nan())
+        };
+        assert_eq!(a.len(), b.len());
+        assert!(a.iter().zip(&b).all(|(p, q)| same(p, q)));
+        // Unsorted input is refused.
+        assert!(decimate_stream([(1.0, 0.0), (0.0, 0.0)].into_iter()).is_none());
     }
 
     #[test]
