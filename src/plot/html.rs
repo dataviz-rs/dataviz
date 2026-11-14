@@ -194,11 +194,19 @@ svg.addEventListener('mousemove',ev=>{ov.replaceChildren();const m=pos(ev);const
  const dash={stroke:'rgba(90,90,90,.8)','stroke-width':1,'stroke-dasharray':'4 3'};
  el('line',Object.assign({x1:m[0],x2:m[0],y1:R[1],y2:R[1]+R[3]},dash));el('line',Object.assign({x1:R[0],x2:R[0]+R[2],y1:m[1],y2:m[1]},dash));
  label(m[0],R[1]+R[3]+10,fmt(P.x,value(P.x,m[0])),'middle');label(R[0]-4,m[1],fmt(P.y,value(P.y,m[1])),'end');
- const lines=[];let head=null;
- for(const s of P.series){if(hidden.has(s.id))continue;let best=-1,bd=1e9;for(let i=0;i<s.xy.length;i+=2){const d=Math.abs(s.xy[i]-m[0]);if(d<bd){bd=d;best=i;}}
+ readout(P,m[0],m[1],true);
+ // Linked cursor: plots showing (about) the same x range.
+ const v=value(P.x,m[0]);
+ for(const Q of M.plots){if(Q===P||Q.x.scale!==P.x.scale||Q.x.scale==='log')continue;
+  const ov_=Math.min(Q.x.max,P.x.max)-Math.max(Q.x.min,P.x.min),un=Math.max(Q.x.max,P.x.max)-Math.min(Q.x.min,P.x.min);if(!(un>0&&ov_>=0.9*un))continue;
+  const qx=Q.x.p0+(v-Q.x.min)/(Q.x.max-Q.x.min)*(Q.x.p1-Q.x.p0);const S=Q.rect;if(qx<S[0]||qx>S[0]+S[2])continue;
+  el('line',Object.assign({x1:qx,x2:qx,y1:S[1],y2:S[1]+S[3]},dash));readout(Q,qx,S[1]+4,false);}
+});
+function readout(P,x,y,dots){const lines=[];let head=null;
+ for(const s of P.series){if(hidden.has(s.id))continue;let best=-1,bd=1e9;for(let i=0;i<s.xy.length;i+=2){const d=Math.abs(s.xy[i]-x);if(d<bd){bd=d;best=i;}}
   if(best<0||bd>30)continue;const [xl,yl]=s.labels[best/2].split('\u001f');if(head===null)head=xl;lines.push(s.name+': '+yl);
   el('circle',{cx:s.xy[best],cy:s.xy[best+1],r:4,fill:'#fff',stroke:'#1e1e1e','stroke-width':1.5});}
- if(lines.length)tip(m[0],m[1],[head].concat(lines),R);});
+ if(lines.length)tip(x,y,dots?[head].concat(lines):lines,P.rect);}
 svg.addEventListener('mouseleave',()=>ov.replaceChildren());
 svg.addEventListener('click',ev=>{const m=pos(ev);for(const P of M.plots)for(const L of P.legend){const r=L.r;if(m[0]>=r[0]&&m[0]<=r[0]+r[2]&&m[1]>=r[1]&&m[1]<=r[1]+r[3]){
   const g=document.getElementById(L.id);const off=!hidden.has(L.id);if(off)hidden.add(L.id);else hidden.delete(L.id);if(g)g.style.display=off?'none':'';
