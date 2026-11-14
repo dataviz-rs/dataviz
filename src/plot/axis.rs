@@ -37,6 +37,8 @@ pub struct Axis {
     pub(crate) tick_rotation: Option<f64>,
     pub(crate) visible: bool,
     pub(crate) tick_labels: bool,
+    /// Ranges left out of the axis (`break_at`), data units.
+    pub(crate) breaks: Vec<(f64, f64)>,
     pub(crate) margin: f64,
 }
 
@@ -56,6 +58,7 @@ impl Default for Axis {
             tick_rotation: None,
             visible: true,
             tick_labels: true,
+            breaks: Vec::new(),
             margin: 0.05,
         }
     }
@@ -147,6 +150,16 @@ impl Axis {
         self
     }
 
+    /// Leaves the range `from..to` out of the axis (broken axis), e.g. to
+    /// show small values next to a few very large ones. The break is marked
+    /// on the axis; data inside it is not drawn. Several breaks can be set.
+    pub fn break_at(&mut self, from: f64, to: f64) -> &mut Self {
+        if from.is_finite() && to.is_finite() && from != to {
+            self.breaks.push((from.min(to), from.max(to)));
+        }
+        self
+    }
+
     /// Hides ticks, labels and the axis label.
     pub fn hidden(&mut self) -> &mut Self {
         self.visible = false;
@@ -196,6 +209,8 @@ pub struct AxisMap {
     pub(crate) p1: f64,
     t0: f64,
     t1: f64,
+    /// Broken-out ranges in scale space (sorted, disjoint).
+    breaks: Vec<(f64, f64)>,
 }
 
 impl AxisMap {
@@ -210,7 +225,90 @@ impl AxisMap {
             p1,
             t0,
             t1,
+            breaks: Vec::new(),
         }
+    }
+
+    /// The same mapping with the data ranges `breaks` left out.
+    pub(crate) fn with_breaks(mut self, breaks: &[(f64, f64)]) -> Self {
+        let mut b: Vec<(f64, f64)> = breaks
+            .iter()
+            .map(|(a, c)| (self.scale.forward(*a), self.scale.forward(*c)))
+            .filter(|(a, c)| a.is_finite() && c.is_finite())
+            .map(|(a, c)| (a.min(c), a.max(c)))
+            .collect();
+        b.sort_by(|x, y| x.0.total_cmp(&y.0));
+        let mut merged: Vec<(f64, f64)> = Vec::new();
+        for (a, c) in b {
+            match merged.last_mut() {
+                Some(last) if a <= last.1 => last.1 = last.1.max(c),
+                _ => merged.push((a, c)),
+            }
+        }
+        let (lo, hi) = (self.t0.min(self.t1), self.t0.max(self.t1));
+        merged.retain(|(a, c)| *a > lo && *c < hi);
+        if merged.is_empty() {
+            return self;
+        }
+        self.breaks = merged;
+        self.t0 = self.squeeze(self.t0);
+        self.t1 = self.squeeze(self.t1);
+        self
+    }
+
+    /// Scale space → compressed space (breaks removed; NaN inside one).
+    fn squeeze(&self, t: f64) -> f64 {
+        let mut out = t;
+        for (a, c) in &self.breaks {
+            if t >= *c {
+                out -= c - a;
+            } else if t > *a {
+                return f64::NAN;
+            }
+        }
+        out
+    }
+
+    /// Compressed space → scale space.
+    fn unsqueeze(&self, u: f64) -> f64 {
+        let mut t = u;
+        for (a, c) in &self.breaks {
+            if t >= *a {
+                t += c - a;
+            }
+        }
+        t
+    }
+
+    /// Whether the data segment from `a` to `b` jumps over a break.
+    pub(crate) fn crosses_break(&self, a: f64, b: f64) -> bool {
+        if self.breaks.is_empty() {
+            return false;
+        }
+        let (ta, tb) = (self.scale.forward(a), self.scale.forward(b));
+        let (lo, hi) = (ta.min(tb), ta.max(tb));
+        self.breaks.iter().any(|(x, y)| lo <= *x && hi >= *y)
+    }
+
+    /// Whether the mapping has breaks.
+    pub(crate) fn has_breaks(&self) -> bool {
+        !self.breaks.is_empty()
+    }
+
+    /// Positions of the breaks in pixels.
+    pub(crate) fn break_positions(&self) -> Vec<f64> {
+        self.breaks
+            .iter()
+            .map(|(a, _)| self.t_to_px(self.squeeze(*a)))
+            .collect()
+    }
+
+    fn t_to_px(&self, u: f64) -> f64 {
+        let span = self.t1 - self.t0;
+        if span == 0.0 || !span.is_finite() {
+            return (self.p0 + self.p1) / 2.0;
+        }
+        self.p0 + (u - self.t0) / span * (self.p1 - self.p0)
     }
 
     /// Pixel position of a data value (NaN if not representable).
@@ -218,12 +316,11 @@ impl AxisMap {
         if !self.scale.accepts(v) {
             return f64::NAN;
         }
-        let t = self.scale.forward(v);
-        let span = self.t1 - self.t0;
-        if span == 0.0 || !span.is_finite() {
-            return (self.p0 + self.p1) / 2.0;
+        let mut t = self.scale.forward(v);
+        if !self.breaks.is_empty() {
+            t = self.squeeze(t);
         }
-        self.p0 + (t - self.t0) / span * (self.p1 - self.p0)
+        self.t_to_px(t)
     }
 
     /// Data value at a pixel position.
@@ -232,7 +329,10 @@ impl AxisMap {
         if span == 0.0 {
             return self.min;
         }
-        let t = self.t0 + (px - self.p0) / span * (self.t1 - self.t0);
+        let mut t = self.t0 + (px - self.p0) / span * (self.t1 - self.t0);
+        if !self.breaks.is_empty() {
+            t = self.unsqueeze(t);
+        }
         self.scale.inverse(t)
     }
 
@@ -258,6 +358,18 @@ impl AxisMap {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn breaks_compress_the_axis() {
+        let m = AxisMap::new(Scale::Linear, 0.0, 100.0, 0.0, 100.0).with_breaks(&[(10.0, 90.0)]);
+        // 20 data units left over 100 pixels.
+        assert!((m.px(10.0) - 50.0).abs() < 1e-9);
+        assert!((m.px(90.0) - 50.0).abs() < 1e-9);
+        assert!((m.px(100.0) - 100.0).abs() < 1e-9);
+        assert!(m.px(50.0).is_nan());
+        assert!((m.value(75.0) - 95.0).abs() < 1e-9);
+        assert_eq!(m.break_positions(), vec![50.0]);
+    }
 
     #[test]
     fn mapping() {
