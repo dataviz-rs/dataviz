@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.11.0
+
+### Added
+- **Maps** (`plot::geo`): a built-in world map (Natural Earth 1:110m
+  countries, public domain, 53 KB) with names, ISO codes, continent,
+  population and GDP (`geo::world`, `geo::country`); projections
+  Robinson, Natural Earth, equirectangular and Mercator;
+  `Axes::map(projection)`, `Axes::world_map`, `Axes::choropleth` (values
+  by ISO code or name, linear or log colors, colorbar, graticule, country
+  tooltips), `Axes::geo_scatter`, `Axes::geo_line` (great circles, split at
+  the antimeridian), and `geo::read_geojson` + `Axes::geo_shapes` for other
+  shapes (regions, provinces).
+- `Axes::frame(on)`: shows or hides the spines.
+
 ## 0.10.0
 
 ### Added

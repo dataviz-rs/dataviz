@@ -72,6 +72,10 @@ pub struct Axes {
     /// right, top, bottom), set by the figure so that plots in the same
     /// grid row or column line up.
     pub(crate) align: Option<[f64; 4]>,
+    /// Map projection (set by [`Axes::map`]).
+    pub(crate) projection: Option<super::geo::Projection>,
+    /// Draw the spines (frame) around the plot.
+    pub(crate) frame: bool,
 }
 
 /// Resolved layout of an axes (positions and mappings).
@@ -108,6 +112,8 @@ impl Axes {
             fit_y: false,
             hidden: Vec::new(),
             align: None,
+            projection: None,
+            frame: true,
         }
     }
 
@@ -191,6 +197,12 @@ impl Axes {
         self.legend = position;
         self
     }
+    /// Shows or hides the frame (spines) around the plot.
+    pub fn frame(&mut self, on: bool) -> &mut Self {
+        self.frame = on;
+        self
+    }
+
     /// Number of legend columns (0 = as many as fit; default 1).
     pub fn legend_columns(&mut self, columns: usize) -> &mut Self {
         self.legend_columns = columns;
@@ -1165,7 +1177,16 @@ impl Axes {
     ) {
         let p = lay.plot;
         let axis = Stroke::new(theme.axis, theme.axis_width);
-        let sp = theme.spines;
+        let sp = if self.frame {
+            theme.spines
+        } else {
+            super::theme::Spines {
+                left: false,
+                right: false,
+                top: false,
+                bottom: false,
+            }
+        };
         let seg = |x0: f64, y0: f64, x1: f64, y1: f64, s: &Stroke, out: &mut Vec<Node>| {
             out.push(Node::Path {
                 cmds: vec![PathCmd::MoveTo(x0, y0), PathCmd::LineTo(x1, y1)],

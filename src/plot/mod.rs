@@ -24,6 +24,7 @@ pub mod color;
 pub mod data;
 pub mod facet;
 pub mod figure;
+pub mod geo;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu;
 pub mod legend;
