@@ -32,9 +32,11 @@ pub mod prelude {
     pub use crate::plot::a11y::Cvd;
     pub use crate::plot::anim::Recorder;
     pub use crate::plot::series::bar::{BarMode, LabelPosition};
-    pub use crate::plot::series::bio3d::{Atom, MolColor, MolStyle, Molecule};
+    pub use crate::plot::series::bio3d::{Atom, MolColor, MolStyle, Molecule, SecondaryStructure};
+    pub use crate::plot::series::genome::Alteration;
     pub use crate::plot::series::line::Step;
     pub use crate::plot::series::three_d::{Axis3, Camera};
+    pub use crate::plot::series::trading::{FootprintBar, OptionLeg};
     pub use crate::plot::time::{date, datetime, parse_datetime};
     pub use crate::plot::{
         Axes, AxesKind, Axis, Backend, Color, Colormap, Dash, Error, Figure, Format,

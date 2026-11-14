@@ -18,6 +18,7 @@ pub mod evaluation;
 pub mod finance;
 pub mod frameless;
 pub mod general;
+pub mod genome;
 pub mod grid;
 pub mod line;
 pub mod misc;

@@ -754,6 +754,69 @@ impl Scene3d<'_> {
         self.seg(a, b, color, width, false, false);
     }
 
+    /// A smooth tube through points (radius in data units), drawn in
+    /// depth-sorted pieces as a continuous shaded line: no seams or beads
+    /// between segments. `colors` (one per point) color the pieces.
+    pub fn tube_line(
+        &mut self,
+        pts: &[[f64; 3]],
+        radius: f64,
+        color: Color,
+        colors: Option<&[Color]>,
+    ) {
+        const PIECE: usize = 12;
+        let mut start = 0;
+        while start + 1 < pts.len() {
+            let end = (start + PIECE).min(pts.len() - 1);
+            let mut screen = Vec::with_capacity(end - start + 1);
+            let mut depth = 0.0;
+            for p in &pts[start..=end] {
+                let (x, y, d) = self.proj.project(*p);
+                if x.is_finite() && y.is_finite() {
+                    screen.push((x, y));
+                    depth += d;
+                }
+            }
+            if screen.len() >= 2 {
+                let depth = depth / screen.len() as f64;
+                let c = colors
+                    .and_then(|c| c.get((start + end) / 2).copied())
+                    .unwrap_or(color);
+                let c = self.cue(c, depth);
+                let w = 2.0 * radius * self.proj.px_per_unit(depth);
+                if self.light && w > 3.0 {
+                    // Shadowed body, lit core.
+                    self.add(
+                        depth,
+                        Prim::Line {
+                            pts: screen.clone(),
+                            color: c.darken(0.3),
+                            width: w,
+                        },
+                    );
+                    self.add(
+                        depth + 1e-9,
+                        Prim::Line {
+                            pts: screen,
+                            color: c.lighten(0.18),
+                            width: w * 0.5,
+                        },
+                    );
+                } else {
+                    self.add(
+                        depth,
+                        Prim::Line {
+                            pts: screen,
+                            color: c,
+                            width: w,
+                        },
+                    );
+                }
+            }
+            start = end;
+        }
+    }
+
     /// An arrow from `a` to `b`: a line of `width` pixels and a head of
     /// about `head` pixels facing the screen.
     pub fn arrow(&mut self, a: [f64; 3], b: [f64; 3], color: Color, width: f64, head: f64) {
@@ -2422,6 +2485,182 @@ impl Axes {
     }
 }
 
+/// Isosurface of a scalar volume by marching tetrahedra: the surface where
+/// `values` equals `level`, as a mesh with shared vertices (smooth
+/// shading) and faces wound outwards (towards values below `level`).
+/// `values[(z * ny + y) * nx + x]` on a regular grid over `bounds`.
+pub fn isosurface_mesh(
+    values: &[f64],
+    dims: [usize; 3],
+    bounds: Bounds3,
+    level: f64,
+) -> (Vec<[f64; 3]>, Vec<[u32; 4]>) {
+    let [nx, ny, nz] = dims;
+    if nx < 2 || ny < 2 || nz < 2 || values.len() < nx * ny * nz {
+        return (Vec::new(), Vec::new());
+    }
+    let id = |x: usize, y: usize, z: usize| (z * ny + y) * nx + x;
+    let pos = |i: usize| {
+        let (x, y, z) = (i % nx, (i / nx) % ny, i / (nx * ny));
+        [
+            bounds[0].0 + (bounds[0].1 - bounds[0].0) * x as f64 / (nx - 1) as f64,
+            bounds[1].0 + (bounds[1].1 - bounds[1].0) * y as f64 / (ny - 1) as f64,
+            bounds[2].0 + (bounds[2].1 - bounds[2].0) * z as f64 / (nz - 1) as f64,
+        ]
+    };
+    // Cube corners and the six tetrahedra around the 0–6 diagonal.
+    const C: [(usize, usize, usize); 8] = [
+        (0, 0, 0),
+        (1, 0, 0),
+        (1, 1, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+        (1, 0, 1),
+        (1, 1, 1),
+        (0, 1, 1),
+    ];
+    const T: [[usize; 4]; 6] = [
+        [0, 5, 1, 6],
+        [0, 1, 2, 6],
+        [0, 2, 3, 6],
+        [0, 3, 7, 6],
+        [0, 7, 4, 6],
+        [0, 4, 5, 6],
+    ];
+    let mut verts: Vec<[f64; 3]> = Vec::new();
+    let mut edge: crate::plot::raster::HashMap<(u32, u32), u32> = Default::default();
+    let mut faces: Vec<[u32; 4]> = Vec::new();
+    let mut vertex = |a: usize, b: usize, verts: &mut Vec<[f64; 3]>| -> u32 {
+        let key = if a < b {
+            (a as u32, b as u32)
+        } else {
+            (b as u32, a as u32)
+        };
+        *edge.entry(key).or_insert_with(|| {
+            let (va, vb) = (values[a], values[b]);
+            let t = if (vb - va).abs() > 1e-300 {
+                ((level - va) / (vb - va)).clamp(0.0, 1.0)
+            } else {
+                0.5
+            };
+            let (pa, pb) = (pos(a), pos(b));
+            verts.push([
+                pa[0] + (pb[0] - pa[0]) * t,
+                pa[1] + (pb[1] - pa[1]) * t,
+                pa[2] + (pb[2] - pa[2]) * t,
+            ]);
+            (verts.len() - 1) as u32
+        })
+    };
+    for z in 0..nz - 1 {
+        for y in 0..ny - 1 {
+            for x in 0..nx - 1 {
+                let corner: [usize; 8] = C.map(|(dx, dy, dz)| id(x + dx, y + dy, z + dz));
+                // Skip cubes entirely on one side (most of them).
+                let ins = corner.iter().filter(|&&c| values[c] > level).count();
+                if ins == 0 || ins == 8 || corner.iter().any(|&c| !values[c].is_finite()) {
+                    continue;
+                }
+                for t in T {
+                    let v = t.map(|k| corner[k]);
+                    let (inside, outside): (Vec<usize>, Vec<usize>) =
+                        v.iter().partition(|&&c| values[c] > level);
+                    let tris: Vec<[u32; 3]> = match inside.len() {
+                        1 => vec![[
+                            vertex(inside[0], outside[0], &mut verts),
+                            vertex(inside[0], outside[1], &mut verts),
+                            vertex(inside[0], outside[2], &mut verts),
+                        ]],
+                        3 => vec![[
+                            vertex(outside[0], inside[0], &mut verts),
+                            vertex(outside[0], inside[1], &mut verts),
+                            vertex(outside[0], inside[2], &mut verts),
+                        ]],
+                        2 => {
+                            let a = vertex(inside[0], outside[0], &mut verts);
+                            let b = vertex(inside[0], outside[1], &mut verts);
+                            let c = vertex(inside[1], outside[1], &mut verts);
+                            let d = vertex(inside[1], outside[0], &mut verts);
+                            vec![[a, b, c], [a, c, d]]
+                        }
+                        _ => Vec::new(),
+                    };
+                    // Wind outwards: from the inside corners to the outside ones.
+                    let mean = |cs: &[usize]| {
+                        let mut m = [0.0; 3];
+                        for &c in cs {
+                            let p = pos(c);
+                            m = [m[0] + p[0], m[1] + p[1], m[2] + p[2]];
+                        }
+                        let n = cs.len().max(1) as f64;
+                        [m[0] / n, m[1] / n, m[2] / n]
+                    };
+                    let out_dir = sub(mean(&outside), mean(&inside));
+                    for tri in tris {
+                        let (p0, p1, p2) = (
+                            verts[tri[0] as usize],
+                            verts[tri[1] as usize],
+                            verts[tri[2] as usize],
+                        );
+                        let nrm = cross(sub(p1, p0), sub(p2, p0));
+                        if dot(nrm, nrm) < 1e-30 {
+                            continue;
+                        }
+                        if dot(nrm, out_dir) >= 0.0 {
+                            faces.push([tri[0], tri[1], tri[2], u32::MAX]);
+                        } else {
+                            faces.push([tri[0], tri[2], tri[1], u32::MAX]);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    (verts, faces)
+}
+
+impl Axes {
+    /// Isosurface of a volume (`values[(z * ny + y) * nx + x]` on a
+    /// regular grid over `bounds`) at `level`: microscopy and CT stacks,
+    /// electron densities, simulation fields. Call again with another level
+    /// (and [`Mesh3d::opacity`]) for nested surfaces.
+    pub fn isosurface(
+        &mut self,
+        values: &[f64],
+        dims: [usize; 3],
+        bounds: Bounds3,
+        level: f64,
+    ) -> &mut Mesh3d {
+        let (v, f) = isosurface_mesh(values, dims, bounds, level);
+        let m = self.mesh3d(v, f);
+        m.closed = true;
+        m
+    }
+
+    /// Isosurface of `f(x, y, z) = level` sampled on an `n³` grid.
+    pub fn isosurface_fn(
+        &mut self,
+        f: impl Fn(f64, f64, f64) -> f64,
+        bounds: Bounds3,
+        n: usize,
+        level: f64,
+    ) -> &mut Mesh3d {
+        let n = n.clamp(4, 256);
+        let at = |k: usize, i: usize| {
+            bounds[k].0 + (bounds[k].1 - bounds[k].0) * i as f64 / (n - 1) as f64
+        };
+        let mut values = Vec::with_capacity(n * n * n);
+        for z in 0..n {
+            for y in 0..n {
+                for x in 0..n {
+                    values.push(f(at(0, x), at(1, y), at(2, z)));
+                }
+            }
+        }
+        self.isosurface(&values, [n, n, n], bounds, level)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2530,6 +2769,40 @@ mod tests {
             .map(|k| depths[(k & 0xFFFF_FFFF) as usize])
             .collect();
         assert!(ds.windows(2).all(|w| w[0] <= w[1]));
+    }
+
+    #[test]
+    fn isosurface_of_a_sphere() {
+        let b = [(-1.0, 1.0); 3];
+        let n = 24;
+        let at = |i: usize| -1.0 + 2.0 * i as f64 / (n - 1) as f64;
+        let mut v = Vec::new();
+        for z in 0..n {
+            for y in 0..n {
+                for x in 0..n {
+                    v.push(1.0 - (at(x).powi(2) + at(y).powi(2) + at(z).powi(2)).sqrt());
+                }
+            }
+        }
+        let (verts, faces) = isosurface_mesh(&v, [n, n, n], b, 0.5);
+        assert!(faces.len() > 500);
+        for p in &verts {
+            let r = (p[0] * p[0] + p[1] * p[1] + p[2] * p[2]).sqrt();
+            assert!((r - 0.5).abs() < 0.03, "{r}");
+        }
+        // Outward winding: normals point away from the centre.
+        let out = faces
+            .iter()
+            .filter(|f| {
+                let (a, b, c) = (
+                    verts[f[0] as usize],
+                    verts[f[1] as usize],
+                    verts[f[2] as usize],
+                );
+                dot(cross(sub(b, a), sub(c, a)), a) > 0.0
+            })
+            .count();
+        assert_eq!(out, faces.len());
     }
 
     #[test]

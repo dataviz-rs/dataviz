@@ -260,20 +260,52 @@ pub struct Atom {
 pub struct Molecule {
     /// Atoms in file order.
     pub atoms: Vec<Atom>,
+    /// Helices and strands from the PDB HELIX / SHEET records: chain,
+    /// first and last residue number.
+    pub secondary: Vec<(char, i32, i32, SecondaryStructure)>,
+}
+
+/// Secondary structure of a residue range.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum SecondaryStructure {
+    /// α-helix (any helix).
+    Helix,
+    /// β-strand.
+    Strand,
+    /// Neither.
+    Coil,
 }
 
 impl Molecule {
     /// A molecule from atoms.
     pub fn new(atoms: Vec<Atom>) -> Self {
-        Self { atoms }
+        Self {
+            atoms,
+            secondary: Vec::new(),
+        }
     }
 
     /// Reads the `ATOM` and `HETATM` records of a PDB file (the first model).
     pub fn from_pdb(text: &str) -> Self {
         let mut atoms = Vec::new();
+        let mut secondary = Vec::new();
         for line in text.lines() {
             if line.starts_with("ENDMDL") {
                 break;
+            }
+            let col = |a: usize, b: usize| line.get(a..b.min(line.len())).unwrap_or("").trim();
+            let chain_at = |k: usize| line.as_bytes().get(k).map_or(' ', |&c| c as char);
+            if line.starts_with("HELIX ") {
+                if let (Ok(a), Ok(b)) = (col(21, 25).parse(), col(33, 37).parse()) {
+                    secondary.push((chain_at(19), a, b, SecondaryStructure::Helix));
+                }
+                continue;
+            }
+            if line.starts_with("SHEET ") {
+                if let (Ok(a), Ok(b)) = (col(22, 26).parse(), col(33, 37).parse()) {
+                    secondary.push((chain_at(21), a, b, SecondaryStructure::Strand));
+                }
+                continue;
             }
             let hetero = line.starts_with("HETATM");
             if !(hetero || line.starts_with("ATOM")) || line.len() < 54 {
@@ -303,7 +335,7 @@ impl Molecule {
                 hetero,
             });
         }
-        Self { atoms }
+        Self { atoms, secondary }
     }
 
     /// Reads an XYZ file (count, comment, then `element x y z` lines).
@@ -326,7 +358,77 @@ impl Molecule {
                 })
             })
             .collect();
-        Self { atoms }
+        Self {
+            atoms,
+            secondary: Vec::new(),
+        }
+    }
+
+    /// Backbone dihedral angles (φ, ψ) in degrees of every protein residue
+    /// that has both (for a Ramachandran plot), with its label ("ALA 12 A").
+    pub fn phi_psi(&self) -> Vec<(f64, f64, String)> {
+        let res = self.residues();
+        let mut out = Vec::new();
+        for w in res.windows(3) {
+            let (p, r, n) = (&w[0], &w[1], &w[2]);
+            if p.chain != r.chain || n.chain != r.chain || r.seq - p.seq != 1 || n.seq - r.seq != 1
+            {
+                continue;
+            }
+            if let (Some(c0), Some(n1), Some(ca), Some(c1), Some(n2)) = (p.c, r.n, r.ca, r.c, n.n) {
+                out.push((
+                    dihedral(c0, n1, ca, c1),
+                    dihedral(n1, ca, c1, n2),
+                    format!("{} {} {}", r.name, r.seq, r.chain),
+                ));
+            }
+        }
+        out
+    }
+
+    /// Protein residues in order with their backbone atoms.
+    fn residues(&self) -> Vec<Residue> {
+        let mut out: Vec<Residue> = Vec::new();
+        for a in self.atoms.iter().filter(|a| !a.hetero) {
+            let new = out
+                .last()
+                .is_none_or(|r| r.chain != a.chain || r.seq != a.seq);
+            if new {
+                out.push(Residue {
+                    chain: a.chain,
+                    seq: a.seq,
+                    name: a.residue.clone(),
+                    n: None,
+                    ca: None,
+                    c: None,
+                    o: None,
+                });
+            }
+            let r = out.last_mut().unwrap();
+            match a.name.as_str() {
+                "N" => r.n = Some(a.pos),
+                "CA" => r.ca = Some(a.pos),
+                "C" => r.c = Some(a.pos),
+                "O" => r.o = Some(a.pos),
+                _ => {}
+            }
+        }
+        out.retain(|r| r.ca.is_some());
+        out
+    }
+
+    /// Secondary structure of a residue: from the HELIX / SHEET records,
+    /// or `None` when the file has none.
+    fn recorded_ss(&self, chain: char, seq: i32) -> Option<SecondaryStructure> {
+        if self.secondary.is_empty() {
+            return None;
+        }
+        Some(
+            self.secondary
+                .iter()
+                .find(|s| s.0 == chain && (s.1..=s.2).contains(&seq))
+                .map_or(SecondaryStructure::Coil, |s| s.3),
+        )
     }
 
     /// Covalent bonds found from distances (sum of covalent radii + 0.45 Å),
@@ -374,6 +476,59 @@ impl Molecule {
         }
         out
     }
+}
+
+struct Residue {
+    chain: char,
+    seq: i32,
+    name: String,
+    n: Option<[f64; 3]>,
+    ca: Option<[f64; 3]>,
+    c: Option<[f64; 3]>,
+    o: Option<[f64; 3]>,
+}
+
+fn sub3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+fn dot3(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+fn unit3(a: [f64; 3]) -> [f64; 3] {
+    let l = dot3(a, a).sqrt().max(1e-12);
+    [a[0] / l, a[1] / l, a[2] / l]
+}
+
+/// Dihedral angle a–b–c–d in degrees.
+fn dihedral(a: [f64; 3], b: [f64; 3], c: [f64; 3], d: [f64; 3]) -> f64 {
+    let (b0, b1, b2) = (sub3(a, b), sub3(c, b), sub3(d, c));
+    let b1n = unit3(b1);
+    let v = sub3(
+        b0,
+        [
+            b1n[0] * dot3(b0, b1n),
+            b1n[1] * dot3(b0, b1n),
+            b1n[2] * dot3(b0, b1n),
+        ],
+    );
+    let w = sub3(
+        b2,
+        [
+            b1n[0] * dot3(b2, b1n),
+            b1n[1] * dot3(b2, b1n),
+            b1n[2] * dot3(b2, b1n),
+        ],
+    );
+    let x = dot3(v, w);
+    let y = dot3(cross3(b1n, v), w);
+    y.atan2(x).to_degrees()
 }
 
 fn normalize_element(e: &str) -> String {
@@ -435,6 +590,10 @@ pub enum MolStyle {
     /// A smooth tube through the backbone (Cα of proteins, P of nucleic
     /// acids) per chain; ligands as ball-and-stick.
     Backbone,
+    /// Protein cartoon: helices as wide ribbons, strands as arrows, loops
+    /// as thin tubes (secondary structure from the PDB records, or from
+    /// the Cα geometry); ligands as ball-and-stick.
+    Cartoon,
 }
 
 /// How a molecule is colored.
@@ -532,6 +691,151 @@ impl MoleculeView {
         }
     }
 
+    /// Cartoon of each protein chain.
+    fn cartoon(&self, scene: &mut Scene3d) {
+        let res = self.mol.residues();
+        let colors = self.colors();
+        // Color of each residue: by secondary structure (element mode) or
+        // the coloring of its Cα.
+        let ca_color: Vec<Color> = res
+            .iter()
+            .map(|r| {
+                self.mol
+                    .atoms
+                    .iter()
+                    .position(|a| {
+                        !a.hetero && a.chain == r.chain && a.seq == r.seq && a.name == "CA"
+                    })
+                    .map_or(SS_COIL, |i| colors[i])
+            })
+            .collect();
+        let mut start = 0;
+        while start < res.len() {
+            let mut end = start + 1;
+            while end < res.len()
+                && res[end].chain == res[start].chain
+                && res[end].seq - res[end - 1].seq <= 1
+            {
+                end += 1;
+            }
+            if end - start >= 3 {
+                self.cartoon_chain(scene, &res[start..end], &ca_color[start..end]);
+            }
+            start = end;
+        }
+    }
+
+    fn cartoon_chain(&self, scene: &mut Scene3d, res: &[Residue], cols: &[Color]) {
+        let n = res.len();
+        let ca: Vec<[f64; 3]> = res.iter().map(|r| r.ca.unwrap()).collect();
+        // Secondary structure: recorded, or from the Cα geometry.
+        let ss: Vec<SecondaryStructure> = (0..n)
+            .map(|i| {
+                if let Some(s) = self.mol.recorded_ss(res[i].chain, res[i].seq) {
+                    return s;
+                }
+                let d = |a: usize, b: usize| dot3(sub3(ca[a], ca[b]), sub3(ca[a], ca[b])).sqrt();
+                let helix = (i >= 1 && i + 2 < n && (4.5..6.2).contains(&d(i - 1, i + 2)))
+                    || (i >= 2 && i + 1 < n && (4.5..6.2).contains(&d(i - 2, i + 1)));
+                let strand = i >= 1 && i + 1 < n && d(i - 1, i + 1) > 6.4;
+                if helix {
+                    SecondaryStructure::Helix
+                } else if strand {
+                    SecondaryStructure::Strand
+                } else {
+                    SecondaryStructure::Coil
+                }
+            })
+            .collect();
+        // Ribbon orientation: the carbonyl direction (C→O), kept from
+        // flipping between residues.
+        let mut guide: Vec<[f64; 3]> = Vec::with_capacity(n);
+        for (i, r) in res.iter().enumerate() {
+            let g = match (r.c, r.o) {
+                (Some(c), Some(o)) => unit3(sub3(o, c)),
+                _ => {
+                    let a = if i > 0 { ca[i - 1] } else { ca[i] };
+                    let b = if i + 1 < n { ca[i + 1] } else { ca[i] };
+                    unit3(sub3(sub3(ca[i], a), sub3(b, ca[i])))
+                }
+            };
+            let g = match guide.last() {
+                Some(p) if dot3(*p, g) < 0.0 => [-g[0], -g[1], -g[2]],
+                _ => g,
+            };
+            guide.push(g);
+        }
+        let k = 8;
+        let curve = spline(&ca, k);
+        let gcurve = spline(&guide, k);
+        let s = self.scale;
+        let m = curve.len();
+        // Per sample: residue, half width, frame.
+        let mut left = Vec::with_capacity(m);
+        let mut right = Vec::with_capacity(m);
+        let mut kind = Vec::with_capacity(m);
+        for j in 0..m {
+            let r = (j / k).min(n - 1);
+            let t = unit3(sub3(curve[(j + 1).min(m - 1)], curve[j.saturating_sub(1)]));
+            // Guide made perpendicular to the tangent: the ribbon's width
+            // direction.
+            let g = gcurve[j];
+            let g = unit3(sub3(
+                g,
+                [t[0] * dot3(g, t), t[1] * dot3(g, t), t[2] * dot3(g, t)],
+            ));
+            let last_of_strand = ss[r] == SecondaryStructure::Strand
+                && (r + 1 == n || ss[r + 1] != SecondaryStructure::Strand);
+            let w = match ss[r] {
+                SecondaryStructure::Helix => 1.15,
+                SecondaryStructure::Strand if last_of_strand => {
+                    // Arrow head over the strand's last residue.
+                    let f = (j % k) as f64 / k as f64;
+                    1.7 * (1.0 - f)
+                }
+                SecondaryStructure::Strand => 0.95,
+                SecondaryStructure::Coil => 0.0,
+            } * s;
+            let p = curve[j];
+            left.push([p[0] + g[0] * w, p[1] + g[1] * w, p[2] + g[2] * w]);
+            right.push([p[0] - g[0] * w, p[1] - g[1] * w, p[2] - g[2] * w]);
+            kind.push(ss[r]);
+        }
+        let color_at = |j: usize| {
+            let r = (j / k).min(n - 1);
+            match self.coloring {
+                MolColor::Element => match ss[r] {
+                    SecondaryStructure::Helix => SS_HELIX,
+                    SecondaryStructure::Strand => SS_STRAND,
+                    SecondaryStructure::Coil => SS_COIL,
+                },
+                _ => cols[r].mix(cols[(r + 1).min(n - 1)], (j % k) as f64 / k as f64),
+            }
+        };
+        // Loops as continuous tubes (overlapping one sample into the
+        // neighbouring ribbon so there is no gap), the rest as ribbons.
+        let mut j = 0;
+        while j + 1 < m {
+            if kind[j] == SecondaryStructure::Coil {
+                let a = j.saturating_sub(1);
+                let mut b = j;
+                while b + 1 < m && kind[b] == SecondaryStructure::Coil {
+                    b += 1;
+                }
+                let cs: Vec<Color> = (a..=b).map(color_at).collect();
+                scene.tube_line(&curve[a..=b], 0.32 * s, cs[0], Some(&cs));
+                j = b;
+            } else {
+                scene.polygon(
+                    &[left[j], left[j + 1], right[j + 1], right[j]],
+                    color_at(j),
+                    None,
+                );
+                j += 1;
+            }
+        }
+    }
+
     /// Backbone traces: per chain, indices of Cα / P atoms in order.
     fn traces(&self) -> Vec<Vec<usize>> {
         let mut out: Vec<(char, Vec<usize>)> = Vec::new();
@@ -550,6 +854,11 @@ impl MoleculeView {
             .collect()
     }
 }
+
+/// Cartoon colors: helices, strands and loops.
+const SS_HELIX: Color = Color::rgb(222, 61, 130);
+const SS_STRAND: Color = Color::rgb(248, 196, 52);
+const SS_COIL: Color = Color::rgb(176, 180, 190);
 
 /// Catmull-Rom spline through points, `k` samples per segment.
 fn spline(p: &[[f64; 3]], k: usize) -> Vec<[f64; 3]> {
@@ -631,6 +940,10 @@ impl Series for MoleculeView {
                     scene.sphere(a.pos, element(&a.element).vdw * s, colors[i]);
                 }
             }
+            MolStyle::Cartoon => {
+                self.cartoon(scene);
+                ball_and_stick(scene, true, false);
+            }
             MolStyle::Backbone => {
                 for t in self.traces() {
                     let p: Vec<[f64; 3]> = t.iter().map(|&i| atoms[i].pos).collect();
@@ -644,12 +957,13 @@ impl Series for MoleculeView {
                         .collect();
                     let k = 6;
                     let curve = spline(&p, k);
-                    for (n, w) in curve.windows(2).enumerate() {
-                        let a = n / k;
-                        let f = (n % k) as f64 / k as f64;
-                        let col = c[a].mix(c[(a + 1).min(c.len() - 1)], f);
-                        scene.tube(w[0], w[1], 0.75 * s, col);
-                    }
+                    let cs: Vec<Color> = (0..curve.len())
+                        .map(|n| {
+                            let a = (n / k).min(c.len() - 1);
+                            c[a].mix(c[(a + 1).min(c.len() - 1)], (n % k) as f64 / k as f64)
+                        })
+                        .collect();
+                    scene.tube_line(&curve, 0.75 * s, cs[0], Some(&cs));
                 }
                 ball_and_stick(scene, true, false);
             }
@@ -661,7 +975,10 @@ impl Series for MoleculeView {
             .iter()
             .filter(|a| self.shown(a))
             .filter(|a| {
-                self.style != MolStyle::Backbone || a.hetero || a.name == "CA" || a.name == "P"
+                !matches!(self.style, MolStyle::Backbone | MolStyle::Cartoon)
+                    || a.hetero
+                    || a.name == "CA"
+                    || a.name == "P"
             })
             .map(|a| {
                 let (x, y, d) = proj.project(a.pos);
@@ -680,6 +997,22 @@ impl Series for MoleculeView {
             .min_by(|a, b| a.distance.total_cmp(&b.distance))
     }
     fn legend(&self) -> Vec<LegendEntry> {
+        if self.style == MolStyle::Cartoon && self.coloring == MolColor::Element {
+            return [
+                ("helix", SS_HELIX),
+                ("strand", SS_STRAND),
+                ("loop", SS_COIL),
+            ]
+            .iter()
+            .map(|(l, c)| LegendEntry {
+                label: l.to_string(),
+                symbol: LegendSymbol::Patch {
+                    fill: *c,
+                    edge: None,
+                },
+            })
+            .collect();
+        }
         if self.coloring != MolColor::Element || self.style == MolStyle::Backbone {
             return Vec::new();
         }
