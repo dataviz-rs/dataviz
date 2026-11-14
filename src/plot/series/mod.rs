@@ -448,6 +448,29 @@ pub trait Series: Any {
     fn y_range_in(&self, _x0: f64, _x1: f64) -> Option<Option<(f64, f64)>> {
         None
     }
+    /// What kind of chart the series is ("line", "scatter", …), for text
+    /// descriptions. Default: the type name in lower case.
+    fn kind(&self) -> &'static str {
+        let full = std::any::type_name::<Self>();
+        let name = full.rsplit("::").next().unwrap_or(full);
+        match name {
+            "Line" => "line",
+            "Scatter" => "scatter",
+            "Bars" => "bar",
+            "Candles" => "candlestick",
+            "Histogram" => "histogram",
+            "FillBetween" => "area",
+            "BoxPlot" => "box",
+            "Violin" => "violin",
+            "Heatmap" => "heatmap",
+            "Pie" => "pie",
+            "GeoMap" => "map",
+            "Strip" => "strip",
+            "Ridgeline" => "ridgeline",
+            "Annotate" => "annotation",
+            _ => "data",
+        }
+    }
     /// Name shown for the series (legend label) in interactive output.
     fn name(&self) -> Option<String> {
         self.legend().into_iter().next().map(|e| e.label)

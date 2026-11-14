@@ -287,6 +287,10 @@ pub struct Scene {
     pub font_family: String,
     /// Content.
     pub nodes: Vec<Node>,
+    /// Accessible name (SVG `<title>`, read by screen readers).
+    pub title: Option<String>,
+    /// Accessible description (SVG `<desc>`): what the chart shows.
+    pub description: Option<String>,
 }
 
 impl Scene {
@@ -298,6 +302,8 @@ impl Scene {
             background: Some(Color::WHITE),
             font_family: "sans-serif".into(),
             nodes: Vec::new(),
+            title: None,
+            description: None,
         }
     }
 
@@ -313,14 +319,29 @@ impl Scene {
             clip_id: 0,
             font: &self.font_family,
         };
+        let a11y = match (&self.title, &self.description) {
+            (None, None) => String::new(),
+            (Some(_), None) => r#" role="img" aria-labelledby="dv-title""#.to_string(),
+            (None, Some(_)) => r#" role="img" aria-describedby="dv-desc""#.to_string(),
+            (Some(_), Some(_)) => {
+                r#" role="img" aria-labelledby="dv-title" aria-describedby="dv-desc""#.to_string()
+            }
+        };
         let _ = write!(
             w.out,
-            r#"<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{1}" viewBox="0 0 {0} {1}" font-family="{2}">"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" width="{0}" height="{1}" viewBox="0 0 {0} {1}" font-family="{2}"{3}>"#,
             num(self.width),
             num(self.height),
             esc(&font_list(&self.font_family)),
+            a11y,
         );
         w.out.push('\n');
+        if let Some(t) = &self.title {
+            let _ = writeln!(w.out, r#"<title id="dv-title">{}</title>"#, esc(t));
+        }
+        if let Some(d) = &self.description {
+            let _ = writeln!(w.out, r#"<desc id="dv-desc">{}</desc>"#, esc(d));
+        }
         if let Some(bg) = self.background.filter(|c| c.is_visible()) {
             let _ = writeln!(
                 w.out,

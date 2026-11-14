@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.15.0
+
+### Added
+- **Accessibility** (`plot::a11y`): SVG, PDF and HTML output carry an
+  accessible name (`<title>`, the figure title) and description (`<desc>`,
+  `role="img"`): `Figure::alt_text()` describes the plots, axes, ranges and
+  series; `Figure::description(text)` sets your own.
+- **Color vision checks**: `Cvd` (protanopia, deuteranopia, tritanopia,
+  achromatopsia; Machado et al. 2009), `Color::simulate`,
+  `Pixels::simulate` (see a chart as others do), `Color::oklab`,
+  `Color::difference` and `Figure::color_warnings()` (series whose colors
+  are hard to tell apart, normally or with a color vision deficiency).
+- `Series::kind` (chart type name for descriptions); `Scene::title` and
+  `Scene::description`. `Cvd` is in the prelude.
+
 ## 0.14.0
 
 ### Added

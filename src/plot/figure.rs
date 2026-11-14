@@ -55,6 +55,8 @@ pub struct Figure {
     share_y: bool,
     #[cfg(feature = "window")]
     pub(crate) selection: Option<super::window::Selection>,
+    /// Accessible description (`Figure::description`).
+    pub(crate) description: Option<String>,
     /// Layouts of the last render (for `interact`).
     pub(crate) last_layouts: Vec<super::axes::Layout>,
     /// Limits before the first interactive zoom or pan.
@@ -89,6 +91,7 @@ impl Figure {
             share_y: false,
             #[cfg(feature = "window")]
             selection: None,
+            description: None,
             last_layouts: Vec::new(),
             home: None,
             pixmap: None,
@@ -416,7 +419,7 @@ impl Figure {
 
     /// The figure as an SVG document.
     pub fn to_svg(&mut self) -> String {
-        self.to_scene().to_svg()
+        self.accessible_scene().to_svg()
     }
 
     /// Rasterizes the figure (at [`Figure::scale`]).
@@ -466,7 +469,7 @@ impl Figure {
         match format {
             Format::Html => Ok(self.to_html().into_bytes()),
             Format::Svg | Format::Pdf => {
-                let scene = self.to_scene();
+                let scene = self.accessible_scene();
                 output::encode(&scene, &self.fonts(), format, self.scale)
             }
             Format::Png => {

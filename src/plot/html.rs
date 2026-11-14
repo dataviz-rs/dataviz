@@ -63,7 +63,8 @@ impl Figure {
     /// The figure as an interactive, self-contained HTML page (see
     /// [`crate::plot::html`]).
     pub fn to_html(&mut self) -> String {
-        let (scene, layouts) = self.scene_and_layouts();
+        let scene = self.accessible_scene();
+        let layouts = self.last_layouts.clone();
         let svg = scene.to_svg();
         let mut plots = Vec::new();
         for (i, lay) in layouts.iter().enumerate() {
