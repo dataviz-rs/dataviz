@@ -24,7 +24,7 @@ use std::sync::{Arc, LazyLock, RwLock};
 /// Small, fast non-cryptographic hasher (FxHash) for the internal caches;
 /// keys are trusted, so DoS-resistant hashing is unnecessary.
 #[derive(Default)]
-struct FxHasher(u64);
+pub(crate) struct FxHasher(u64);
 
 impl FxHasher {
     #[inline]
@@ -59,7 +59,7 @@ impl Hasher for FxHasher {
     }
 }
 
-type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<FxHasher>>;
+pub(crate) type HashMap<K, V> = std::collections::HashMap<K, V, BuildHasherDefault<FxHasher>>;
 
 fn color(c: Color) -> sk::Color {
     sk::Color::from_rgba8(c.r, c.g, c.b, (c.a.clamp(0.0, 1.0) * 255.0).round() as u8)

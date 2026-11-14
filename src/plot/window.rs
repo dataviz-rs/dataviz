@@ -2,8 +2,10 @@
 //!
 //! Controls: mouse wheel zooms around the cursor, left-drag pans, right-drag
 //! zooms to a box, clicking a legend row hides or shows its series, `R`
-//! resets the view, `S` saves a PNG next to the program, `H` toggles the
-//! hover tooltip, `C` the crosshair, `Esc` closes the window.
+//! resets the view, `S` saves a PNG next to the program, `V` starts and
+//! stops recording a GIF next to the program (the plots without the mouse
+//! overlays, at the rate they change; see [`crate::plot::anim`]), `H`
+//! toggles the hover tooltip, `C` the crosshair, `Esc` closes the window.
 //!
 //! The crosshair follows the mouse with the cursor's x and y values on the
 //! axes; plots showing the same x range (e.g. [`Figure::share_x`]) get a
@@ -239,6 +241,7 @@ impl Figure {
         let mut views: Vec<Option<AxesLimits>> = Vec::new();
         let mut live = false;
         let mut auto = true;
+        let mut recording: Option<Recording> = None;
 
         while window.is_open() && !window.is_key_down(Key::Escape) {
             if last_update.elapsed() >= period {
@@ -385,8 +388,30 @@ impl Figure {
                 last_mouse = (f64::NAN, f64::NAN);
             }
 
+            if window.is_key_pressed(Key::V, KeyRepeat::No) {
+                message = Some((
+                    match recording.take() {
+                        Some(r) => r.stop(),
+                        None => match Recording::start(title) {
+                            Ok(r) => {
+                                r.send(&base);
+                                let text = format!("recording {} (V stops)", r.name);
+                                recording = Some(r);
+                                text
+                            }
+                            Err(e) => format!("cannot record: {e}"),
+                        },
+                    },
+                    Instant::now(),
+                ));
+                last_mouse = (f64::NAN, f64::NAN);
+            }
+
             if dirty {
                 layouts = self.frame(&mut base)?;
+                if let Some(r) = &recording {
+                    r.send(&base);
+                }
                 base.write_0rgb(&mut plain);
                 under.clear();
                 under.extend(plain.iter().map(|&p| {
@@ -399,7 +424,8 @@ impl Figure {
 
             // Overlays (hover tooltip, zoom box, messages) only when needed.
             let m = mouse.unwrap_or((f64::NAN, f64::NAN));
-            let overlay_needed = m != last_mouse || box_start.is_some() || message.is_some();
+            let overlay_needed =
+                m != last_mouse || box_start.is_some() || message.is_some() || recording.is_some();
             if overlay_needed {
                 last_mouse = m;
                 let mut nodes = Vec::new();
@@ -456,6 +482,15 @@ impl Figure {
                         h as f64,
                     );
                 }
+                if let Some(r) = &recording {
+                    axis_box(
+                        &mut nodes,
+                        &format!("● REC {:.0} s", r.start.elapsed().as_secs_f64()),
+                        w as f64 - 8.0,
+                        16.0,
+                        Anchor::End,
+                    );
+                }
                 if let Some((text, at)) = &message {
                     if at.elapsed() < Duration::from_secs(2) {
                         tooltip(
@@ -493,6 +528,9 @@ impl Figure {
                 .update_with_buffer(&buffer, w, h)
                 .map_err(|e| Error::Render(e.to_string()))?;
         }
+        if let Some(r) = recording {
+            r.stop();
+        }
         Ok(())
     }
 }
@@ -518,6 +556,75 @@ impl Figure {
                 let l = self.axes_limits(j);
                 remember(views, j, l);
             }
+        }
+    }
+}
+
+/// A GIF recording of the window's frames, encoded on another thread.
+struct Recording {
+    tx: std::sync::mpsc::SyncSender<(Option<Pixels>, Duration)>,
+    worker: std::thread::JoinHandle<Result<usize, Error>>,
+    start: Instant,
+    name: String,
+}
+
+impl Recording {
+    fn start(title: &str) -> Result<Self, Error> {
+        let base = sanitize(title);
+        let name = (1..)
+            .map(|i| format!("{base}-{i}.gif"))
+            .find(|n| !std::path::Path::new(n).exists())
+            .unwrap_or_else(|| format!("{base}.gif"));
+        Self::start_path(name)
+    }
+
+    fn start_path(name: String) -> Result<Self, Error> {
+        let mut rec = super::anim::Recorder::create(&name, 50.0)?;
+        // A few frames of slack; when encoding falls behind, frames are
+        // dropped instead of slowing the window down.
+        let (tx, rx) = std::sync::mpsc::sync_channel::<(Option<Pixels>, Duration)>(3);
+        let worker = std::thread::spawn(move || {
+            let mut last = None;
+            for (px, at) in rx {
+                match px {
+                    Some(px) => {
+                        rec.push_at(&px, at)?;
+                        last = Some(px);
+                    }
+                    // End: the last frame stays until the recording stops.
+                    None => {
+                        if let Some(px) = &last {
+                            rec.push_at(px, at)?;
+                        }
+                    }
+                }
+            }
+            let n = rec.frames();
+            rec.finish()?;
+            Ok(n)
+        });
+        Ok(Self {
+            tx,
+            worker,
+            start: Instant::now(),
+            name,
+        })
+    }
+
+    fn send(&self, frame: &Pixels) {
+        let _ = self
+            .tx
+            .try_send((Some(frame.clone()), self.start.elapsed()));
+    }
+
+    /// Ends the recording; returns the message to show.
+    fn stop(self) -> String {
+        let _ = self.tx.send((None, self.start.elapsed()));
+        drop(self.tx);
+        match self.worker.join() {
+            Ok(Ok(n)) => format!("saved {} ({n} frames)", self.name),
+            Ok(Err(e)) => format!("could not save {}: {e}", self.name),
+            Err(_) => format!("could not save {}", self.name),
         }
     }
 }
@@ -920,6 +1027,24 @@ mod tests {
         // The hidden series no longer sets the y range.
         assert!(l[0].y.max < 5.0, "{}", l[0].y.max);
         assert_eq!(l[0].legend_items.len(), 2);
+    }
+
+    #[test]
+    fn recording_writes_a_gif() {
+        let dir = std::env::temp_dir().join(format!("dataviz-rec-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let name = dir.join("r.gif").to_string_lossy().into_owned();
+        let mut f = Figure::new(120, 80);
+        f.axes().line(vec![0.0, 1.0], vec![0.0, 1.0]);
+        let r = Recording::start_path(name.clone()).unwrap();
+        r.send(&f.to_pixels().unwrap());
+        std::thread::sleep(Duration::from_millis(30));
+        f.axes().line(vec![0.0, 1.0], vec![1.0, 0.0]);
+        r.send(&f.to_pixels().unwrap());
+        std::thread::sleep(Duration::from_millis(30));
+        assert!(r.stop().contains("(2 frames)"));
+        let bytes = std::fs::read(&name).unwrap();
+        assert_eq!(&bytes[..6], b"GIF89a");
     }
 
     #[test]
