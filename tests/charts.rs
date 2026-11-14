@@ -63,8 +63,10 @@ fn assert_valid_svg(svg: &str) {
 fn count_pixels(canvas: &PixelCanvas, color: [u8; 3]) -> usize {
     canvas
         .buffer
-        .chunks_exact(3)
-        .filter(|p| *p == color)
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .filter(|p| **p == color)
         .count()
 }
 

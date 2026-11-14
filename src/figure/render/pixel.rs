@@ -443,7 +443,9 @@ pub(crate) fn tooltip(
 pub(crate) fn to_argb(canvas: &PixelCanvas) -> Vec<u32> {
     canvas
         .buffer
-        .chunks_exact(3)
+        .as_chunks::<3>()
+        .0
+        .iter()
         .map(|p| 0xFF00_0000 | (p[0] as u32) << 16 | (p[1] as u32) << 8 | p[2] as u32)
         .collect()
 }
