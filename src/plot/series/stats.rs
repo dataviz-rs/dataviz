@@ -30,6 +30,26 @@ pub struct Histogram {
 }
 
 impl Histogram {
+    /// Replaces the values (live data: re-bin the latest window each frame).
+    ///
+    /// ```
+    /// use dataviz::prelude::*;
+    /// use dataviz::plot::series::stats::Histogram;
+    /// let mut fig = Figure::new(400, 300);
+    /// fig.axes().hist([1.0, 2.0, 2.5]).bin_count(2);
+    /// let h = fig.axes().series_mut::<Histogram>(0).unwrap();
+    /// h.set_values([1.0, 1.1, 1.2, 3.0]);
+    /// assert_eq!(h.computed().1, vec![3.0, 1.0]);
+    /// ```
+    pub fn set_values(&mut self, values: impl IntoValues) -> &mut Self {
+        self.cache = Default::default();
+        self.values = values.into_values();
+        self
+    }
+    /// The values.
+    pub fn values(&self) -> &[f64] {
+        &self.values
+    }
     /// Binning rule (default: automatic).
     pub fn bins(&mut self, bins: Bins) -> &mut Self {
         self.cache = Default::default();

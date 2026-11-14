@@ -34,7 +34,7 @@ pub mod prelude {
     pub use crate::plot::time::{date, datetime, parse_datetime};
     pub use crate::plot::{
         Axes, AxesKind, Axis, Backend, Color, Colormap, Dash, Error, Figure, Format,
-        LegendPosition, Marker, Palette, Scale, Series, Theme, TickFormat, TickSpec,
+        LegendPosition, Marker, Palette, Pixels, Scale, Series, Theme, TickFormat, TickSpec,
     };
 }
 
