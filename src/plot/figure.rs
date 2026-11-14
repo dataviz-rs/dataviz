@@ -43,6 +43,8 @@ pub struct Figure {
     spacing: f64,
     share_x: bool,
     share_y: bool,
+    #[cfg(feature = "window")]
+    pub(crate) selection: Option<super::window::Selection>,
     /// Pixel buffer reused between renders (real-time redraws).
     pub(crate) pixmap: Option<resvg::tiny_skia::Pixmap>,
     pub(crate) backend: Backend,
@@ -71,6 +73,8 @@ impl Figure {
             spacing: 16.0,
             share_x: false,
             share_y: false,
+            #[cfg(feature = "window")]
+            selection: None,
             pixmap: None,
             backend: Backend::Auto,
         }

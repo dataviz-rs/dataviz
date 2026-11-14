@@ -1,8 +1,13 @@
 //! Interactive window for figures (requires the `window` feature).
 //!
 //! Controls: mouse wheel zooms around the cursor, left-drag pans, right-drag
-//! zooms to a box, clicking a legend row hides or shows its series, `R`
-//! resets the view, `S` saves a PNG next to the program, `V` starts and
+//! zooms to a box, clicking a legend row hides or shows its series,
+//! Shift+drag measures (Δx, Δy and the change in percent), Ctrl+drag
+//! selects a box ([`Figure::selection`]), a range slider
+//! ([`Axes::range_slider`](crate::plot::Axes::range_slider)) is dragged to
+//! pan and at its edges to zoom, `R` resets the view, `S` saves a PNG and
+//! Shift+S an SVG (and PDF) next to the program, Ctrl+C copies the plots to
+//! the clipboard, `V` starts and
 //! stops recording a GIF next to the program (the plots without the mouse
 //! overlays, at the rate they change; see [`crate::plot::anim`]), `H`
 //! toggles the hover tooltip, `C` the crosshair, `Esc` closes the window.
@@ -43,6 +48,8 @@ type AxesLimits = (
     Option<f64>,
 );
 type Limits = Vec<AxesLimits>;
+/// A measurement: plot, start and (once released) end in canvas units.
+type Measure = (usize, (f64, f64), Option<(f64, f64)>);
 
 /// Opens a window, preferring X11 on Linux desktops that also run Wayland
 /// (see the module documentation).
@@ -243,6 +250,12 @@ impl Figure {
         let mut live = false;
         let mut auto = true;
         let mut recording: Option<Recording> = None;
+        // Range slider drag: plot, mode, grab offset from the window start.
+        let mut slider_drag: Option<(usize, SliderGrab, f64)> = None;
+        // Measurement (Shift+drag): plot, start, end once released.
+        let mut measure: Option<Measure> = None;
+        // Box selection (Ctrl+drag) in progress: plot, start.
+        let mut selecting: Option<(usize, (f64, f64))> = None;
 
         while window.is_open() && !window.is_key_down(Key::Escape) {
             if last_update.elapsed() >= period {
@@ -278,7 +291,13 @@ impl Figure {
             }
             // Click on a legend row: hide or show the series.
             let down = window.get_mouse_down(MouseButton::Left);
+            let shift = window.is_key_down(Key::LeftShift) || window.is_key_down(Key::RightShift);
+            let ctrl = window.is_key_down(Key::LeftCtrl) || window.is_key_down(Key::RightCtrl);
             if down && !was_down {
+                if measure.is_some_and(|m| m.2.is_some()) {
+                    measure = None;
+                    last_mouse = (f64::NAN, f64::NAN);
+                }
                 if let Some(m) = mouse {
                     if let Some((i, k)) = legend_at(&layouts, m) {
                         if let Some(a) = self.cell_axes(i) {
@@ -287,10 +306,74 @@ impl Figure {
                             clicked = true;
                             dirty = true;
                         }
+                    } else if let Some((i, grab, off)) = slider_at(&layouts, m) {
+                        slider_drag = Some((i, grab, off));
+                        clicked = true;
+                    } else if let (true, Some(i)) = (shift, in_axes(m, &layouts)) {
+                        measure = Some((i, m, None));
+                        clicked = true;
+                    } else if let (true, Some(i)) = (ctrl, in_axes(m, &layouts)) {
+                        selecting = Some((i, m));
+                        clicked = true;
+                    }
+                }
+            }
+            // Range slider: move the window or its edges.
+            if let (true, Some((i, grab, off)), Some(m)) = (down, slider_drag, mouse) {
+                if let Some((_, map)) = layouts.get(i).and_then(|l| l.slider.clone()) {
+                    let l = &layouts[i];
+                    let (a, b) = (map.px(l.x.min), map.px(l.x.max));
+                    let (na, nb) = match grab {
+                        SliderGrab::Start => (m.0.min(b - 4.0), b),
+                        SliderGrab::End => (a, m.0.max(a + 4.0)),
+                        SliderGrab::Move => (m.0 - off, m.0 - off + (b - a)),
+                    };
+                    let (u, v) = (map.value(na), map.value(nb));
+                    if u.is_finite()
+                        && v.is_finite()
+                        && (u - l.x.min).abs() + (v - l.x.max).abs() > 0.0
+                    {
+                        if let Some(ax) = self.cell_axes(i) {
+                            ax.x.limits(u.min(v), u.max(v));
+                            dirty = true;
+                        }
+                        remember(&mut views, i, self.axes_limits(i));
+                        self.link_x(&layouts, i, &mut views);
+                        self.apply_views(&views, auto);
                     }
                 }
             }
             if !down {
+                if let (Some((i, a)), Some(b)) = (selecting.take(), mouse) {
+                    let l = &layouts[i];
+                    let (x0, x1) = (l.x.value(a.0), l.x.value(b.0));
+                    let (y0, y1) = (l.y.value(a.1), l.y.value(b.1));
+                    if (a.0 - b.0).abs() > 3.0 && (a.1 - b.1).abs() > 3.0 {
+                        let sel = Selection {
+                            plot: i,
+                            x: (x0.min(x1), x0.max(x1)),
+                            y: (y0.min(y1), y0.max(y1)),
+                        };
+                        let axes = self.cell_axes(i);
+                        message = Some((
+                            format!(
+                                "selected x {} … {}, y {} … {}",
+                                axes.as_ref()
+                                    .map_or(String::new(), |a| a.cursor_label(l, false, sel.x.0)),
+                                axes.as_ref()
+                                    .map_or(String::new(), |a| a.cursor_label(l, false, sel.x.1)),
+                                super::series::short(sel.y.0),
+                                super::series::short(sel.y.1)
+                            ),
+                            Instant::now(),
+                        ));
+                        self.selection = Some(sel);
+                    }
+                }
+                if let (Some((i, a, None)), Some(b)) = (measure, mouse) {
+                    measure = Some((i, a, Some(b)));
+                }
+                slider_drag = None;
                 clicked = false;
             }
             was_down = down;
@@ -336,6 +419,8 @@ impl Figure {
             }
             if window.is_key_pressed(Key::R, KeyRepeat::No) {
                 views.clear();
+                self.selection = None;
+                measure = None;
                 self.restore(&original);
                 if live {
                     // Let the data set the view again.
@@ -370,11 +455,44 @@ impl Figure {
                 hover = !hover;
                 last_mouse = (f64::NAN, f64::NAN);
             }
-            if window.is_key_pressed(Key::C, KeyRepeat::No) {
+            if window.is_key_pressed(Key::C, KeyRepeat::No) && !ctrl {
                 cross = !cross;
                 last_mouse = (f64::NAN, f64::NAN);
             }
-            if window.is_key_pressed(Key::S, KeyRepeat::No) {
+            if window.is_key_pressed(Key::C, KeyRepeat::No) && ctrl {
+                // Ctrl+C: the plots as PNG on the clipboard.
+                message = Some((
+                    match base
+                        .encode(output::Format::Png)
+                        .map_err(|e| e.to_string())
+                        .and_then(|png| copy_png(&png))
+                    {
+                        Ok(()) => "copied to the clipboard".to_string(),
+                        Err(e) => format!("could not copy: {e}"),
+                    },
+                    Instant::now(),
+                ));
+                last_mouse = (f64::NAN, f64::NAN);
+            }
+            if window.is_key_pressed(Key::S, KeyRepeat::No) && shift {
+                let stem = sanitize(title);
+                let mut saved = Vec::new();
+                for ext in ["svg", "pdf"] {
+                    let name = format!("{stem}.{ext}");
+                    if self.save(&name).is_ok() {
+                        saved.push(name);
+                    }
+                }
+                message = Some((
+                    if saved.is_empty() {
+                        "could not save".to_string()
+                    } else {
+                        format!("saved {}", saved.join(", "))
+                    },
+                    Instant::now(),
+                ));
+                last_mouse = (f64::NAN, f64::NAN);
+            } else if window.is_key_pressed(Key::S, KeyRepeat::No) {
                 let name = format!("{}.png", sanitize(title));
                 message = Some((
                     match base
@@ -425,8 +543,12 @@ impl Figure {
 
             // Overlays (hover tooltip, zoom box, messages) only when needed.
             let m = mouse.unwrap_or((f64::NAN, f64::NAN));
-            let overlay_needed =
-                m != last_mouse || box_start.is_some() || message.is_some() || recording.is_some();
+            let overlay_needed = m != last_mouse
+                || box_start.is_some()
+                || message.is_some()
+                || recording.is_some()
+                || selecting.is_some()
+                || slider_drag.is_some();
             if overlay_needed {
                 last_mouse = m;
                 let fonts = self.fonts();
@@ -442,8 +564,41 @@ impl Figure {
                         stroke: Some(Stroke::new(Color::rgb(30, 120, 220), 1.0)),
                     });
                 }
+                // Selection being drawn, or the last one.
+                let sel_rect = match (selecting, mouse) {
+                    (Some((i, a)), Some(b)) => Some((i, a, b)),
+                    _ => self.selection.as_ref().and_then(|s| {
+                        let l = layouts.get(s.plot)?;
+                        Some((
+                            s.plot,
+                            (l.x.px(s.x.0), l.y.px(s.y.0)),
+                            (l.x.px(s.x.1), l.y.px(s.y.1)),
+                        ))
+                    }),
+                };
+                if let Some((_, a, b)) = sel_rect {
+                    nodes.push(Node::Rect {
+                        x: a.0.min(b.0),
+                        y: a.1.min(b.1),
+                        w: (a.0 - b.0).abs(),
+                        h: (a.1 - b.1).abs(),
+                        rx: 0.0,
+                        fill: Some(Color::rgba(255, 152, 0, 0.12)),
+                        stroke: Some(
+                            Stroke::new(Color::rgb(255, 152, 0), 1.0).dashed(vec![4.0, 3.0]),
+                        ),
+                    });
+                }
+                if let Some((i, a, end)) = measure {
+                    if let Some(b) = end.or(mouse) {
+                        self.measure_overlay(&fonts, &layouts, i, a, b, &mut nodes);
+                    }
+                }
                 let mut crossed = false;
-                if let (true, None, None, Some(m)) = (cross, drag, box_start, mouse) {
+                let busy = measure.is_some_and(|m| m.2.is_none())
+                    || selecting.is_some()
+                    || slider_drag.is_some();
+                if let (true, None, None, Some(m), false) = (cross, drag, box_start, mouse, busy) {
                     if let (Some(i), None) = (in_axes(m, &layouts), legend_at(&layouts, m)) {
                         crossed = self.crosshair(&layouts, i, m, hover, &mut nodes);
                     }
@@ -633,6 +788,192 @@ impl Recording {
             Err(_) => format!("could not save {}", self.name),
         }
     }
+}
+
+/// Which part of a range slider window is dragged.
+#[derive(Clone, Copy, Debug, PartialEq)]
+enum SliderGrab {
+    Start,
+    End,
+    Move,
+}
+
+/// The range slider under `m`: plot, part, and the offset of `m` from the
+/// window start (a click outside the window centres it there).
+fn slider_at(layouts: &[Layout], m: (f64, f64)) -> Option<(usize, SliderGrab, f64)> {
+    layouts.iter().enumerate().find_map(|(i, l)| {
+        let (r, map) = l.slider.as_ref()?;
+        if !r.contains(m.0, m.1) {
+            return None;
+        }
+        let (a, b) = (map.px(l.x.min), map.px(l.x.max));
+        Some(if (m.0 - a).abs() <= 6.0 {
+            (i, SliderGrab::Start, 0.0)
+        } else if (m.0 - b).abs() <= 6.0 {
+            (i, SliderGrab::End, 0.0)
+        } else if m.0 > a && m.0 < b {
+            (i, SliderGrab::Move, m.0 - a)
+        } else {
+            (i, SliderGrab::Move, (b - a) / 2.0)
+        })
+    })
+}
+
+/// A box selected in a window with Ctrl+drag (data coordinates).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Selection {
+    /// Index of the plot (in the order the plots were created).
+    pub plot: usize,
+    /// x range.
+    pub x: (f64, f64),
+    /// y range.
+    pub y: (f64, f64),
+}
+
+impl Selection {
+    /// Whether a data point lies in the box.
+    pub fn contains(&self, x: f64, y: f64) -> bool {
+        x >= self.x.0 && x <= self.x.1 && y >= self.y.0 && y <= self.y.1
+    }
+}
+
+impl Figure {
+    /// The box the user selected with Ctrl+drag in a window (cleared by
+    /// `R`), e.g. to filter data in the `show_live` update.
+    pub fn selection(&self) -> Option<Selection> {
+        self.selection
+    }
+
+    /// Measurement between canvas points `a` and `b` of plot `i`.
+    fn measure_overlay(
+        &mut self,
+        fonts: &FontSet,
+        layouts: &[Layout],
+        i: usize,
+        a: (f64, f64),
+        b: (f64, f64),
+        nodes: &mut Vec<Node>,
+    ) {
+        let Some(l) = layouts.get(i) else { return };
+        let Some(ax) = self.cell_axes(i) else { return };
+        let (x0, x1) = (l.x.value(a.0), l.x.value(b.0));
+        let (y0, y1) = (l.y.value(a.1), l.y.value(b.1));
+        let dy = y1 - y0;
+        let up = dy >= 0.0;
+        let tint = if up {
+            Color::rgb(38, 166, 154)
+        } else {
+            Color::rgb(239, 83, 80)
+        };
+        nodes.push(Node::Rect {
+            x: a.0.min(b.0),
+            y: a.1.min(b.1),
+            w: (a.0 - b.0).abs(),
+            h: (a.1 - b.1).abs(),
+            rx: 0.0,
+            fill: Some(tint.with_alpha(0.12)),
+            stroke: None,
+        });
+        nodes.push(Node::Path {
+            cmds: vec![PathCmd::MoveTo(a.0, a.1), PathCmd::LineTo(b.0, b.1)],
+            fill: None,
+            stroke: Some(Stroke::new(tint, 1.5)),
+        });
+        let dx = if ax.x.scale == super::scale::Scale::Time {
+            duration(x1 - x0)
+        } else {
+            super::series::short(x1 - x0)
+        };
+        let pct = if y0 != 0.0 {
+            format!(" ({:+.2} %)", dy / y0.abs() * 100.0)
+        } else {
+            String::new()
+        };
+        let lines = [
+            format!("Δx {dx}"),
+            format!("Δy {}{pct}", super::series::short(dy)),
+        ];
+        let text: Vec<&str> = lines.iter().map(String::as_str).collect();
+        tooltip_lines(fonts, nodes, &text, b, l.plot, &[]);
+    }
+}
+
+/// A time span in seconds as text ("2 d 3 h", "4 min 5 s").
+fn duration(s: f64) -> String {
+    let sign = if s < 0.0 { "−" } else { "" };
+    let s = s.abs();
+    let (d, h, m) = (
+        (s / 86400.0).floor(),
+        (s % 86400.0 / 3600.0).floor(),
+        (s % 3600.0 / 60.0).floor(),
+    );
+    let sec = s % 60.0;
+    let t = if d >= 1.0 {
+        format!("{d} d {h} h")
+    } else if h >= 1.0 {
+        format!("{h} h {m} min")
+    } else if m >= 1.0 {
+        format!("{m} min {:.0} s", sec)
+    } else {
+        format!("{} s", super::series::short(sec))
+    };
+    format!("{sign}{t}")
+}
+
+/// Puts a PNG on the clipboard with the system's clipboard tool.
+fn copy_png(png: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let pipe = |cmd: &str, args: &[&str]| -> Result<(), String> {
+        let mut child = Command::new(cmd)
+            .args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .map_err(|e| e.to_string())?;
+        child
+            .stdin
+            .take()
+            .ok_or("no input")?
+            .write_all(png)
+            .map_err(|e| e.to_string())?;
+        // Clipboard tools on X11 keep running to serve the data.
+        Ok(())
+    };
+    if cfg!(target_os = "macos") || cfg!(target_os = "windows") {
+        let path = std::env::temp_dir().join("dataviz-clipboard.png");
+        std::fs::write(&path, png).map_err(|e| e.to_string())?;
+        let p = path.to_string_lossy().replace('\'', "");
+        let ok = if cfg!(target_os = "macos") {
+            Command::new("osascript")
+                .args([
+                    "-e",
+                    &format!("set the clipboard to (read (POSIX file \"{p}\") as «class PNGf»)"),
+                ])
+                .status()
+        } else {
+            Command::new("powershell")
+                .args([
+                    "-NoProfile",
+                    "-Command",
+                    &format!("Add-Type -AssemblyName System.Windows.Forms; [Windows.Forms.Clipboard]::SetImage([Drawing.Image]::FromFile('{p}'))"),
+                ])
+                .status()
+        };
+        return match ok {
+            Ok(s) if s.success() => Ok(()),
+            Ok(s) => Err(format!("clipboard tool failed ({s})")),
+            Err(e) => Err(e.to_string()),
+        };
+    }
+    if std::env::var_os("WAYLAND_DISPLAY").is_some()
+        && pipe("wl-copy", &["--type", "image/png"]).is_ok()
+    {
+        return Ok(());
+    }
+    pipe("xclip", &["-selection", "clipboard", "-t", "image/png"])
+        .map_err(|_| "needs wl-copy (Wayland) or xclip (X11)".to_string())
 }
 
 /// Records the view of plot `i` chosen by the user.
@@ -1042,6 +1383,49 @@ mod tests {
         // The hidden series no longer sets the y range.
         assert!(l[0].y.max < 5.0, "{}", l[0].y.max);
         assert_eq!(l[0].legend_items.len(), 2);
+    }
+
+    #[test]
+    fn range_slider_parts() {
+        let mut f = Figure::new(600, 400);
+        let x: Vec<f64> = (0..100).map(|i| i as f64).collect();
+        f.axes().line(&x, &x);
+        f.axes().range_slider(true);
+        f.axes().x_limits(20.0, 60.0);
+        let (_, l) = f.scene_and_layouts();
+        let (r, map) = l[0].slider.clone().unwrap();
+        assert!(r.y > l[0].plot.bottom());
+        let (a, b) = (map.px(20.0), map.px(60.0));
+        let mid = r.y + r.h / 2.0;
+        assert_eq!(slider_at(&l, (a, mid)).map(|s| s.1), Some(SliderGrab::Start));
+        assert_eq!(slider_at(&l, (b, mid)).map(|s| s.1), Some(SliderGrab::End));
+        assert_eq!(slider_at(&l, ((a + b) / 2.0, mid)).map(|s| s.1), Some(SliderGrab::Move));
+        assert!(slider_at(&l, (a, r.y - 5.0)).is_none());
+        // The slider covers all data, not just the shown range.
+        assert!(map.min <= 0.0 && map.max >= 99.0);
+    }
+
+    #[test]
+    fn measurement_and_selection() {
+        assert_eq!(duration(3.0 * 3600.0 + 120.0), "3 h 2 min");
+        assert_eq!(duration(-90.0), "−1 min 30 s");
+        let s = Selection { plot: 0, x: (0.0, 1.0), y: (2.0, 3.0) };
+        assert!(s.contains(0.5, 2.5) && !s.contains(1.5, 2.5));
+        let mut f = Figure::new(400, 300);
+        f.axes().line(vec![0.0, 10.0], vec![100.0, 110.0]);
+        let (_, l) = f.scene_and_layouts();
+        let fonts = f.fonts();
+        let mut nodes = Vec::new();
+        let (a, b) = ((l[0].x.px(0.0), l[0].y.px(100.0)), (l[0].x.px(10.0), l[0].y.px(110.0)));
+        f.measure_overlay(&fonts, &l, 0, a, b, &mut nodes);
+        let texts: Vec<String> = nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.iter().any(|t| t.contains("+10.00 %")), "{texts:?}");
     }
 
     #[test]

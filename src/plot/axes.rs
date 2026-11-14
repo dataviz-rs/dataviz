@@ -76,7 +76,15 @@ pub struct Axes {
     pub(crate) projection: Option<super::geo::Projection>,
     /// Draw the spines (frame) around the plot.
     pub(crate) frame: bool,
+    /// Overview of all data below the plot with the shown x range.
+    pub(crate) range_slider: bool,
 }
+
+/// Limits of x, y and the secondary y-axis.
+type AllLimits = ((f64, f64), (f64, f64), Option<(f64, f64)>);
+
+/// Height of the range slider in pixels.
+const SLIDER_H: f64 = 42.0;
 
 /// Resolved layout of an axes (positions and mappings).
 #[derive(Clone, Debug)]
@@ -91,6 +99,8 @@ pub struct Layout {
     pub y2: Option<AxisMap>,
     /// Legend rows: canvas rectangle and series index (for clicks).
     pub(crate) legend_items: Vec<(Rect, usize)>,
+    /// Range slider: its rectangle and the mapping of all data's x range.
+    pub(crate) slider: Option<(Rect, AxisMap)>,
 }
 
 impl Axes {
@@ -114,6 +124,7 @@ impl Axes {
             align: None,
             projection: None,
             frame: true,
+            range_slider: false,
         }
     }
 
@@ -197,6 +208,22 @@ impl Axes {
         self.legend = position;
         self
     }
+    /// Shows an overview of all data below the plot with the x range that
+    /// is shown (a range slider). In a window it can be dragged to pan,
+    /// its edges to zoom, and a click moves the view there.
+    pub fn range_slider(&mut self, on: bool) -> &mut Self {
+        self.range_slider = on;
+        self
+    }
+
+    /// Limits of all the data (ignoring set limits and zoom).
+    fn data_limits(&self) -> ((f64, f64), (f64, f64)) {
+        let (mut x, mut y) = (self.x.clone(), self.y.clone());
+        (x.min, x.max, y.min, y.max) = (None, None, None, None);
+        let (x, y, _) = self.axis_limits_with(&x, &y, false);
+        (x, y)
+    }
+
     /// Shows or hides the frame (spines) around the plot.
     pub fn frame(&mut self, on: bool) -> &mut Self {
         self.frame = on;
@@ -668,7 +695,16 @@ impl Axes {
     }
 
     #[allow(clippy::type_complexity)]
-    fn axis_limits(&self) -> ((f64, f64), (f64, f64), Option<(f64, f64)>) {
+    fn axis_limits(&self) -> AllLimits {
+        self.axis_limits_with(&self.x, &self.y, self.fit_y)
+    }
+
+    fn axis_limits_with(
+        &self,
+        x_axis: &Axis,
+        y_axis: &Axis,
+        fit_y: bool,
+    ) -> AllLimits {
         let e = self.extent(false);
         let xl = e.map(|e| (e.x_min, e.sticky_x_min));
         let xh = e.map(|e| (e.x_max, e.sticky_x_max));
@@ -684,10 +720,10 @@ impl Axes {
             ),
             _ => (xl, xh),
         };
-        let x = Self::limits(&self.x, xl, xh);
+        let x = Self::limits(x_axis, xl, xh);
         // Auto scale: y from the data inside the visible x range.
         let visible = |secondary: bool, e: Option<Extent>| -> Option<Extent> {
-            if !self.fit_y || self.kind != AxesKind::Cartesian {
+            if !fit_y || self.kind != AxesKind::Cartesian {
                 return e;
             }
             let mut r: Option<(f64, f64)> = None;
@@ -714,7 +750,7 @@ impl Axes {
         };
         let (e, e2) = (visible(false, e), visible(true, e2));
         let y = Self::limits(
-            &self.y,
+            y_axis,
             e.map(|e| (e.y_min, e.sticky_y_min)),
             e.map(|e| (e.y_max, e.sticky_y_max)),
         );
@@ -869,6 +905,7 @@ impl Axes {
                     y,
                     y2: None,
                     legend_items: Vec::new(),
+                    slider: None,
                 },
                 decor,
             );
@@ -882,6 +919,7 @@ impl Axes {
                 y2: None,
                 plot,
                 legend_items: Vec::new(),
+                slider: None,
             };
             return (lay, decor);
         }
@@ -948,6 +986,9 @@ impl Axes {
             if self.x.label.is_some() {
                 bottom += fonts.height(theme.label_size) + 4.0;
             }
+            if self.range_slider {
+                bottom += SLIDER_H + 10.0;
+            }
             let top = th / 2.0 + 2.0;
             plot = Rect {
                 x: r.x + left,
@@ -1004,6 +1045,18 @@ impl Axes {
                     (plot.bottom(), plot.y)
                 };
                 AxisMap::new(self.y2.scale.clone(), l.0, l.1, a, b)
+            }),
+            slider: self.range_slider.then(|| {
+                let rect = Rect {
+                    x: plot.x,
+                    y: r.bottom() - SLIDER_H,
+                    w: plot.w,
+                    h: SLIDER_H,
+                };
+                let (dx, _) = self.data_limits();
+                let map = AxisMap::new(self.x.scale.clone(), dx.0, dx.1, plot.x, plot.right())
+                    .with_breaks(&self.x.breaks);
+                (rect, map)
             }),
             plot,
             legend_items: Vec::new(),
@@ -1069,6 +1122,9 @@ impl Axes {
 
         if self.kind == AxesKind::Cartesian {
             self.draw_axes(&lay, &decor, theme, fonts, out);
+            if let Some((rect, map)) = &lay.slider {
+                self.draw_slider(&lay, *rect, map, theme, fonts, out);
+            }
         } else if self.kind == AxesKind::Polar {
             self.polar.draw_frame(self, &lay, theme, fonts, out, false);
         }
@@ -1119,6 +1175,91 @@ impl Axes {
                 .collect();
         }
         lay
+    }
+
+    /// The range slider: all data in small, the shown x range highlighted.
+    fn draw_slider(
+        &self,
+        lay: &Layout,
+        r: Rect,
+        xmap: &AxisMap,
+        theme: &Theme,
+        fonts: &FontSet,
+        out: &mut Vec<Node>,
+    ) {
+        let (_, dy) = self.data_limits();
+        let ymap = AxisMap::new(
+            self.y.scale.clone(),
+            dy.0,
+            dy.1,
+            r.bottom() - 2.0,
+            r.y + 2.0,
+        );
+        out.push(Node::Rect {
+            x: r.x,
+            y: r.y,
+            w: r.w,
+            h: r.h,
+            rx: 2.0,
+            fill: Some(theme.plot_background),
+            stroke: Some(Stroke::new(theme.axis.with_alpha(0.5), 1.0)),
+        });
+        let mut data = Vec::new();
+        for s in self.shown().filter(|s| !s.secondary()) {
+            let mut ctx = Context {
+                x: xmap,
+                y: &ymap,
+                rect: r,
+                theme,
+                fonts,
+                out: &mut data,
+            };
+            s.draw(&mut ctx);
+        }
+        out.push(Node::Group {
+            children: data,
+            clip: Some((r.x, r.y, r.w, r.h)),
+            opacity: 0.6,
+            tooltip: None,
+        });
+        // Shade what is not shown; mark the window's edges.
+        let a = xmap.px(lay.x.min).clamp(r.x, r.right());
+        let b = xmap.px(lay.x.max).clamp(r.x, r.right());
+        let shade = Some(theme.text.with_alpha(0.12));
+        for (x0, x1) in [(r.x, a), (b, r.right())] {
+            if x1 - x0 > 0.5 {
+                out.push(Node::Rect {
+                    x: x0,
+                    y: r.y,
+                    w: x1 - x0,
+                    h: r.h,
+                    rx: 0.0,
+                    fill: shade,
+                    stroke: None,
+                });
+            }
+        }
+        let edge = Stroke::new(theme.text.with_alpha(0.55), 1.0);
+        out.push(Node::Rect {
+            x: a,
+            y: r.y,
+            w: (b - a).max(1.0),
+            h: r.h,
+            rx: 0.0,
+            fill: None,
+            stroke: Some(edge.clone()),
+        });
+        for x in [a, b] {
+            out.push(Node::Rect {
+                x: x - 3.0,
+                y: r.y + r.h * 0.25,
+                w: 6.0,
+                h: r.h * 0.5,
+                rx: 2.0,
+                fill: Some(theme.plot_background),
+                stroke: Some(edge.clone()),
+            });
+        }
     }
 
     fn draw_grid(&self, lay: &Layout, theme: &Theme, out: &mut Vec<Node>) {
