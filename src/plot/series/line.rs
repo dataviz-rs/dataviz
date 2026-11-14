@@ -150,6 +150,27 @@ impl Line {
         }
         self
     }
+    /// Drops the points with `x < x_min` (rolling time window: pass
+    /// `now - window`). Points are expected in increasing x order, as
+    /// produced by [`Line::push`].
+    ///
+    /// ```
+    /// use dataviz::prelude::*;
+    /// use dataviz::plot::series::line::Line;
+    /// let mut fig = Figure::new(400, 300);
+    /// fig.axes().line([0.0, 1.0, 2.0, 3.0], [5.0, 6.0, 7.0, 8.0]);
+    /// let line = fig.axes().series_mut::<Line>(0).unwrap();
+    /// line.keep_since(1.5);
+    /// assert_eq!(line.data().0, &[2.0, 3.0]);
+    /// ```
+    pub fn keep_since(&mut self, x_min: f64) -> &mut Self {
+        let k = self.x.partition_point(|x| *x < x_min);
+        if k > 0 {
+            self.x.drain(..k);
+            self.y.drain(..k);
+        }
+        self
+    }
     /// The data points.
     pub fn data(&self) -> (&[f64], &[f64]) {
         (&self.x, &self.y)

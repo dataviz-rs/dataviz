@@ -186,7 +186,9 @@ impl Format {
 }
 
 /// An RGBA image (straight alpha), the result of rasterizing a figure.
-#[derive(Clone, Debug, PartialEq)]
+/// `Pixels::default()` is an empty buffer for
+/// [`Figure::render_into`](crate::plot::Figure::render_into).
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct Pixels {
     /// Width in pixels.
     pub width: u32,

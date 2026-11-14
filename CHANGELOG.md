@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1
+
+### Added
+- `Line::keep_since(x_min)`: rolling time window for streaming data.
+- `Histogram::set_values` and `Histogram::values`: re-bin live data.
+- `Pixels` is in the prelude and implements `Default` (buffer for
+  `Figure::render_into`).
+- New example in dataviz-examples: `plot-streaming`, a live dashboard fed by
+  a producer thread (simulated sensors, CPU/memory, stdin).
+
 ## 0.4.0
 
 ### Removed
