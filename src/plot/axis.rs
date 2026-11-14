@@ -36,6 +36,7 @@ pub struct Axis {
     pub(crate) categories: Vec<String>,
     pub(crate) tick_rotation: Option<f64>,
     pub(crate) visible: bool,
+    pub(crate) tick_labels: bool,
     pub(crate) margin: f64,
 }
 
@@ -54,6 +55,7 @@ impl Default for Axis {
             categories: Vec::new(),
             tick_rotation: None,
             visible: true,
+            tick_labels: true,
             margin: 0.05,
         }
     }
@@ -134,6 +136,14 @@ impl Axis {
     /// Tick label rotation in degrees (default: automatic).
     pub fn tick_rotation(&mut self, degrees: f64) -> &mut Self {
         self.tick_rotation = Some(degrees);
+        self
+    }
+
+    /// Shows or hides the tick labels (the ticks and grid stay), e.g. on
+    /// inner plots of a grid sharing an axis. Their space is kept, so the
+    /// plots of a grid keep the same size and line up.
+    pub fn tick_labels(&mut self, on: bool) -> &mut Self {
+        self.tick_labels = on;
         self
     }
 

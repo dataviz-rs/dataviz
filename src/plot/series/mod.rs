@@ -10,6 +10,7 @@ use std::any::Any;
 
 pub mod bar;
 pub mod contour;
+pub mod distribution;
 pub mod finance;
 pub mod frameless;
 pub mod grid;

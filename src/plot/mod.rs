@@ -22,6 +22,7 @@ pub mod axes;
 pub mod axis;
 pub mod color;
 pub mod data;
+pub mod facet;
 pub mod figure;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu;
