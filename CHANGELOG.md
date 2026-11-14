@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.10.0
+
+### Added
+- **Broken axes**: `Axis::break_at(from, to)` leaves a range out of an axis
+  (several breaks allowed): the break is marked with a gap and `//` on the
+  spines, ticks are placed per visible segment, margins follow the visible
+  span and lines do not jump over a break.
+- **Technical indicators**: `Axes::bollinger`, `Axes::rsi` (with 30/70
+  levels), `Axes::macd` (lines and a green/red histogram) and
+  `Axes::heikin_ashi` candles; `stats::sma`, `ema`, `bollinger`, `rsi`,
+  `macd`, `heikin_ashi`.
+
+### Changed
+- Plots in a grid line up: plots starting in the same column share their
+  left edge, plots ending in the same column their right edge, and likewise
+  for rows (stacked price/volume/indicator panels, facets).
+
 ## 0.9.0
 
 ### Added

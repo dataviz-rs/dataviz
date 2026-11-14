@@ -626,6 +626,158 @@ pub fn r_squared(x: &[f64], y: &[f64], c: &[f64]) -> f64 {
     }
 }
 
+/// Simple moving average over exactly `window` values (NaN until the window
+/// is full or when it holds a NaN).
+pub fn sma(y: &[f64], window: usize) -> Vec<f64> {
+    let w = window.max(1);
+    let mut out = vec![f64::NAN; y.len()];
+    let mut sum = 0.0;
+    let mut bad = 0usize;
+    for i in 0..y.len() {
+        if y[i].is_finite() {
+            sum += y[i];
+        } else {
+            bad += 1;
+        }
+        if i >= w {
+            if y[i - w].is_finite() {
+                sum -= y[i - w];
+            } else {
+                bad -= 1;
+            }
+        }
+        if i + 1 >= w && bad == 0 {
+            out[i] = sum / w as f64;
+        }
+    }
+    out
+}
+
+/// Exponential moving average with smoothing 2 / (n + 1), seeded with the
+/// average of the first `n` values (NaN before).
+pub fn ema(y: &[f64], n: usize) -> Vec<f64> {
+    let n = n.max(1);
+    let a = 2.0 / (n as f64 + 1.0);
+    let mut out = vec![f64::NAN; y.len()];
+    let mut prev = f64::NAN;
+    let mut seed = (0.0, 0usize);
+    for (i, &v) in y.iter().enumerate() {
+        if !v.is_finite() {
+            continue;
+        }
+        if prev.is_nan() {
+            seed.0 += v;
+            seed.1 += 1;
+            if seed.1 == n {
+                prev = seed.0 / n as f64;
+                out[i] = prev;
+            }
+            continue;
+        }
+        prev = a * v + (1.0 - a) * prev;
+        out[i] = prev;
+    }
+    out
+}
+
+/// Bollinger bands: (middle = SMA(n), upper, lower = middle ± k standard
+/// deviations of the window).
+pub fn bollinger(y: &[f64], n: usize, k: f64) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let n = n.max(1);
+    let mid = sma(y, n);
+    let mut up = vec![f64::NAN; y.len()];
+    let mut lo = vec![f64::NAN; y.len()];
+    for i in 0..y.len() {
+        if mid[i].is_nan() {
+            continue;
+        }
+        let w = &y[i + 1 - n..=i];
+        let var = w.iter().map(|v| (v - mid[i]).powi(2)).sum::<f64>() / n as f64;
+        let sd = var.sqrt();
+        up[i] = mid[i] + k * sd;
+        lo[i] = mid[i] - k * sd;
+    }
+    (mid, up, lo)
+}
+
+/// Relative strength index with Wilder's smoothing over `n` periods
+/// (0–100; NaN for the first `n` values).
+pub fn rsi(y: &[f64], n: usize) -> Vec<f64> {
+    let n = n.max(1);
+    let mut out = vec![f64::NAN; y.len()];
+    if y.len() <= n {
+        return out;
+    }
+    let (mut gain, mut loss) = (0.0, 0.0);
+    for i in 1..=n {
+        let d = y[i] - y[i - 1];
+        if d > 0.0 {
+            gain += d;
+        } else {
+            loss -= d;
+        }
+    }
+    gain /= n as f64;
+    loss /= n as f64;
+    let value = |g: f64, l: f64| {
+        if l == 0.0 {
+            100.0
+        } else {
+            100.0 - 100.0 / (1.0 + g / l)
+        }
+    };
+    out[n] = value(gain, loss);
+    for i in n + 1..y.len() {
+        let d = y[i] - y[i - 1];
+        if !d.is_finite() {
+            continue;
+        }
+        gain = (gain * (n - 1) as f64 + d.max(0.0)) / n as f64;
+        loss = (loss * (n - 1) as f64 + (-d).max(0.0)) / n as f64;
+        out[i] = value(gain, loss);
+    }
+    out
+}
+
+/// MACD: (EMA(fast) − EMA(slow), its EMA(signal), their difference).
+pub fn macd(y: &[f64], fast: usize, slow: usize, signal: usize) -> (Vec<f64>, Vec<f64>, Vec<f64>) {
+    let (f, s) = (ema(y, fast), ema(y, slow));
+    let line: Vec<f64> = f.iter().zip(&s).map(|(a, b)| a - b).collect();
+    let sig = ema(&line, signal);
+    let hist = line.iter().zip(&sig).map(|(a, b)| a - b).collect();
+    (line, sig, hist)
+}
+
+/// Heikin-Ashi candles from OHLC data: (open, high, low, close).
+#[allow(clippy::type_complexity)]
+pub fn heikin_ashi(
+    open: &[f64],
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+) -> (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>) {
+    let n = open.len().min(high.len()).min(low.len()).min(close.len());
+    let (mut o, mut h, mut l, mut c) = (
+        Vec::with_capacity(n),
+        Vec::with_capacity(n),
+        Vec::with_capacity(n),
+        Vec::with_capacity(n),
+    );
+    for i in 0..n {
+        let hc = (open[i] + high[i] + low[i] + close[i]) / 4.0;
+        let ho = if i == 0 {
+            (open[0] + close[0]) / 2.0
+        } else {
+            (o[i - 1] + c[i - 1]) / 2.0
+        };
+        o.push(ho);
+        c.push(hc);
+        h.push(high[i].max(ho).max(hc));
+        l.push(low[i].min(ho).min(hc));
+    }
+    (o, h, l, c)
+}
+
 /// Trailing moving average over `window` values (first values average what
 /// is available).
 pub fn moving_average(y: &[f64], window: usize) -> Vec<f64> {
@@ -704,6 +856,33 @@ pub fn lttb(x: &[f64], y: &[f64], threshold: usize) -> (Vec<f64>, Vec<f64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn indicators() {
+        let y: Vec<f64> = (1..=30).map(|v| v as f64).collect();
+        let m = sma(&y, 5);
+        assert!(m[3].is_nan() && m[4] == 3.0 && m[29] == 28.0);
+        let e = ema(&y, 5);
+        assert!(e[3].is_nan() && e[4] == 3.0);
+        assert!((e[5] - (2.0 / 6.0 * 6.0 + 4.0 / 6.0 * 3.0)).abs() < 1e-12);
+        let (mid, up, lo) = bollinger(&[1.0, 2.0, 3.0, 4.0], 4, 2.0);
+        assert_eq!(mid[3], 2.5);
+        assert!((up[3] - (2.5 + 2.0 * 1.25f64.sqrt())).abs() < 1e-12);
+        assert!((lo[3] - (2.5 - 2.0 * 1.25f64.sqrt())).abs() < 1e-12);
+        // Only gains: RSI 100; alternating equal moves: 50.
+        assert_eq!(rsi(&y, 14)[20], 100.0);
+        let z: Vec<f64> = (0..40)
+            .map(|i| if i % 2 == 0 { 1.0 } else { 2.0 })
+            .collect();
+        assert!((rsi(&z, 14)[39] - 50.0).abs() < 5.0);
+        let (l, s, h) = macd(&y, 3, 6, 3);
+        assert!(l[4].is_nan() && l[5].is_finite());
+        assert!((h[10] - (l[10] - s[10])).abs() < 1e-12);
+        let (o, hh, ll, c) = heikin_ashi(&[1.0, 2.0], &[3.0, 4.0], &[0.0, 1.0], &[2.0, 3.0]);
+        assert_eq!((o[0], c[0]), (1.5, 1.5));
+        assert_eq!((o[1], c[1]), (1.5, 2.5));
+        assert!(hh[1] >= 4.0 && ll[1] <= 1.0);
+    }
 
     #[test]
     fn binned_kde_matches_exact() {

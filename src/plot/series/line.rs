@@ -478,6 +478,21 @@ impl Series for Line {
     }
 
     fn draw(&self, ctx: &mut Context) {
+        if ctx.x.has_breaks() || ctx.y.has_breaks() {
+            // Lines do not jump over axis breaks: a gap (NaN) splits them.
+            let mut pts = Vec::with_capacity(self.x.len() + 4);
+            let mut prev: Option<(f64, f64)> = None;
+            for (x, y) in self.points() {
+                if let Some((px, py)) = prev {
+                    if ctx.x.crosses_break(px, x) || ctx.y.crosses_break(py, y) {
+                        pts.push((f64::NAN, f64::NAN));
+                    }
+                }
+                pts.push(ctx.point(x, y));
+                prev = Some((x, y));
+            }
+            return self.draw_mapped(ctx, pts, false);
+        }
         let mapped = || self.points().map(|(x, y)| ctx.point(x, y));
         // Large x-sorted data is reduced while it is mapped, without holding
         // every mapped point in memory.
@@ -487,16 +502,80 @@ impl Series for Line {
             && self.x.len() as f64 >= ctx.rect.w * 4.0)
             .then(|| decimate_stream(mapped()))
             .flatten();
+        let streamed_done = streamed.is_some();
         let pts = match streamed {
             Some(p) => p,
-            None => {
-                let pts: Vec<(f64, f64)> = mapped().collect();
-                if self.decimate && self.step.is_none() && !self.smooth {
-                    decimate(pts, ctx.rect.w)
-                } else {
-                    pts
-                }
+            None => mapped().collect(),
+        };
+        self.draw_mapped(ctx, pts, streamed_done);
+    }
+
+    fn legend(&self) -> Vec<LegendEntry> {
+        let Some(label) = &self.label else {
+            return Vec::new();
+        };
+        let symbol = if self.width == 0.0 && self.marker != Marker::None {
+            LegendSymbol::Marker {
+                marker: self.marker,
+                size: self.marker_size,
+                color: self.color,
             }
+        } else if self.fill.is_some() && self.width == 0.0 {
+            LegendSymbol::Patch {
+                fill: self.color.with_alpha(self.fill_opacity),
+                edge: None,
+            }
+        } else {
+            LegendSymbol::Line {
+                color: self.color,
+                width: self.width,
+                dash: self.dash.clone(),
+                marker: (self.marker != Marker::None).then_some((self.marker, self.marker_size)),
+            }
+        };
+        vec![LegendEntry {
+            label: label.clone(),
+            symbol,
+        }]
+    }
+
+    fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
+        let n = self.x.len().min(self.y.len());
+        let r = super::x_window(&self.x[..n], 0.0, x, px, 40.0).unwrap_or(0..n);
+        let pts = self.x[r.clone()]
+            .iter()
+            .copied()
+            .zip(self.y[r].iter().copied());
+        let ((dx, dy), (cx, cy), d) = nearest_point(pts, x, y, px, py)?;
+        let name = self
+            .label
+            .as_deref()
+            .map(|l| format!("{l}: "))
+            .unwrap_or_default();
+        Some(Hit {
+            px: cx,
+            py: cy,
+            label: format!("{name}({}, {})", short(dx), short(dy)),
+            distance: d,
+        })
+    }
+
+    fn secondary(&self) -> bool {
+        self.secondary
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl Line {
+    /// Draws canvas points; `decimated`: already reduced while mapping.
+    fn draw_mapped(&self, ctx: &mut Context, pts: Vec<(f64, f64)>, decimated: bool) {
+        let pts = if !decimated && self.decimate && self.step.is_none() && !self.smooth {
+            decimate(pts, ctx.rect.w)
+        } else {
+            pts
         };
         let runs = line_path(&pts, self.step, self.smooth);
         if let Some(base) = self.fill {
@@ -561,64 +640,6 @@ impl Series for Line {
                 }
             }
         }
-    }
-
-    fn legend(&self) -> Vec<LegendEntry> {
-        let Some(label) = &self.label else {
-            return Vec::new();
-        };
-        let symbol = if self.width == 0.0 && self.marker != Marker::None {
-            LegendSymbol::Marker {
-                marker: self.marker,
-                size: self.marker_size,
-                color: self.color,
-            }
-        } else if self.fill.is_some() && self.width == 0.0 {
-            LegendSymbol::Patch {
-                fill: self.color.with_alpha(self.fill_opacity),
-                edge: None,
-            }
-        } else {
-            LegendSymbol::Line {
-                color: self.color,
-                width: self.width,
-                dash: self.dash.clone(),
-                marker: (self.marker != Marker::None).then_some((self.marker, self.marker_size)),
-            }
-        };
-        vec![LegendEntry {
-            label: label.clone(),
-            symbol,
-        }]
-    }
-
-    fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
-        let n = self.x.len().min(self.y.len());
-        let r = super::x_window(&self.x[..n], 0.0, x, px, 40.0).unwrap_or(0..n);
-        let pts = self.x[r.clone()]
-            .iter()
-            .copied()
-            .zip(self.y[r].iter().copied());
-        let ((dx, dy), (cx, cy), d) = nearest_point(pts, x, y, px, py)?;
-        let name = self
-            .label
-            .as_deref()
-            .map(|l| format!("{l}: "))
-            .unwrap_or_default();
-        Some(Hit {
-            px: cx,
-            py: cy,
-            label: format!("{name}({}, {})", short(dx), short(dy)),
-            distance: d,
-        })
-    }
-
-    fn secondary(&self) -> bool {
-        self.secondary
-    }
-
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 }
 

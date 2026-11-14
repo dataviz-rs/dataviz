@@ -73,9 +73,10 @@ Every image links to its example in
 
 ## **Highlights**
 
-- **Axes**: linear, log, symlog, date/time and categorical scales; secondary y-axis; subplots with spans and shared axes; nice ticks with minor ticks; tick formats (percent, SI, scientific, time, custom); automatic label thinning and rotation.
+- **Axes**: linear, log, symlog, date/time and categorical scales; broken axes (`Axis::break_at`); secondary y-axis; subplots with spans and shared axes; nice ticks with minor ticks; tick formats (percent, SI, scientific, time, custom); automatic label thinning and rotation.
 - **Styling**: 7 themes (light, dark, minimal, ggplot, seaborn, publication, solarized), palettes including the colour-blind safe Okabe–Ito, 14 colormaps with colorbars, 10 marker shapes, dash styles, legends in 10 positions, any TTF/OTF font.
 - **Output**: SVG, PNG, JPEG, WebP, BMP, PDF (`pdf` feature), raw RGBA pixels, high-DPI scaling, terminal (`fig.print()`).
+- **Finance**: candlestick, OHLC and Heikin-Ashi charts, moving averages, Bollinger bands, RSI and MACD; aligned stacked panels with a linked crosshair.
 - **Statistics**: histograms, KDE, ECDF, box, violin, strip, swarm, ridgeline and Q-Q plots, regression lines; `fig.facet_wrap(..)` small multiples and `fig.pair_plot(..)` scatter matrices.
 - **Any language**: missing characters fall back to system fonts (CJK, Thai, Indic, symbols), Arabic and Hebrew are laid out right to left and shaped, color emoji are drawn; Latin text keeps a fast path.
 - **Math notation**: `$...$` in any text is typeset (TeX subset: `x^2`, `x_i`, `\frac{a}{b}`, `\sqrt{x}`, Greek letters, `\sum`, `\int`, accents, `\mathrm{..}`, …), e.g. `ax.y_label(r"$\sigma^2$ [$\mathrm{m^2\,s^{-2}}$]")`.

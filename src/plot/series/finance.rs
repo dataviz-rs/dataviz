@@ -194,3 +194,118 @@ impl Axes {
         c
     }
 }
+
+impl Axes {
+    /// Heikin-Ashi candles (smoothed candles that show trends more clearly)
+    /// computed from OHLC data.
+    pub fn heikin_ashi(
+        &mut self,
+        x: impl IntoValues,
+        open: impl IntoValues,
+        high: impl IntoValues,
+        low: impl IntoValues,
+        close: impl IntoValues,
+    ) -> &mut Candles {
+        let (o, h, l, c) = crate::plot::stats::heikin_ashi(
+            &open.into_values(),
+            &high.into_values(),
+            &low.into_values(),
+            &close.into_values(),
+        );
+        self.candlestick(x, o, h, l, c)
+    }
+
+    /// Bollinger bands over `n` periods at `k` standard deviations: a
+    /// shaded band with its edges and the moving average in the middle.
+    /// Returns the band.
+    pub fn bollinger(
+        &mut self,
+        x: impl IntoValues,
+        close: impl IntoValues,
+        n: usize,
+        k: f64,
+    ) -> &mut super::line::FillBetween {
+        let x = x.into_values();
+        let (mid, up, lo) = crate::plot::stats::bollinger(&close.into_values(), n, k);
+        let c = Color::rgb(41, 98, 255);
+        self.line(&x, &mid)
+            .color(c.with_alpha(0.9))
+            .width(1.0)
+            .dash(crate::plot::style::Dash::Dashed);
+        self.line(&x, &up).color(c.with_alpha(0.7)).width(1.0);
+        self.line(&x, &lo).color(c.with_alpha(0.7)).width(1.0);
+        let band = self.fill_between(&x, &lo, &up);
+        band.color(c).opacity(0.1).label(format!("BB({n}, {k})"));
+        band
+    }
+
+    /// Relative strength index over `n` periods (0–100) with the 30/70
+    /// levels; sets the y range to 0–100. Returns the RSI line.
+    pub fn rsi(
+        &mut self,
+        x: impl IntoValues,
+        close: impl IntoValues,
+        n: usize,
+    ) -> &mut super::line::Line {
+        let r = crate::plot::stats::rsi(&close.into_values(), n);
+        let band = Color::rgb(126, 87, 194);
+        self.hspan(30.0, 70.0).color(band).opacity(0.08);
+        self.hline(70.0).color(band.with_alpha(0.6));
+        self.hline(30.0).color(band.with_alpha(0.6));
+        self.y_limits(0.0, 100.0);
+        let l = self.line(x, r);
+        l.color(band).width(1.4).label(format!("RSI({n})"));
+        l
+    }
+
+    /// MACD (`fast`, `slow`, `signal`; usually 12, 26, 9): the MACD and
+    /// signal lines and their difference as green/red bars. Returns the
+    /// MACD line.
+    pub fn macd(
+        &mut self,
+        x: impl IntoValues,
+        close: impl IntoValues,
+        fast: usize,
+        slow: usize,
+        signal: usize,
+    ) -> &mut super::line::Line {
+        let x = x.into_values();
+        let (line, sig, hist) = crate::plot::stats::macd(&close.into_values(), fast, slow, signal);
+        let spacing = x
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .filter(|d| *d > 0.0)
+            .fold(f64::INFINITY, f64::min);
+        let colors: Vec<Color> = hist
+            .iter()
+            .map(|h| {
+                if *h >= 0.0 {
+                    Color::rgb(38, 166, 154).with_alpha(0.7)
+                } else {
+                    Color::rgb(239, 83, 80).with_alpha(0.7)
+                }
+            })
+            .collect();
+        let bars = self.bar_xy(
+            &x,
+            hist.iter()
+                .map(|h| if h.is_finite() { *h } else { 0.0 })
+                .collect::<Vec<_>>(),
+        );
+        bars.color(Color::rgb(38, 166, 154))
+            .colors(colors)
+            .label("histogram");
+        if spacing.is_finite() {
+            bars.width(spacing * 0.7);
+        }
+        self.line(&x, &sig)
+            .color(Color::rgb(255, 109, 0))
+            .width(1.3)
+            .label(format!("signal({signal})"));
+        let l = self.line(&x, &line);
+        l.color(Color::rgb(41, 98, 255))
+            .width(1.3)
+            .label(format!("MACD({fast}, {slow})"));
+        l
+    }
+}

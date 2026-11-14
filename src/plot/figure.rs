@@ -261,6 +261,55 @@ impl Figure {
             .collect()
     }
 
+    /// Lines up the plot areas of a grid: plots starting in the same
+    /// column get the same left edge, plots ending in the same column the
+    /// same right edge, and likewise for rows.
+    fn align_cells(&mut self, rects: &[Rect], fonts: &FontSet) {
+        for c in &mut self.cells {
+            c.axes.align = None;
+        }
+        if self.cells.len() < 2 {
+            return;
+        }
+        let insets: Vec<Option<[f64; 4]>> = self
+            .cells
+            .iter()
+            .zip(rects)
+            .map(|(c, r)| {
+                (c.axes.kind == super::AxesKind::Cartesian).then(|| {
+                    let p = c.axes.layout(*r, &self.theme, fonts).0.plot;
+                    [
+                        p.x - r.x,
+                        r.right() - p.right(),
+                        p.y - r.y,
+                        r.bottom() - p.bottom(),
+                    ]
+                })
+            })
+            .collect();
+        let keys: Vec<[usize; 4]> = self
+            .cells
+            .iter()
+            .map(|c| [c.col, c.col + c.colspan, c.row, c.row + c.rowspan])
+            .collect();
+        for i in 0..self.cells.len() {
+            if insets[i].is_none() {
+                continue;
+            }
+            let mut a = [0.0f64; 4];
+            for (j, inset) in insets.iter().enumerate() {
+                if let Some(v) = inset {
+                    for k in 0..4 {
+                        if keys[j][k] == keys[i][k] {
+                            a[k] = a[k].max(v[k]);
+                        }
+                    }
+                }
+            }
+            self.cells[i].axes.align = Some(a);
+        }
+    }
+
     /// Applies shared limits by fixing them on a temporary copy.
     fn with_shared_limits<R>(&mut self, fonts: &FontSet, f: impl FnOnce(&mut Self) -> R) -> R {
         if !(self.share_x || self.share_y) || self.cells.len() < 2 {
@@ -321,6 +370,7 @@ impl Figure {
                 ));
             }
             let rects = fig.cell_rects(&fonts);
+            fig.align_cells(&rects, &fonts);
             let mut layouts = Vec::new();
             for (c, r) in fig.cells.iter().zip(rects) {
                 let mut nodes: Vec<Node> = Vec::new();

@@ -68,6 +68,10 @@ pub struct Axes {
     pub(crate) fit_y: bool,
     /// Series hidden by [`Axes::set_visible`] (index = series index).
     pub(crate) hidden: Vec<bool>,
+    /// Minimum distances of the plot area from the cell edges (left,
+    /// right, top, bottom), set by the figure so that plots in the same
+    /// grid row or column line up.
+    pub(crate) align: Option<[f64; 4]>,
 }
 
 /// Resolved layout of an axes (positions and mappings).
@@ -103,6 +107,7 @@ impl Axes {
             show_colorbar: true,
             fit_y: false,
             hidden: Vec::new(),
+            align: None,
         }
     }
 
@@ -620,7 +625,15 @@ impl Axes {
             t0 -= pad;
             t1 += pad;
         } else {
-            let span = t1 - t0;
+            // Margins are a fraction of what is shown (breaks left out).
+            let gaps: f64 = axis
+                .breaks
+                .iter()
+                .map(|(a, b)| (scale.forward(*a).max(t0), scale.forward(*b).min(t1)))
+                .filter(|(a, b)| b > a)
+                .map(|(a, b)| b - a)
+                .sum();
+            let span = (t1 - t0 - gaps).max((t1 - t0) * 1e-6);
             if !sa {
                 t0 -= span * axis.margin;
             }
@@ -712,6 +725,41 @@ impl Axes {
     ) -> (Vec<(f64, String)>, Vec<f64>) {
         if !axis.visible {
             return (Vec::new(), Vec::new());
+        }
+        if !axis.breaks.is_empty() && axis.scale != Scale::Category {
+            // Ticks for each visible segment, in proportion to its length.
+            let (lo, hi) = order(min, max);
+            let mut cuts: Vec<(f64, f64)> = axis
+                .breaks
+                .iter()
+                .copied()
+                .filter(|(a, b)| *a > lo && *b < hi)
+                .collect();
+            cuts.sort_by(|a, b| a.0.total_cmp(&b.0));
+            let mut segs = Vec::new();
+            let mut start = lo;
+            for (a, b) in cuts {
+                if a > start {
+                    segs.push((start, a));
+                }
+                start = start.max(b);
+            }
+            segs.push((start, hi));
+            let f = |v: f64| axis.scale.forward(v);
+            let total: f64 = segs.iter().map(|(a, b)| f(*b) - f(*a)).sum();
+            let mut plain = axis.clone();
+            plain.breaks.clear();
+            let (mut major, mut minor) = (Vec::new(), Vec::new());
+            for (a, b) in segs {
+                let len = length_px * (f(b) - f(a)) / total.max(f64::MIN_POSITIVE);
+                if len < spacing * 0.4 {
+                    continue;
+                }
+                let (t, m) = Self::tick_list(&plain, a, b, len.max(spacing * 1.5), spacing);
+                major.extend(t);
+                minor.extend(m);
+            }
+            return (major, minor);
         }
         if axis.scale == Scale::Category {
             if let TickSpec::Labeled(l) = &axis.ticks {
@@ -897,6 +945,18 @@ impl Axes {
             };
         }
         decor.x_rotation = x_rot;
+        if let Some([l, rt, t, b]) = self.align {
+            let l = l.max(plot.x - cell.x);
+            let rt = rt.max(cell.right() - plot.right());
+            let t = t.max(plot.y - cell.y);
+            let b = b.max(cell.bottom() - plot.bottom());
+            plot = Rect {
+                x: cell.x + l,
+                y: cell.y + t,
+                w: (cell.w - l - rt).max(10.0),
+                h: (cell.h - t - b).max(10.0),
+            };
+        }
 
         let (mut xl, mut yl) = (xl, yl);
         if self.equal_aspect && self.x.scale == Scale::Linear && self.y.scale == Scale::Linear {
@@ -923,8 +983,8 @@ impl Axes {
             (plot.bottom(), plot.y)
         };
         let lay = Layout {
-            x: AxisMap::new(self.x.scale.clone(), xl.0, xl.1, x0, x1),
-            y: AxisMap::new(self.y.scale.clone(), yl.0, yl.1, y0, y1),
+            x: AxisMap::new(self.x.scale.clone(), xl.0, xl.1, x0, x1).with_breaks(&self.x.breaks),
+            y: AxisMap::new(self.y.scale.clone(), yl.0, yl.1, y0, y1).with_breaks(&self.y.breaks),
             y2: y2l.map(|l| {
                 let (a, b) = if self.y2.inverted {
                     (plot.y, plot.bottom())
@@ -1124,6 +1184,41 @@ impl Axes {
         }
         if sp.bottom {
             seg(p.x, p.bottom(), p.right(), p.bottom(), &axis, out);
+        }
+        // Axis breaks: a gap across the plot and `//` marks on the spines.
+        let mark = Stroke::new(theme.axis, theme.axis_width.max(1.0));
+        let gap_w = 6.0;
+        for bx in lay.x.break_positions() {
+            out.push(Node::Rect {
+                x: bx - gap_w / 2.0,
+                y: p.y - 1.0,
+                w: gap_w,
+                h: p.h + 2.0,
+                rx: 0.0,
+                fill: Some(theme.plot_background),
+                stroke: None,
+            });
+            for y in [p.y, p.bottom()] {
+                for dx in [-gap_w / 2.0, gap_w / 2.0] {
+                    seg(bx + dx - 3.0, y + 5.0, bx + dx + 3.0, y - 5.0, &mark, out);
+                }
+            }
+        }
+        for by in lay.y.break_positions() {
+            out.push(Node::Rect {
+                x: p.x - 1.0,
+                y: by - gap_w / 2.0,
+                w: p.w + 2.0,
+                h: gap_w,
+                rx: 0.0,
+                fill: Some(theme.plot_background),
+                stroke: None,
+            });
+            for x in [p.x, p.right()] {
+                for dy in [-gap_w / 2.0, gap_w / 2.0] {
+                    seg(x - 5.0, by + dy + 3.0, x + 5.0, by + dy - 3.0, &mark, out);
+                }
+            }
         }
 
         let tl = theme.tick_length;
