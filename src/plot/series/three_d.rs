@@ -17,7 +17,7 @@ use super::{
 };
 use crate::plot::axes::{Axes, AxesKind};
 use crate::plot::color::{Color, Colormap};
-use crate::plot::scene::{Anchor, Baseline, LineCap, Node, PathCmd, Stroke, TextNode};
+use crate::plot::scene::{Anchor, Baseline, LineCap, LineJoin, Node, PathCmd, Stroke, TextNode};
 use crate::plot::style::Marker;
 use crate::plot::text::FontSet;
 use crate::plot::theme::Theme;
@@ -457,17 +457,22 @@ fn lit(c: Color, (diffuse, spec): (f64, f64)) -> Color {
 
 enum Prim {
     Poly {
-        pts: [(f64, f64); 4],
+        pts: [(f32, f32); 4],
         n: u8,
         fill: Option<Color>,
-        stroke: Option<Stroke>,
+        stroke: Option<Box<Stroke>>,
     },
     Ball {
-        x: f64,
-        y: f64,
-        r: f64,
+        x: f32,
+        y: f32,
+        r: f32,
         color: Color,
         shaded: bool,
+    },
+    Line {
+        pts: Vec<(f64, f64)>,
+        color: Color,
+        width: f64,
     },
     Seg {
         a: (f64, f64),
@@ -476,6 +481,39 @@ enum Prim {
         width: f64,
         tube: bool,
     },
+    /// Already drawn.
+    Taken,
+}
+
+/// Sorts keys with four 16-bit radix passes (linear time; a million
+/// primitives in a few milliseconds).
+fn radix_sort(mut keys: Vec<u64>) -> Vec<u64> {
+    if keys.len() < 2048 {
+        keys.sort_unstable();
+        return keys;
+    }
+    let mut tmp = vec![0u64; keys.len()];
+    // Only the depth half (high 32 bits) needs sorting; the index half
+    // keeps equal depths in insertion order.
+    for shift in [32u32, 48] {
+        let mut count = vec![0usize; 1 << 16];
+        for &k in &keys {
+            count[((k >> shift) & 0xFFFF) as usize] += 1;
+        }
+        let mut sum = 0;
+        for c in count.iter_mut() {
+            let v = *c;
+            *c = sum;
+            sum += v;
+        }
+        for &k in &keys {
+            let b = ((k >> shift) & 0xFFFF) as usize;
+            tmp[count[b]] = k;
+            count[b] += 1;
+        }
+        std::mem::swap(&mut keys, &mut tmp);
+    }
+    keys
 }
 
 struct Label3 {
@@ -492,7 +530,10 @@ struct Label3 {
 /// sorts by depth (farthest first) and draws with lighting.
 pub struct Scene3d<'a> {
     proj: &'a Projection3d,
-    prims: Vec<(f64, Prim)>,
+    prims: Vec<Prim>,
+    /// Depth (order-preserving bits, high half) and index (low half) of
+    /// each primitive: sorted instead of the primitives.
+    keys: Vec<u64>,
     labels: Vec<Label3>,
     fog: f64,
     background: Color,
@@ -503,6 +544,63 @@ impl Scene3d<'_> {
     /// The projection of this scene.
     pub fn projection(&self) -> &Projection3d {
         self.proj
+    }
+
+    /// Room for `n` more primitives (large series).
+    pub fn reserve(&mut self, n: usize) {
+        self.prims.reserve(n);
+        self.keys.reserve(n);
+    }
+
+    fn add(&mut self, depth: f64, p: Prim) {
+        // f32 bits flipped so that unsigned order is numeric order.
+        let b = (depth as f32).to_bits();
+        let ord = if b >> 31 == 1 { !b } else { b | 0x8000_0000 };
+        self.keys
+            .push(((ord as u64) << 32) | self.prims.len() as u64);
+        self.prims.push(p);
+    }
+
+    /// A line through points (`width` pixels), drawn in pieces that are
+    /// sorted by depth with the rest of the scene. `colors` (one per point)
+    /// color the pieces; otherwise `color` is used.
+    pub fn polyline(
+        &mut self,
+        pts: &[[f64; 3]],
+        color: Color,
+        colors: Option<&[Color]>,
+        width: f64,
+    ) {
+        const PIECE: usize = 64;
+        let mut start = 0;
+        while start + 1 < pts.len() {
+            let end = (start + PIECE).min(pts.len() - 1);
+            let mut screen = Vec::with_capacity(end - start + 1);
+            let mut depth = 0.0;
+            for p in &pts[start..=end] {
+                let (x, y, d) = self.proj.project(*p);
+                if x.is_finite() && y.is_finite() {
+                    screen.push((x, y));
+                    depth += d;
+                }
+            }
+            if screen.len() >= 2 {
+                let depth = depth / screen.len() as f64;
+                let c = colors
+                    .and_then(|c| c.get((start + end) / 2).copied())
+                    .unwrap_or(color);
+                let c = self.cue(c, depth);
+                self.add(
+                    depth,
+                    Prim::Line {
+                        pts: screen,
+                        color: c,
+                        width: width * self.proj.persp(depth),
+                    },
+                );
+            }
+            start = end;
+        }
     }
 
     fn cue(&self, c: Color, depth: f64) -> Color {
@@ -542,7 +640,22 @@ impl Scene3d<'_> {
             }
             return;
         }
-        let q: Vec<[f64; 3]> = v.iter().map(|p| self.proj.view(*p)).collect();
+        let mut q = [[0.0; 3]; 4];
+        for (o, p) in q.iter_mut().zip(v) {
+            *o = self.proj.view(*p);
+        }
+        self.face_view(&q[..v.len()], color, edge, normal, cull);
+    }
+
+    /// [`Scene3d::face`] with corners already in view coordinates (3 or 4).
+    pub(crate) fn face_view(
+        &mut self,
+        q: &[[f64; 3]],
+        color: Color,
+        edge: Option<Stroke>,
+        normal: Option<[f64; 3]>,
+        cull: bool,
+    ) {
         if q.iter().any(|p| !p.iter().all(|c| c.is_finite())) {
             return;
         }
@@ -557,7 +670,7 @@ impl Scene3d<'_> {
             color
         };
         let c = self.cue(c, depth);
-        let mut pts = [(0.0, 0.0); 4];
+        let mut pts = [(0.0f64, 0.0f64); 4];
         for (i, p) in q.iter().enumerate() {
             let s = self.proj.screen(*p);
             pts[i] = (s.0, s.1);
@@ -569,11 +682,14 @@ impl Scene3d<'_> {
             // an outline).
             grow(&mut pts[..k], 0.35);
         }
-        let stroke = edge.map(|s| Stroke {
-            color: self.cue(s.color, depth),
-            ..s
+        let stroke = edge.map(|s| {
+            Box::new(Stroke {
+                color: self.cue(s.color, depth),
+                ..s
+            })
         });
-        self.prims.push((
+        let pts = pts.map(|(x, y)| (x as f32, y as f32));
+        self.add(
             depth,
             Prim::Poly {
                 pts,
@@ -581,7 +697,7 @@ impl Scene3d<'_> {
                 fill: Some(c),
                 stroke,
             },
-        ));
+        );
     }
 
     /// A shaded sphere with a radius in data units (x-axis units).
@@ -603,16 +719,16 @@ impl Scene3d<'_> {
             return;
         }
         let color = self.cue(color, d);
-        self.prims.push((
+        self.add(
             d,
             Prim::Ball {
-                x,
-                y,
-                r,
+                x: x as f32,
+                y: y as f32,
+                r: r as f32,
                 color,
                 shaded: shaded && self.light,
             },
-        ));
+        );
     }
 
     /// A straight line of `width` pixels.
@@ -637,7 +753,7 @@ impl Scene3d<'_> {
             w * self.proj.persp(d)
         };
         let color = self.cue(color, d);
-        self.prims.push((
+        self.add(
             d,
             Prim::Seg {
                 a: (pa.0, pa.1),
@@ -646,7 +762,7 @@ impl Scene3d<'_> {
                 width,
                 tube: tube && self.light,
             },
-        ));
+        );
     }
 
     /// A text label at a data point, drawn above everything else.
@@ -689,9 +805,14 @@ impl Scene3d<'_> {
         }
     }
 
-    fn finish(mut self, fonts: &FontSet, out: &mut Vec<Node>) {
-        self.prims.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for (_, p) in self.prims {
+    fn finish(self, fonts: &FontSet, out: &mut Vec<Node>) {
+        let keys = radix_sort(self.keys);
+        let mut prims = self.prims;
+        let idx = |key: u64| (key & 0xFFFF_FFFF) as usize;
+        let mut k = 0;
+        while k < keys.len() {
+            let p = std::mem::replace(&mut prims[idx(keys[k])], Prim::Taken);
+            k += 1;
             match p {
                 Prim::Poly {
                     pts,
@@ -700,12 +821,16 @@ impl Scene3d<'_> {
                     stroke,
                 } => {
                     let mut cmds = Vec::with_capacity(n as usize + 1);
-                    cmds.push(PathCmd::MoveTo(pts[0].0, pts[0].1));
+                    cmds.push(PathCmd::MoveTo(pts[0].0 as f64, pts[0].1 as f64));
                     for p in &pts[1..n as usize] {
-                        cmds.push(PathCmd::LineTo(p.0, p.1));
+                        cmds.push(PathCmd::LineTo(p.0 as f64, p.1 as f64));
                     }
                     cmds.push(PathCmd::Close);
-                    out.push(Node::Path { cmds, fill, stroke });
+                    out.push(Node::Path {
+                        cmds,
+                        fill,
+                        stroke: stroke.map(|s| *s),
+                    });
                 }
                 Prim::Ball {
                     x,
@@ -713,7 +838,61 @@ impl Scene3d<'_> {
                     r,
                     color,
                     shaded,
-                } => draw_ball(out, x, y, r, color, shaded),
+                } => {
+                    // Following balls that look the same become one node drawn
+                    // from a single cached sprite.
+                    let mut offsets = vec![(x, y)];
+                    while let Some(&key) = keys.get(k) {
+                        match prims[idx(key)] {
+                            Prim::Ball {
+                                x: bx,
+                                y: by,
+                                r: br,
+                                color: bc,
+                                shaded: bs,
+                            } if br == r && bc == color && bs == shaded => {
+                                offsets.push((bx, by));
+                                k += 1;
+                            }
+                            _ => break,
+                        }
+                    }
+                    if offsets.len() == 1 {
+                        draw_ball(out, x as f64, y as f64, r as f64, color, shaded);
+                    } else {
+                        let mut t = Vec::new();
+                        draw_ball(&mut t, 0.0, 0.0, r as f64, color, shaded);
+                        let template = if t.len() == 1 {
+                            t.pop().unwrap()
+                        } else {
+                            Node::Group {
+                                children: t,
+                                clip: None,
+                                opacity: 1.0,
+                                tooltip: None,
+                                id: None,
+                            }
+                        };
+                        out.push(Node::Instances {
+                            template: Box::new(template),
+                            offsets,
+                        });
+                    }
+                }
+                Prim::Line { pts, color, width } => {
+                    let mut cmds = Vec::with_capacity(pts.len());
+                    cmds.push(PathCmd::MoveTo(pts[0].0, pts[0].1));
+                    cmds.extend(pts[1..].iter().map(|p| PathCmd::LineTo(p.0, p.1)));
+                    out.push(Node::Path {
+                        cmds,
+                        fill: None,
+                        stroke: Some(
+                            Stroke::new(color, width.max(0.3))
+                                .cap(LineCap::Round)
+                                .join(LineJoin::Round),
+                        ),
+                    });
+                }
                 Prim::Seg {
                     a,
                     b,
@@ -721,6 +900,7 @@ impl Scene3d<'_> {
                     width,
                     tube,
                 } => draw_seg(out, a, b, color, width, tube),
+                Prim::Taken => {}
             }
         }
         for l in self.labels {
@@ -851,7 +1031,11 @@ fn draw_seg(
 ) {
     let path =
         |a: (f64, f64), b: (f64, f64)| vec![PathCmd::MoveTo(a.0, a.1), PathCmd::LineTo(b.0, b.1)];
-    let stroke = |c: Color, w: f64| Stroke::new(c, w.max(0.3)).cap(LineCap::Round);
+    let stroke = |c: Color, w: f64| {
+        Stroke::new(c, w.max(0.3))
+            .cap(LineCap::Round)
+            .join(LineJoin::Round)
+    };
     if !tube || width < 2.5 {
         out.push(Node::Path {
             cmds: path(a, b),
@@ -867,12 +1051,18 @@ fn draw_seg(
     if nx * LIGHT[0] - ny * LIGHT[1] < 0.0 {
         (nx, ny) = (-nx, -ny);
     }
-    let bands = [
+    // Thin tubes need fewer bands for the same look.
+    let three = [
         (1.0, 0.0, color.darken(0.45)),
         (0.72, 0.1, color),
         (0.36, 0.22, color.lighten(0.38)),
     ];
-    for (wf, of, c) in bands {
+    let two = [
+        (1.0, 0.0, color.darken(0.35)),
+        (0.5, 0.16, color.lighten(0.15)),
+    ];
+    let bands: &[(f64, f64, Color)] = if width < 7.0 { &two } else { &three };
+    for &(wf, of, c) in bands {
         let o = width * of;
         out.push(Node::Path {
             cmds: path((a.0 + nx * o, a.1 + ny * o), (b.0 + nx * o, b.1 + ny * o)),
@@ -1132,6 +1322,7 @@ impl Axes {
         let mut scene = Scene3d {
             proj: &proj,
             prims: Vec::new(),
+            keys: Vec::new(),
             labels: Vec::new(),
             fog: self.view3d.fog,
             background: theme.plot_background,
@@ -1320,14 +1511,6 @@ impl Surface {
     fn z_range(&self) -> (f64, f64) {
         finite_range(self.z.iter().flatten().copied()).unwrap_or((0.0, 1.0))
     }
-    fn grid_point(&self, r: usize, c: usize) -> [f64; 3] {
-        let (rows, cols) = (self.z.len(), self.cols());
-        let x = self.x_range.0
-            + (self.x_range.1 - self.x_range.0) * c as f64 / (cols.max(2) - 1) as f64;
-        let y = self.y_range.0
-            + (self.y_range.1 - self.y_range.0) * r as f64 / (rows.max(2) - 1) as f64;
-        [x, y, self.z[r][c]]
-    }
 }
 
 impl Series for Surface {
@@ -1350,19 +1533,37 @@ impl Series for Surface {
             max: zr.1,
             label: None,
         };
+        // Every grid point projected once (not four times, once per quad).
+        let xs: Vec<f64> = (0..cols)
+            .map(|c| {
+                self.x_range.0 + (self.x_range.1 - self.x_range.0) * c as f64 / (cols - 1) as f64
+            })
+            .collect();
+        let ys: Vec<f64> = (0..rows)
+            .map(|r| {
+                self.y_range.0 + (self.y_range.1 - self.y_range.0) * r as f64 / (rows - 1) as f64
+            })
+            .collect();
+        let proj = scene.proj;
+        let view: Vec<[f64; 3]> = (0..rows * cols)
+            .map(|i| proj.view([xs[i % cols], ys[i / cols], self.z[i / cols][i % cols]]))
+            .collect();
+        let at = |r: usize, c: usize| [xs[c], ys[r], self.z[r][c]];
+        scene.reserve((rows - 1) * (cols - 1));
         for r in 0..rows - 1 {
             for c in 0..cols - 1 {
-                let v = [
-                    self.grid_point(r, c),
-                    self.grid_point(r, c + 1),
-                    self.grid_point(r + 1, c + 1),
-                    self.grid_point(r + 1, c),
+                let z = [
+                    self.z[r][c],
+                    self.z[r][c + 1],
+                    self.z[r + 1][c + 1],
+                    self.z[r + 1][c],
                 ];
-                if v.iter().any(|q| !q[2].is_finite()) {
+                if z.iter().any(|v| !v.is_finite()) {
                     continue;
                 }
-                let color = cs.color(v.iter().map(|q| q[2]).sum::<f64>() / 4.0);
+                let color = cs.color(z.iter().sum::<f64>() / 4.0);
                 if self.wireframe {
+                    let v = [at(r, c), at(r, c + 1), at(r + 1, c + 1), at(r + 1, c)];
                     for k in 0..4 {
                         if (k == 2 && r + 2 < rows) || (k == 1 && c + 2 < cols) {
                             continue; // shared with the next quad
@@ -1370,10 +1571,16 @@ impl Series for Surface {
                         scene.line(v[k], v[(k + 1) % 4], color, 1.0);
                     }
                 } else {
+                    let q = [
+                        view[r * cols + c],
+                        view[r * cols + c + 1],
+                        view[(r + 1) * cols + c + 1],
+                        view[(r + 1) * cols + c],
+                    ];
                     let edge = self
                         .edges
                         .then(|| Stroke::new(color.darken(0.35).with_alpha(0.7), 0.5));
-                    scene.polygon(&v, color.with_alpha(self.opacity), edge);
+                    scene.face_view(&q, color.with_alpha(self.opacity), edge, None, false);
                 }
             }
         }
@@ -1479,15 +1686,11 @@ impl Series for Points3d {
         };
         let p = |i: usize| [self.x[i], self.y[i], self.z[i]];
         if self.line {
-            for i in 1..n {
-                let c = if cs.is_some() {
-                    color(i - 1).mix(color(i), 0.5)
-                } else {
-                    self.color
-                };
-                scene.line(p(i - 1), p(i), c, self.size);
-            }
+            let pts: Vec<[f64; 3]> = (0..n).map(p).collect();
+            let colors: Option<Vec<Color>> = cs.as_ref().map(|_| (0..n).map(color).collect());
+            scene.polyline(&pts, self.color, colors.as_deref(), self.size);
         } else {
+            scene.reserve(n);
             for i in 0..n {
                 scene.marker(p(i), self.size, color(i), self.shaded);
             }
@@ -1841,14 +2044,14 @@ impl Series for Mesh3d {
                 None => self.color,
             };
             pts.clear();
-            pts.extend(ids.iter().map(|&i| self.vertices[i as usize]));
+            pts.extend(ids.iter().map(|&i| view[i as usize]));
             // Back faces of translucent meshes a little darker.
             let n = if !cull && flat[2] < 0.0 {
                 [n[0] * 0.6, n[1] * 0.6, n[2]]
             } else {
                 n
             };
-            scene.face(
+            scene.face_view(
                 &pts,
                 color.with_alpha(color.a * self.opacity),
                 edge.clone(),
@@ -2188,8 +2391,9 @@ mod tests {
         }
         let mut after = Pixels::default();
         fig.render_into(&mut after).unwrap();
-        // Nothing changed right of the first plot.
-        let x0 = (p.right().ceil() as usize) + 1;
+        // Nothing changed in the second plot's cell (x >= 400).
+        let _ = p;
+        let x0 = 400;
         for y in 0..400usize {
             for x in x0..800 {
                 let i = (y * 800 + x) * 4;
@@ -2217,6 +2421,30 @@ mod tests {
             "{x},{y} -> {x2},{y2}"
         );
         assert!(fig.axes().current_camera().zoom > 2.0);
+    }
+
+    #[test]
+    fn radix_sort_orders_depths() {
+        let mut fig = Figure::new(10, 10);
+        let _ = &mut fig;
+        let depths: Vec<f64> = (0..5000)
+            .map(|i| ((i * 7919) % 5000) as f64 / 37.0 - 60.0)
+            .collect();
+        let keys: Vec<u64> = depths
+            .iter()
+            .enumerate()
+            .map(|(i, d)| {
+                let b = (*d as f32).to_bits();
+                let ord = if b >> 31 == 1 { !b } else { b | 0x8000_0000 };
+                ((ord as u64) << 32) | i as u64
+            })
+            .collect();
+        let sorted = super::radix_sort(keys);
+        let ds: Vec<f64> = sorted
+            .iter()
+            .map(|k| depths[(k & 0xFFFF_FFFF) as usize])
+            .collect();
+        assert!(ds.windows(2).all(|w| w[0] <= w[1]));
     }
 
     #[test]

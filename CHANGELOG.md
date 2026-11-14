@@ -61,6 +61,12 @@
 - `Figure::resize(width, height)` (figures embedded in resizable panels).
 
 ### Changed
+- Faster 3D: primitives sorted with a radix sort, same-looking spheres
+  drawn from one cached sprite, 3D lines drawn in pieces, surface grids
+  projected once; small polygons and short strokes take the rasterizer's
+  fast paths (any path length). 3D frames got 2–3× faster (1 M-point 3D
+  scatter 464 → 149 ms, 200² surface 77 → 31 ms, 1BNA molecule
+  18 → 9 ms on one core).
 - 3D: the camera, axis labels (`x_label`, `y_label`, `z_label`) and
   limits belong to the axes instead of each 3D series
   (`Surface::camera` / `labels` and `Points3d::camera` / `labels` are

@@ -763,7 +763,7 @@ fn fill_polygon(
     ts: Transform,
     clip: Clip,
 ) -> bool {
-    if cmds.len() < 16
+    if cmds.len() < 3
         || ts.kx != 0.0
         || ts.ky != 0.0
         || !cmds.iter().all(|c| {
@@ -1073,7 +1073,7 @@ fn stroke_polyline(
     ts: Transform,
     clip: Clip,
 ) -> bool {
-    if cmds.len() < 9
+    if cmds.len() < 2
         || !s.dash.is_empty()
         || s.join != LineJoin::Round
         || ts.kx != 0.0

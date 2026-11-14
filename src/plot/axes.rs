@@ -1138,7 +1138,13 @@ impl Axes {
         // Data stays inside its plot area (a zoomed 3D scene must not
         // spill over the neighbouring plots).
         let clip = match self.kind {
-            AxesKind::Cartesian | AxesKind::ThreeD => Some((p.x, p.y, p.w, p.h)),
+            AxesKind::Cartesian => Some((p.x, p.y, p.w, p.h)),
+            // The whole cell below the title (box labels reach beyond the
+            // plot rectangle), without the colorbar.
+            AxesKind::ThreeD => {
+                let right = cell.right() - decor.colorbar.as_ref().map_or(0.0, |c| c.1);
+                Some((cell.x, p.y, right - cell.x, cell.bottom() - p.y))
+            }
             _ => None,
         };
         out.push(Node::Group {

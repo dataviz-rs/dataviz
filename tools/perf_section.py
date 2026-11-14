@@ -70,6 +70,16 @@ for sc, lab in [("wave", "whole plot moves"), ("stream", "line grows on fixed ax
     vals = [row[l]["ms"] if row.get(l) else None for l in al]
     cells = [f"{ms(row[l]['ms'])}, {row[l]['kb']} KB" if row.get(l) else "–" for l in al]
     L.append(f"| {lab} | " + " | ".join(bold(cells, vals)) + " |")
+td = r.get("threed")
+if td:
+    tl = [c for c in ["dataviz", "dataviz GPU", "plotters", "matplotlib", "PyVista"] if any(c in row for row in td.values())]
+    L += ["\n**3D charts** (800×600 PNG; dataviz, plotters and matplotlib on one core, PyVista on the GPU; "
+          "a rotation frame is the camera turned and the image drawn again):\n",
+          "| Chart | " + " | ".join(tl) + " |", "|---|" + "---:|" * len(tl)]
+    for k, row in td.items():
+        vals = [row[c]["ms"] if row.get(c) else None for c in tl]
+        cells = [(ms(row[c]["ms"]) + (f", {row[c]['kb']} KB" if "kb" in row[c] else "")) if row.get(c) else "–" for c in tl]
+        L.append(f"| {k} | " + " | ".join(bold(cells, vals)) + " |")
 L.append("""
 What makes it fast: the scene is drawn straight into the output buffer by
 dataviz's own anti-aliased rasterizer; dense lines become one pixel-column
@@ -79,8 +89,19 @@ markers are cached as bitmaps; histograms use SIMD binning. Animations store
 only the changed part of each frame. On the web the same renderer compiled to
 WebAssembly draws a 960×520 live chart with 2 × 3 000 points in about 1.7 ms.
 
+In 3D dataviz is 36–41× faster than matplotlib for scatter plots, 5–10×
+for surfaces and 1.6–5× for lines, molecules and rotation frames; it draws
+a turning GIF 3.3× faster than plotters and 4.5× faster than PyVista and
+is first (on the CPU or the GPU) for the 60² surface and for scatter plots
+up to a million points, with lighting, depth order and anti-aliasing.
+plotters is faster for the large surface, the long 3D line and the
+molecule: it draws 1-pixel lines and flat circles without depth sorting or
+lighting. PyVista (VTK) keeps the scene on the GPU and turns it in 0.7 ms
+per frame against dataviz's 5–8 ms (still 125–200 frames per second), but
+needs 85–115 ms to save an image and about 300 MB of memory.
+
 Where it is not first: for a tiny live chart (1 000 points) on a single
-thread plotters is about 0.1 ms faster per frame; dataviz on all cores is
+thread plotters is 0.1–0.2 ms faster per frame; dataviz on all cores is
 the fastest there. The GPU backend needs the least CPU time but ~240 MB of
 driver memory and ~0.3 s to start, so the default stays on the CPU.""")
 print("\n".join(L))

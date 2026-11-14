@@ -185,8 +185,9 @@ upper left and optionally faded with distance (`depth_cue`). The camera is
 a rotation matrix, so it turns freely around any axis. In a window: drag
 to turn, wheel to zoom, `X`/`Y`/`Z` rotate by 15° (Shift+key the other
 way), `R` resets, hover names the atom, base pair or point. A frame of the
-1BNA DNA structure (486 atoms) takes about 12 ms, a 10 000-point 3D
-scatter 7 ms (800×600, one core).
+1BNA DNA structure (486 atoms, ball-and-stick, shaded) takes about 8 ms on
+one core, a 10 000-point 3D scatter 3 ms; a turning 90-frame GIF of a
+surface 0.9 s (3D benchmarks in the Performance section).
 
 ### For engineers
 
