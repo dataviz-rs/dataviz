@@ -342,7 +342,7 @@ mod tests {
         let alt = fig.alt_text();
         assert!(alt.starts_with("Sales."), "{alt}");
         assert!(
-            alt.contains("line chart")
+            alt.contains("Line chart")
                 && alt.contains("quarter from")
                 && alt.contains("north (3 to 5)"),
             "{alt}"
