@@ -150,9 +150,12 @@ fn parse_records(text: &str, delim: char) -> Vec<Vec<String>> {
     rows
 }
 
-/// Records live data to a CSV file as it arrives: buffered, flushed at most
-/// once a second and when dropped, appending to an existing file (the
-/// header is written only to a new or empty file). Timestamps are written
+/// Records live data to a CSV file as it arrives: buffered, written out when
+/// a row arrives at least a second after the previous write, on
+/// [`CsvLog::flush`] and when dropped; appends to an existing file (the
+/// header is written only to a new or empty file). Call `flush` regularly
+/// when rows are sparse or the log lives in a thread that may be stopped
+/// without being dropped. Timestamps are written
 /// as `YYYY-MM-DD HH:MM:SS.mmm`, which [`Table::time_column`] reads back.
 ///
 /// ```
