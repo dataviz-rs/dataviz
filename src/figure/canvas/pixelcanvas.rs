@@ -57,8 +57,8 @@ impl PixelCanvas {
     pub fn clear(&mut self) {
         let len = self.width as usize * self.height as usize * 3;
         self.buffer.resize(len, 0);
-        for px in self.buffer.chunks_exact_mut(3) {
-            px.copy_from_slice(&self.background_color);
+        for px in self.buffer.as_chunks_mut::<3>().0 {
+            *px = self.background_color;
         }
     }
 
@@ -453,8 +453,10 @@ mod tests {
     fn count(canvas: &PixelCanvas, color: [u8; 3]) -> usize {
         canvas
             .buffer
-            .chunks_exact(3)
-            .filter(|p| *p == color)
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .filter(|p| **p == color)
             .count()
     }
 

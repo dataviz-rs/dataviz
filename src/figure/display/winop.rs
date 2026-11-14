@@ -207,8 +207,8 @@ impl Winop {
     #[allow(dead_code)]
     fn render_hints(canvas: &mut PixelCanvas) {
         let buffer = hints_overlay(canvas);
-        for (dst, px) in canvas.buffer.chunks_exact_mut(3).zip(buffer) {
-            dst.copy_from_slice(&[(px >> 16) as u8, (px >> 8) as u8, px as u8]);
+        for (dst, px) in canvas.buffer.as_chunks_mut::<3>().0.iter_mut().zip(buffer) {
+            *dst = [(px >> 16) as u8, (px >> 8) as u8, px as u8];
         }
     }
 }
