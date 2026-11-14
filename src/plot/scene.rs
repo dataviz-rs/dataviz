@@ -148,6 +148,7 @@ pub struct RasterImage {
 
 /// A drawing primitive.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Node {
     /// Arbitrary path.
     Path {
@@ -216,6 +217,57 @@ pub enum Node {
         /// Tooltip shown by SVG viewers (`<title>`).
         tooltip: Option<String>,
     },
+    /// The same node drawn at many positions (markers): `template` is
+    /// drawn translated by each offset. Compact (8 bytes per position) and
+    /// rasterized from a cached sprite.
+    Instances {
+        /// Node drawn around the origin.
+        template: Box<Node>,
+        /// Positions (canvas units).
+        offsets: Vec<(f32, f32)>,
+    },
+    /// The same node drawn at the centres of the set cells of a grid (dense
+    /// opaque markers): cell `(i, j)` is at `(x + (i + 0.5)·step,
+    /// y + (j + 0.5)·step)`, set when bit `j·cols + i` of `bits` is 1.
+    /// Its size does not depend on the number of data points.
+    MarkerGrid {
+        /// Node drawn around the origin.
+        template: Box<Node>,
+        /// Grid origin (canvas units).
+        x: f64,
+        /// Grid origin (canvas units).
+        y: f64,
+        /// Cell size (canvas units).
+        step: f64,
+        /// Cells per row.
+        cols: usize,
+        /// Occupancy bits, row-major.
+        bits: Vec<u64>,
+    },
+}
+
+/// Centres of the set cells of a [`Node::MarkerGrid`].
+pub(crate) fn grid_positions(
+    x: f64,
+    y: f64,
+    step: f64,
+    cols: usize,
+    bits: &[u64],
+) -> impl Iterator<Item = (f32, f32)> + '_ {
+    bits.iter().enumerate().flat_map(move |(wi, &w)| {
+        let mut b = w;
+        std::iter::from_fn(move || {
+            (b != 0).then(|| {
+                let k = wi * 64 + b.trailing_zeros() as usize;
+                b &= b - 1;
+                let (i, j) = (k % cols.max(1), k / cols.max(1));
+                (
+                    (x + (i as f64 + 0.5) * step) as f32,
+                    (y + (j as f64 + 0.5) * step) as f32,
+                )
+            })
+        })
+    })
 }
 
 /// A complete drawing.
@@ -568,6 +620,38 @@ impl SvgWriter<'_> {
                     self.node(c);
                 }
                 self.out.push_str("</g>\n");
+            }
+            Node::MarkerGrid {
+                template,
+                x,
+                y,
+                step,
+                cols,
+                bits,
+            } => {
+                let offsets: Vec<(f32, f32)> = grid_positions(*x, *y, *step, *cols, bits).collect();
+                self.node(&Node::Instances {
+                    template: template.clone(),
+                    offsets,
+                });
+            }
+            Node::Instances { template, offsets } => {
+                if offsets.is_empty() {
+                    return;
+                }
+                self.clip_id += 1;
+                let id = self.clip_id;
+                let _ = write!(self.out, r#"<defs><g id="m{id}">"#);
+                self.node(template);
+                self.out.push_str("</g></defs>\n");
+                for (x, y) in offsets {
+                    let _ = writeln!(
+                        self.out,
+                        r##"<use href="#m{id}" x="{}" y="{}"/>"##,
+                        num(*x as f64),
+                        num(*y as f64)
+                    );
+                }
             }
         }
     }

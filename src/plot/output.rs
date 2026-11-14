@@ -46,6 +46,51 @@ impl From<std::io::Error> for Error {
     }
 }
 
+/// Encodes premultiplied RGBA pixels as PNG (fast deflate, "Up" filter:
+/// the fastest combination, files still a fraction of unfiltered ones).
+/// Opaque images (the usual case) are written as RGB straight from the
+/// buffer, with no straight-alpha copy in between.
+pub(crate) fn encode_png_premul(data: &[u8], width: u32, height: u32) -> Result<Vec<u8>, Error> {
+    use image::codecs::png::{CompressionType, FilterType, PngEncoder};
+    use image::{ExtendedColorType, ImageEncoder};
+    thread_local! {
+        // RGB staging buffer, kept between encodes (no page faults).
+        static RGB: std::cell::RefCell<Vec<u8>> = const { std::cell::RefCell::new(Vec::new()) };
+    }
+    let px = data.as_chunks::<4>().0;
+    let mut rgb = RGB.with(|b| std::mem::take(&mut *b.borrow_mut()));
+    rgb.clear();
+    rgb.reserve(px.len() * 3);
+    let mut opaque = true;
+    for p in px {
+        opaque &= p[3] == 255;
+        rgb.extend_from_slice(&p[..3]);
+    }
+    let mut out = Vec::new();
+    let enc = PngEncoder::new_with_quality(&mut out, CompressionType::Fast, FilterType::Up);
+    let r = if opaque {
+        enc.write_image(&rgb, width, height, ExtendedColorType::Rgb8)
+    } else {
+        let mut p = Pixels {
+            width: 0,
+            height: 0,
+            rgba: Vec::new(),
+        };
+        super::raster::premul_to_pixels(
+            data,
+            width as usize * 4,
+            width as usize,
+            height as usize,
+            &mut p,
+            1,
+        );
+        enc.write_image(&p.rgba, width, height, ExtendedColorType::Rgba8)
+    };
+    RGB.with(|b| *b.borrow_mut() = rgb);
+    r.map_err(|e| Error::Encode(e.to_string()))?;
+    Ok(out)
+}
+
 /// Where raster images (PNG/JPEG/WebP/BMP, pixels, windows) are computed.
 ///
 /// SVG and PDF output never depend on the backend.
@@ -198,12 +243,10 @@ impl Pixels {
             Format::Png => {
                 use image::codecs::png::{CompressionType, FilterType, PngEncoder};
                 use image::{ExtendedColorType, ImageEncoder};
-                // Fast compression; drop the alpha channel when fully opaque.
-                let enc_png = PngEncoder::new_with_quality(
-                    &mut out,
-                    CompressionType::Fast,
-                    FilterType::Adaptive,
-                );
+                // Fast compression with the "Up" filter (fastest); drop the
+                // alpha channel when fully opaque.
+                let enc_png =
+                    PngEncoder::new_with_quality(&mut out, CompressionType::Fast, FilterType::Up);
                 if self.rgba.as_chunks::<4>().0.iter().all(|p| p[3] == 255) {
                     let rgb: Vec<u8> = self
                         .rgba

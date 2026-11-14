@@ -346,47 +346,61 @@ fn fill_rect_aa(pm: &mut PixmapMut<'_>, x0: f32, y0: f32, x1: f32, y1: f32, c: C
     let rgb = [c.r as u32, c.g as u32, c.b as u32];
     let pw = pm.width() as usize;
     let dst = pm.data_mut();
-    // Columns: partial left pixel, full interior, partial right pixel.
-    let (px0, px1) = (x0.floor() as usize, x1.ceil() as usize);
-    let (in0, in1) = (
-        x0.ceil() as usize,
-        (x1.floor() as usize).max(x0.ceil() as usize),
-    );
-    let col_cov = |px: usize| {
-        let fx = px as f32;
-        ((fx + 1.0).min(x1) - fx.max(x0)).clamp(0.0, 1.0)
+    // Premultiplied source and inverse alpha for coverage `k` (0..1).
+    let src_for = |k: f32| {
+        let a = (k * ca as f32 + 0.5) as u32;
+        (
+            [
+                div255(rgb[0] * a),
+                div255(rgb[1] * a),
+                div255(rgb[2] * a),
+                a,
+            ],
+            255 - a,
+        )
     };
+    // Columns: partial left pixel, full interior, partial right pixel; their
+    // coverage is the same on every row.
+    let (px0, px1) = (x0.floor() as usize, x1.ceil() as usize);
+    let in0 = (x0.ceil() as usize).min(px1);
+    let in1 = (x1.floor() as usize).clamp(in0, px1);
+    let col = |px: usize| ((px as f32 + 1.0).min(x1) - (px as f32).max(x0)).clamp(0.0, 1.0);
+    let left = (px0 < in0).then(|| col(px0));
+    let right = (in1 < px1 && (in1 > px0 || left.is_none())).then(|| col(in1));
     let solid = [rgb[0] as u8, rgb[1] as u8, rgb[2] as u8, 255];
-    for py in y0.floor() as usize..y1.ceil() as usize {
-        let fy = py as f32;
-        let cy = ((fy + 1.0).min(y1) - fy.max(y0)).clamp(0.0, 1.0);
-        let row = py * pw;
-        let a_row = (cy * ca as f32 + 0.5) as u32;
-        if a_row == 0 {
-            continue;
+    let put = |p: &mut [u8; 4], (s, inv): ([u32; 4], u32)| {
+        for j in 0..4 {
+            p[j] = (s[j] + div255(p[j] as u32 * inv)).min(255) as u8;
         }
-        let edge = |px: usize, dst: &mut [u8]| {
-            let a = (col_cov(px) * cy * ca as f32 + 0.5) as u32;
-            if a > 0 {
-                blend(&mut dst[(row + px) * 4..(row + px) * 4 + 4], rgb, a);
-            }
-        };
-        if px0 < in0.min(px1) {
-            edge(px0, dst);
+    };
+    let mut row_fill = |py: usize, cy: f32| {
+        let row = &mut dst[py * pw * 4..(py + 1) * pw * 4];
+        let px = row.as_chunks_mut::<4>().0;
+        if let Some(k) = left {
+            put(&mut px[px0], src_for(k * cy));
         }
-        let interior = &mut dst[(row + in0.min(px1)) * 4..(row + in1.min(px1)) * 4];
-        if a_row >= 255 {
-            for px in interior.as_chunks_mut::<4>().0 {
-                *px = solid;
+        let interior = &mut px[in0..in1];
+        let (s, inv) = src_for(cy);
+        if s[3] >= 255 {
+            interior.fill(solid);
+        } else if s[3] > 0 {
+            for p in interior {
+                put(p, (s, inv));
             }
+        }
+        if let Some(k) = right {
+            put(&mut px[in1], src_for(k * cy));
+        }
+    };
+    let (ry0, ry1) = (y0.floor() as usize, y1.ceil() as usize);
+    let row_cov = |py: usize| ((py as f32 + 1.0).min(y1) - (py as f32).max(y0)).clamp(0.0, 1.0);
+    for py in ry0..ry1 {
+        let cy = if py > ry0 && py + 1 < ry1 {
+            1.0
         } else {
-            for px in interior.as_chunks_mut::<4>().0 {
-                blend(px, rgb, a_row);
-            }
-        }
-        if in1 < px1 && in1 >= in0 && (in1 > px0 || px0 >= in0) {
-            edge(in1, dst);
-        }
+            row_cov(py)
+        };
+        row_fill(py, cy);
     }
 }
 
@@ -752,9 +766,12 @@ fn fill_polygon(
     let stride = bw + 2;
     COVERAGE.with(|cv| {
         let mut cv = cv.borrow_mut();
+        // The buffer is all zeros between uses (the scan below clears what it
+        // reads), so it is only grown, never cleared.
         let acc = &mut cv.acc;
-        acc.clear();
-        acc.resize(stride * bh, 0.0);
+        if acc.len() < stride * bh {
+            acc.resize(stride * bh, 0.0);
+        }
         let (fx0, fy0, fw) = (x0 as f32, y0 as f32, bw as f32);
         for &(p0, p1) in &edges {
             let (p0, p1) = ((p0.0 - fx0, p0.1 - fy0), (p1.0 - fx0, p1.1 - fy0));
@@ -816,26 +833,154 @@ fn fill_polygon(
         let rgb = [c.r as u32, c.g as u32, c.b as u32];
         let pw = pm.width() as usize;
         let dst = pm.data_mut();
+        let solid = [rgb[0] as u8, rgb[1] as u8, rgb[2] as u8, 255];
+        let (cl, cr) = (clip.l.ceil() as i32, clip.r.floor() as i32);
+        let (ct, cb) = (clip.t.ceil() as i32, clip.b.floor() as i32);
         for y in 0..bh {
             let py = y0 + y as i32;
-            let mut sum = 0.0f32;
-            let row = &acc[y * stride..y * stride + bw];
+            let row_inside = py >= ct && py < cb;
+            let base = y * stride;
             let drow = (py as usize * pw + x0 as usize) * 4;
-            for (i, v) in row.iter().enumerate() {
-                sum += v;
-                let k = sum.abs().min(1.0);
-                if k < 1.0 / 512.0 {
-                    continue;
-                }
+            let mut put = |i: usize, k: f32| {
                 let px = x0 + i as i32;
-                let m = clip.cov(px, py);
+                let m = if row_inside && px >= cl && px < cr {
+                    255
+                } else {
+                    clip.cov(px, py)
+                };
                 let a = (k * ca * m as f32 / 255.0 + 0.5) as u32;
-                if a > 0 {
-                    blend(&mut dst[drow + i * 4..drow + i * 4 + 4], rgb, a);
+                let d: &mut [u8; 4] = (&mut dst[drow + i * 4..drow + i * 4 + 4])
+                    .try_into()
+                    .expect("4 bytes");
+                if a >= 255 {
+                    *d = solid;
+                } else if a > 0 {
+                    blend(d, rgb, a);
+                }
+            };
+            let mut sum = 0.0f32;
+            for i in 0..bw {
+                sum += std::mem::take(&mut acc[base + i]);
+                let k = sum.abs().min(1.0);
+                if k >= 1.0 / 512.0 {
+                    put(i, k);
                 }
             }
+            acc[base + bw] = 0.0;
+            acc[base + bw + 1] = 0.0;
         }
     });
+    true
+}
+
+/// Fills a rectilinear path (all edges horizontal or vertical, nonzero
+/// rule) as rectangles: the horizontal edges are cut into vertical slabs at
+/// their end points and each slab is filled where its winding number is
+/// non-zero. The cost is proportional to the filled area, not to the
+/// bounding box (column envelopes of dense lines). Interior slab borders
+/// must be whole device pixels (no seams); `false` when not eligible.
+fn fill_rectilinear(
+    pm: &mut PixmapMut<'_>,
+    cmds: &[PathCmd],
+    c: Color,
+    ts: Transform,
+    clip: Clip,
+) -> bool {
+    if cmds.len() < 16 || ts.kx != 0.0 || ts.ky != 0.0 {
+        return false;
+    }
+    // Horizontal edges (x0 < x1, y, direction) in device space.
+    let mut hs: Vec<(f32, f32, f32, i32)> = Vec::with_capacity(cmds.len() / 2);
+    let mut push = |p: (f32, f32), q: (f32, f32)| -> bool {
+        if p.1 == q.1 {
+            if p.0 != q.0 {
+                let dir = if q.0 > p.0 { 1 } else { -1 };
+                hs.push((p.0.min(q.0), p.0.max(q.0), p.1, dir));
+            }
+            true
+        } else {
+            p.0 == q.0
+        }
+    };
+    let dev = |x: f64, y: f64| (x as f32 * ts.sx + ts.tx, y as f32 * ts.sy + ts.ty);
+    let (mut start, mut cur) = (None::<(f32, f32)>, (0.0f32, 0.0f32));
+    for cmd in cmds {
+        match *cmd {
+            PathCmd::MoveTo(x, y) => {
+                if let Some(s0) = start {
+                    if !push(cur, s0) {
+                        return false;
+                    }
+                }
+                cur = dev(x, y);
+                start = Some(cur);
+            }
+            PathCmd::LineTo(x, y) => {
+                let p = dev(x, y);
+                if !push(cur, p) {
+                    return false;
+                }
+                cur = p;
+            }
+            PathCmd::Close => {
+                if let Some(s0) = start {
+                    if !push(cur, s0) {
+                        return false;
+                    }
+                    cur = s0;
+                }
+            }
+            _ => return false,
+        }
+    }
+    if let Some(s0) = start {
+        if !push(cur, s0) {
+            return false;
+        }
+    }
+    if hs.is_empty()
+        || hs
+            .iter()
+            .any(|h| !(h.0.is_finite() && h.1.is_finite() && h.2.is_finite()))
+    {
+        return false;
+    }
+    // Slab borders: every end point; interior ones must be whole pixels.
+    let mut xs: Vec<f32> = hs.iter().flat_map(|h| [h.0, h.1]).collect();
+    xs.sort_by(f32::total_cmp);
+    xs.dedup();
+    let interior = &xs[1..xs.len() - 1];
+    if interior.iter().any(|x| (x - x.round()).abs() > 1e-3) {
+        return false;
+    }
+    // (slab, y, dir) for every slab an edge spans.
+    let mut cuts: Vec<(u32, f32, i32)> = Vec::with_capacity(hs.len());
+    for &(x0, x1, y, dir) in &hs {
+        let a = xs.partition_point(|v| *v < x0);
+        let b = xs.partition_point(|v| *v < x1);
+        for slab in a..b {
+            cuts.push((slab as u32, y, dir));
+        }
+    }
+    cuts.sort_unstable_by(|p, q| p.0.cmp(&q.0).then(p.1.total_cmp(&q.1)));
+    let mut i = 0;
+    while i < cuts.len() {
+        let slab = cuts[i].0;
+        let (l, r) = (xs[slab as usize], xs[slab as usize + 1]);
+        let mut wind = 0;
+        let mut top = 0.0f32;
+        while i < cuts.len() && cuts[i].0 == slab {
+            let (_, y, dir) = cuts[i];
+            let before = wind;
+            wind += dir;
+            if before == 0 && wind != 0 {
+                top = y;
+            } else if before != 0 && wind == 0 && y > top {
+                fill_rect_aa(pm, l, top, r, y, c, clip);
+            }
+            i += 1;
+        }
+    }
     true
 }
 
@@ -844,7 +989,9 @@ fn fill_polygon(
 struct Coverage {
     cov: Vec<u8>,
     acc: Vec<f32>,
-    span: Vec<(i32, i32)>,
+    /// Evaluated runs (first index, length, vertical?), so the blend pass
+    /// visits exactly the pixels near the line.
+    spans: Vec<(u32, u32, bool)>,
 }
 
 thread_local! {
@@ -892,10 +1039,9 @@ fn stroke_polyline(
 
     COVERAGE.with(|c| {
         let mut c = c.borrow_mut();
-        let Coverage { cov, span, .. } = &mut *c;
+        let Coverage { cov, spans, .. } = &mut *c;
         cov.resize((w * h) as usize, 0);
-        span.clear();
-        span.resize(h as usize, (i32::MAX, i32::MIN));
+        spans.clear();
 
         // Subpaths as index ranges of points.
         let mut pts: Vec<(f32, f32)> = Vec::with_capacity(cmds.len());
@@ -940,6 +1086,47 @@ fn stroke_polyline(
                 let y0 = ((a.1.min(b.1) - reach).floor() as i32).max(0);
                 let y1 = ((a.1.max(b.1) + reach).ceil() as i32).min(h - 1);
                 let (bx0, bx1) = (a.0.min(b.0) - reach, a.0.max(b.0) + reach);
+                // Steep segments with round ends: walk columns (a steep, short
+                // segment covers a few columns but many rows).
+                if cap0.is_none() && cap1.is_none() && uy.abs() > ux.abs() {
+                    let px0 = ((bx0 - 0.5).floor() as i32).max(0);
+                    let px1 = ((bx1 - 0.5).ceil() as i32).min(w - 1);
+                    let (by0, by1) = (a.1.min(b.1) - reach, a.1.max(b.1) + reach);
+                    for px in px0..=px1 {
+                        let qx = px as f32 + 0.5 - a.0;
+                        // y-range of the band |lateral| <= reach in this column.
+                        let (mut lo, mut hi) = (by0, by1);
+                        if ux.abs() > 1e-6 {
+                            let e0 = a.1 + (qx * uy - reach) / ux;
+                            let e1 = a.1 + (qx * uy + reach) / ux;
+                            lo = lo.max(e0.min(e1));
+                            hi = hi.min(e0.max(e1));
+                        }
+                        let ya = ((lo - 0.5).floor() as i32).max(0);
+                        let yb = ((hi - 0.5).ceil() as i32).min(h - 1);
+                        let mut idx = ya as usize * w as usize + px as usize;
+                        if ya <= yb {
+                            spans.push((idx as u32, (yb - ya + 1) as u32, true));
+                        }
+                        for py in ya..=yb {
+                            let qy = py as f32 + 0.5 - a.1;
+                            let along = qx * ux + qy * uy;
+                            let lat = qy * ux - qx * uy;
+                            let o = (-along).max(along - len).max(0.0);
+                            let d = if o > 0.0 {
+                                (lat * lat + o * o).sqrt()
+                            } else {
+                                lat.abs()
+                            };
+                            let k = (r + 0.5 - d).clamp(0.0, 1.0);
+                            let v = (k * fade * 255.0 + 0.5) as u8;
+                            let cell = &mut cov[idx];
+                            *cell = (*cell).max(v);
+                            idx += w as usize;
+                        }
+                    }
+                    continue;
+                }
                 for py in y0..=y1 {
                     let yc = py as f32 + 0.5;
                     // x-range of the band |lateral| <= reach on this row.
@@ -958,8 +1145,24 @@ fn stroke_polyline(
                         continue;
                     }
                     let row = (py * w) as usize;
-                    let sp = &mut span[py as usize];
-                    let mut touched = false;
+                    spans.push(((row + x0 as usize) as u32, (x1 - x0 + 1) as u32, false));
+                    if cap0.is_none() && cap1.is_none() {
+                        // Round ends: distance to the segment, branch-free so
+                        // the row vectorizes.
+                        let qy = yc - a.1;
+                        let cells = &mut cov[row + x0 as usize..=row + x1 as usize];
+                        for (i, cell) in cells.iter_mut().enumerate() {
+                            let qx = (x0 + i as i32) as f32 + 0.5 - a.0;
+                            let along = qx * ux + qy * uy;
+                            let lat = qy * ux - qx * uy;
+                            let o = (-along).max(along - len).max(0.0);
+                            let d = (lat * lat + o * o).sqrt();
+                            let k = (r + 0.5 - d).clamp(0.0, 1.0);
+                            let v = (k * fade * 255.0 + 0.5) as u8;
+                            *cell = (*cell).max(v);
+                        }
+                        continue;
+                    }
                     for px in x0..=x1 {
                         let (qx, qy) = (px as f32 + 0.5 - a.0, yc - a.1);
                         let along = qx * ux + qy * uy;
@@ -985,12 +1188,7 @@ fn stroke_polyline(
                             if v > *cell {
                                 *cell = v;
                             }
-                            touched = true;
                         }
-                    }
-                    if touched {
-                        sp.0 = sp.0.min(x0);
-                        sp.1 = sp.1.max(x1);
                     }
                 }
             }
@@ -1000,29 +1198,46 @@ fn stroke_polyline(
         let ca = (s.color.a.clamp(0.0, 1.0) * 255.0).round() as u32;
         let rgb = [s.color.r as u32, s.color.g as u32, s.color.b as u32];
         let dst = pm.data_mut();
-        for (py, &(x0, x1)) in span.iter().enumerate() {
-            if x0 > x1 {
-                continue;
-            }
-            let row = py * w as usize;
-            for px in x0 as usize..=x1 as usize {
-                let i = row + px;
+        let wu = w as usize;
+        for &(start, len, vertical) in spans.iter() {
+            let step = if vertical { wu } else { 1 };
+            let (mut px, mut py) = (start as usize % wu, start as usize / wu);
+            let (ex, ey) = if vertical {
+                (px + 1, py + len as usize)
+            } else {
+                (px + len as usize, py + 1)
+            };
+            // Spans inside the clip need no per-pixel clip coverage.
+            let inside = px as f32 >= clip.l
+                && ex as f32 <= clip.r
+                && py as f32 >= clip.t
+                && ey as f32 <= clip.b;
+            let mut i = start as usize;
+            for _ in 0..len {
                 let k = std::mem::take(&mut cov[i]) as u32;
-                if k == 0 {
-                    continue;
+                if k != 0 {
+                    let m = if inside {
+                        255
+                    } else {
+                        clip.cov(px as i32, py as i32)
+                    };
+                    let a = (k * ca * m + 255 * 255 / 2) / (255 * 255);
+                    if a > 0 {
+                        let inv = 255 - a;
+                        let di = i * 4;
+                        for j in 0..3 {
+                            dst[di + j] = ((rgb[j] * a + dst[di + j] as u32 * inv + 127) / 255)
+                                .min(255) as u8;
+                        }
+                        dst[di + 3] = (a + (dst[di + 3] as u32 * inv + 127) / 255).min(255) as u8;
+                    }
                 }
-                let m = clip.cov(px as i32, py as i32);
-                let a = (k * ca * m + 255 * 255 / 2) / (255 * 255);
-                if a == 0 {
-                    continue;
+                i += step;
+                if vertical {
+                    py += 1;
+                } else {
+                    px += 1;
                 }
-                let inv = 255 - a;
-                let di = i * 4;
-                for j in 0..3 {
-                    dst[di + j] =
-                        ((rgb[j] * a + dst[di + j] as u32 * inv + 127) / 255).min(255) as u8;
-                }
-                dst[di + 3] = (a + (dst[di + 3] as u32 * inv + 127) / 255).min(255) as u8;
             }
         }
     });
@@ -1063,6 +1278,164 @@ struct Ctx<'a> {
     clip: Clip,
     /// Mask of `clip` for tiny-skia calls, built on demand.
     mask: Option<(Clip, Mask)>,
+    /// Sprites of `Node::Instances` templates.
+    instance_sprites: Vec<InstanceSprite>,
+    /// Opaque background while nothing has been drawn yet: a rectangle
+    /// filled with it (a plot area on the same background) is skipped.
+    pristine: Option<Color>,
+}
+
+/// A template rendered at one quarter-pixel offset: (template address,
+/// qx, qy, pixels, position of the template origin in the sprite).
+type InstanceSprite = (usize, u8, u8, Sprite, i32, i32);
+
+/// A sprite with the non-empty span of each row, so blitting skips the
+/// transparent corners of round markers.
+struct Sprite {
+    pm: Pixmap,
+    spans: Vec<(u16, u16)>,
+}
+
+impl Sprite {
+    fn new(pm: Pixmap) -> Self {
+        let w = pm.width() as usize;
+        let spans = pm
+            .data()
+            .chunks(w * 4)
+            .map(|row| {
+                let a = |i: &usize| row[i * 4 + 3] != 0;
+                let s0 = (0..w).find(a).unwrap_or(w);
+                let s1 = (0..w).rev().find(a).map_or(s0, |i| i + 1);
+                (s0 as u16, s1.max(s0) as u16)
+            })
+            .collect();
+        Sprite { pm, spans }
+    }
+
+    /// Source-over at integer position `(x, y)`.
+    fn blit(&self, pm: &mut PixmapMut<'_>, x: i32, y: i32, clip: Clip) {
+        let (w, h) = (pm.width() as i32, pm.height() as i32);
+        let sw = self.pm.width() as i32;
+        let inside = x as f32 >= clip.l
+            && (x + sw) as f32 <= clip.r
+            && y as f32 >= clip.t
+            && (y + self.spans.len() as i32) as f32 <= clip.b
+            && x >= 0
+            && x + sw <= w;
+        if !inside {
+            return blit(pm, &self.pm, x, y, clip);
+        }
+        let src = self.pm.data();
+        let dst = pm.data_mut();
+        for (sy, &(s0, s1)) in self.spans.iter().enumerate() {
+            let py = y + sy as i32;
+            if py < 0 || py >= h || s0 >= s1 {
+                continue;
+            }
+            let (s0, s1) = (s0 as usize, s1 as usize);
+            let srow = &src[(sy * sw as usize + s0) * 4..(sy * sw as usize + s1) * 4];
+            let d0 = ((py * w + x) as usize + s0) * 4;
+            let drow = &mut dst[d0..d0 + srow.len()];
+            for (s, d) in srow
+                .as_chunks::<4>()
+                .0
+                .iter()
+                .zip(drow.as_chunks_mut::<4>().0)
+            {
+                match s[3] {
+                    255 => *d = *s,
+                    0 => {}
+                    sa => {
+                        let inv = 255 - sa as u32;
+                        for c in 0..4 {
+                            d[c] = (s[c] as u32 + div255(d[c] as u32 * inv)).min(255) as u8;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Bounds of a marker template around its origin, including the stroke;
+/// `None` for nodes that are not drawn as sprites.
+pub(crate) fn template_bounds(n: &Node) -> Option<(f64, f64, f64, f64)> {
+    let sw = |s: &Option<Stroke>| s.as_ref().map_or(0.0, |s| s.width);
+    match n {
+        Node::Circle {
+            cx, cy, r, stroke, ..
+        } => {
+            let e = r + sw(stroke) / 2.0;
+            Some((cx - e, cy - e, cx + e, cy + e))
+        }
+        Node::Rect {
+            x, y, w, h, stroke, ..
+        } => {
+            let e = sw(stroke) / 2.0;
+            let (x0, x1) = (x.min(x + w), x.max(x + w));
+            let (y0, y1) = (y.min(y + h), y.max(y + h));
+            Some((x0 - e, y0 - e, x1 + e, y1 + e))
+        }
+        Node::Path { cmds, stroke, .. } => {
+            let (mut l, mut t, mut r, mut b) = (
+                f64::INFINITY,
+                f64::INFINITY,
+                f64::NEG_INFINITY,
+                f64::NEG_INFINITY,
+            );
+            let mut add = |x: f64, y: f64, e: f64| {
+                (l, t, r, b) = (l.min(x - e), t.min(y - e), r.max(x + e), b.max(y + e));
+            };
+            for c in cmds {
+                match *c {
+                    PathCmd::MoveTo(x, y) | PathCmd::LineTo(x, y) => add(x, y, 0.0),
+                    PathCmd::CubicTo(a, bb, c2, d, x, y) => {
+                        add(a, bb, 0.0);
+                        add(c2, d, 0.0);
+                        add(x, y, 0.0);
+                    }
+                    PathCmd::ArcTo(rx, ry, _, _, x, y) => add(x, y, 2.0 * rx.abs().max(ry.abs())),
+                    PathCmd::Close => {}
+                }
+            }
+            // Miter joins can reach a few stroke widths beyond the outline.
+            let e = sw(stroke) * 2.0;
+            (l.is_finite() && t.is_finite()).then_some((l - e, t - e, r + e, b + e))
+        }
+        _ => None,
+    }
+}
+
+/// Renders `template` at device scale `scale` with its origin at
+/// quarter-pixel offset `(qx, qy)`: the sprite and the origin's integer
+/// position in it. Shared by the CPU and GPU backends.
+pub(crate) fn instance_sprite(
+    fonts: &FontSet,
+    template: &Node,
+    scale: f32,
+    qx: u8,
+    qy: u8,
+) -> Option<(Pixmap, i32, i32)> {
+    let (l, t, r, b) = template_bounds(template)?;
+    let pad = 2.0;
+    let x0 = (-l as f32 * scale).ceil() + pad;
+    let y0 = (-t as f32 * scale).ceil() + pad;
+    let w = (x0 + r as f32 * scale + pad + 1.0).ceil().max(1.0) as u32;
+    let h = (y0 + b as f32 * scale + pad + 1.0).ceil().max(1.0) as u32;
+    if w > 4096 || h > 4096 {
+        return None;
+    }
+    let mut sp = Pixmap::new(w, h)?;
+    let (fx, fy) = ((qx as f32 + 0.5) / 4.0, (qy as f32 + 0.5) / 4.0);
+    let mut ctx = Ctx::new(
+        fonts,
+        0,
+        Transform::from_row(scale, 0.0, 0.0, scale, x0 + fx, y0 + fy),
+        w,
+        h,
+    );
+    ctx.node(&mut sp.as_mut(), template, &HashMap::default());
+    Some((sp, x0 as i32, y0 as i32))
 }
 
 type CircleKey = (u32, u32, u32, u32);
@@ -1083,7 +1456,79 @@ fn circle_key(r: f64, fill: Option<Color>, stroke: &Option<Stroke>) -> Option<Ci
     ))
 }
 
-impl Ctx<'_> {
+impl<'a> Ctx<'a> {
+    fn new(fonts: &'a FontSet, font_key: usize, base: Transform, w: u32, h: u32) -> Self {
+        Ctx {
+            fonts,
+            font_key,
+            base,
+            sprites: Vec::new(),
+            last_sprite: 0,
+            last_count: None,
+            clip: Clip::new(0.0, 0.0, w as f32, h as f32),
+            mask: None,
+            instance_sprites: Vec::new(),
+            pristine: None,
+        }
+    }
+
+    /// `Node::Instances`: the template from cached quarter-pixel sprites,
+    /// or drawn at each offset when it cannot be a sprite.
+    fn instances(
+        &mut self,
+        pm: &mut PixmapMut<'_>,
+        template: &Node,
+        offsets: impl IntoIterator<Item = (f32, f32)>,
+        counts: &HashMap<(u32, u32, u32, u32), usize>,
+    ) {
+        let ts = self.base;
+        let key = template as *const Node as usize;
+        if ts.kx != 0.0 || ts.ky != 0.0 || template_bounds(template).is_none() {
+            for (x, y) in offsets {
+                self.base = ts.pre_translate(x, y);
+                self.node(pm, template, counts);
+            }
+            self.base = ts;
+            return;
+        }
+        let mut last = usize::MAX;
+        for (x, y) in offsets {
+            let gx = x * ts.sx + ts.tx;
+            let gy = y * ts.sy + ts.ty;
+            if !(gx.is_finite() && gy.is_finite()) {
+                continue;
+            }
+            let (ix, iy) = (gx.floor(), gy.floor());
+            let q = |f: f32| ((f * 4.0) as u8).min(3);
+            let (qx, qy) = (q(gx - ix), q(gy - iy));
+            let hit = self
+                .instance_sprites
+                .get(last)
+                .is_some_and(|s| s.0 == key && s.1 == qx && s.2 == qy);
+            if !hit {
+                last = match self
+                    .instance_sprites
+                    .iter()
+                    .position(|s| s.0 == key && s.1 == qx && s.2 == qy)
+                {
+                    Some(i) => i,
+                    None => {
+                        let Some((sp, ox, oy)) =
+                            instance_sprite(self.fonts, template, ts.sx, qx, qy)
+                        else {
+                            continue;
+                        };
+                        self.instance_sprites
+                            .push((key, qx, qy, Sprite::new(sp), ox, oy));
+                        self.instance_sprites.len() - 1
+                    }
+                };
+            }
+            let (_, _, _, sp, ox, oy) = &self.instance_sprites[last];
+            sp.blit(pm, ix as i32 - ox, iy as i32 - oy, self.clip);
+        }
+    }
+
     fn draw(
         &mut self,
         pm: &mut PixmapMut<'_>,
@@ -1157,6 +1602,20 @@ impl Ctx<'_> {
         n: &Node,
         counts: &HashMap<(u32, u32, u32, u32), usize>,
     ) {
+        if let Some(bg) = self.pristine {
+            if let Node::Rect {
+                rx,
+                fill: Some(f),
+                stroke: None,
+                ..
+            } = n
+            {
+                if *rx <= 0.0 && *f == bg {
+                    return;
+                }
+            }
+            self.pristine = None;
+        }
         let ts = self.base;
         match n {
             Node::Path { cmds, fill, stroke } => {
@@ -1203,7 +1662,10 @@ impl Ctx<'_> {
                 // Straight-edged fills (areas, envelopes) and polylines
                 // without tiny-skia.
                 let filled = match fill.filter(|c| c.is_visible()) {
-                    Some(c) => fill_polygon(pm, cmds, c, ts, self.clip),
+                    Some(c) => {
+                        fill_rectilinear(pm, cmds, c, ts, self.clip)
+                            || fill_polygon(pm, cmds, c, ts, self.clip)
+                    }
                     None => true,
                 };
                 if filled {
@@ -1384,6 +1846,20 @@ impl Ctx<'_> {
             } => self.with_mask(pm, |c, pm, m| {
                 c.image(pm, *x, *y, *w, *h, image, *smooth, m)
             }),
+            Node::Instances { template, offsets } => {
+                self.instances(pm, template, offsets.iter().copied(), counts)
+            }
+            Node::MarkerGrid {
+                template,
+                x,
+                y,
+                step,
+                cols,
+                bits,
+            } => {
+                let pos = super::scene::grid_positions(*x, *y, *step, *cols, bits);
+                self.instances(pm, template, pos, counts)
+            }
             Node::Group {
                 children,
                 clip,
@@ -1542,6 +2018,38 @@ pub(crate) fn render_pixmap_threads(
         *pixmap = Pixmap::new(w, h);
     }
     let pm = pixmap.as_mut()?;
+    render_bytes(scene, fonts, scale, pm.data_mut(), w, h, threads);
+    Some(())
+}
+
+/// Device size of `scene` at `scale`.
+pub(crate) fn device_size(scene: &Scene, scale: f64) -> (u32, u32) {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
+    let w = (scene.width * scale).round().max(1.0) as u32;
+    let h = (scene.height * scale).round().max(1.0) as u32;
+    (w, h)
+}
+
+/// Renders into `data` (`w × h` premultiplied RGBA, any prior content) on
+/// up to `threads` threads.
+pub(crate) fn render_bytes(
+    scene: &Scene,
+    fonts: &FontSet,
+    scale: f64,
+    data: &mut [u8],
+    w: u32,
+    h: u32,
+    threads: usize,
+) {
+    let scale = if scale.is_finite() && scale > 0.0 {
+        scale
+    } else {
+        1.0
+    };
     let mut counts = HashMap::default();
     count_circles(&scene.nodes, &mut counts);
     let font_key = fonts.font.as_ref().map_or(0, |f| f as *const _ as usize);
@@ -1554,30 +2062,22 @@ pub(crate) fn render_pixmap_threads(
             return;
         };
         band.fill(background);
-        let mut ctx = Ctx {
-            fonts,
-            font_key,
-            base: Transform::from_row(scale as f32, 0.0, 0.0, scale as f32, 0.0, -(y0 as f32)),
-            sprites: Vec::new(),
-            last_sprite: 0,
-            last_count: None,
-            clip: Clip::new(0.0, 0.0, w as f32, bh as f32),
-            mask: None,
-        };
+        let base = Transform::from_row(scale as f32, 0.0, 0.0, scale as f32, 0.0, -(y0 as f32));
+        let mut ctx = Ctx::new(fonts, font_key, base, w, bh);
+        ctx.pristine = scene.background.filter(|c| c.a >= 1.0);
         ctx.draw(&mut band, &scene.nodes, &counts);
     };
     let chunk = rows * w as usize * 4;
     if bands == 1 {
-        draw_band(0, pm.data_mut());
+        draw_band(0, data);
     } else {
         std::thread::scope(|sc| {
-            for (i, data) in pm.data_mut().chunks_mut(chunk).enumerate() {
+            for (i, data) in data.chunks_mut(chunk).enumerate() {
                 let draw_band = &draw_band;
                 sc.spawn(move || draw_band(i * rows, data));
             }
         });
     }
-    Some(())
 }
 
 /// Converts premultiplied RGBA rows (`stride` bytes apart) row by row on
@@ -1645,23 +2145,83 @@ pub(crate) fn copy_rows_u32(
     });
 }
 
-/// Premultiplied RGBA rows → `0x00RRGGBB` composited on white.
-pub(crate) fn premul_to_0rgb(
-    src: &[u8],
-    stride: usize,
-    w: usize,
-    h: usize,
-    out: &mut Vec<u32>,
-    threads: usize,
-) {
-    out.resize(w * h, 0);
-    par_rows(src, stride, h, out, w, threads, |s, d| {
-        for (o, p) in d.iter_mut().zip(s.as_chunks::<4>().0) {
+/// Converts `w × h` premultiplied RGBA pixels stored in `buf` (as bytes)
+/// to `0x00RRGGBB` composited on white, in place.
+pub(crate) fn premul_to_0rgb_in_place(buf: &mut [u32], threads: usize) {
+    let n = buf.len();
+    let threads = threads.clamp(1, (n / 65_536).max(1));
+    let convert = |d: &mut [u32]| {
+        #[cfg(target_arch = "x86_64")]
+        let done = if std::arch::is_x86_feature_detected!("avx2") {
+            // SAFETY: AVX2 support was checked at run time.
+            unsafe { premul_to_0rgb_in_place_avx2(d) }
+        } else {
+            0
+        };
+        #[cfg(not(target_arch = "x86_64"))]
+        let done = 0;
+        for o in &mut d[done..] {
+            let p = o.to_ne_bytes();
             let inv = 255 - p[3] as u32;
             let c = |v: u8| (v as u32 + inv).min(255);
             *o = c(p[0]) << 16 | c(p[1]) << 8 | c(p[2]);
         }
+    };
+    if threads == 1 {
+        return convert(buf);
+    }
+    let per = n.div_ceil(threads);
+    std::thread::scope(|sc| {
+        for d in buf.chunks_mut(per) {
+            let convert = &convert;
+            sc.spawn(move || convert(d));
+        }
     });
+}
+
+/// In-place AVX2 form of [`premul_to_0rgb_in_place`] (8 pixels per step;
+/// opaque groups are a byte shuffle). Returns the pixels converted.
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn premul_to_0rgb_in_place_avx2(d: &mut [u32]) -> usize {
+    use std::arch::x86_64::*;
+    let n = d.len() / 8 * 8;
+    let shuf = _mm256_setr_epi8(
+        2, 1, 0, -1, 6, 5, 4, -1, 10, 9, 8, -1, 14, 13, 12, -1, 2, 1, 0, -1, 6, 5, 4, -1, 10, 9, 8,
+        -1, 14, 13, 12, -1,
+    );
+    let alpha = _mm256_set1_epi32(0xff00_0000u32 as i32);
+    let mut i = 0;
+    while i < n {
+        // SAFETY: i + 8 <= n elements are in bounds.
+        unsafe {
+            let p = d.as_mut_ptr().add(i).cast::<__m256i>();
+            let v = _mm256_loadu_si256(p);
+            if _mm256_movemask_epi8(_mm256_cmpeq_epi32(_mm256_and_si256(v, alpha), alpha)) == -1 {
+                _mm256_storeu_si256(p, _mm256_shuffle_epi8(v, shuf));
+            } else {
+                for o in &mut d[i..i + 8] {
+                    let q = o.to_ne_bytes();
+                    let inv = 255 - q[3] as u32;
+                    let c = |v: u8| (v as u32 + inv).min(255);
+                    *o = c(q[0]) << 16 | c(q[1]) << 8 | c(q[2]);
+                }
+            }
+        }
+        i += 8;
+    }
+    n
+}
+
+/// Demultiplies premultiplied RGBA bytes in place (straight alpha).
+pub(crate) fn demultiply_in_place(buf: &mut [u8]) {
+    for p in buf.as_chunks_mut::<4>().0 {
+        let a = p[3];
+        if a != 255 && a != 0 {
+            let un = |c: u8| ((c as u16 * 255 + a as u16 / 2) / a as u16).min(255) as u8;
+            *p = [un(p[0]), un(p[1]), un(p[2]), a];
+        }
+    }
 }
 
 /// Premultiplied RGBA rows → straight-alpha [`Pixels`].
@@ -1677,6 +2237,21 @@ pub(crate) fn premul_to_pixels(
     out.height = h as u32;
     out.rgba.resize(w * h * 4, 0);
     par_rows(src, stride, h, &mut out.rgba, w * 4, threads, |s, d| {
+        // Runs of opaque pixels are plain copies (16 bytes at a time).
+        let mut done = 0;
+        for (dc, sc) in d
+            .as_chunks_mut::<16>()
+            .0
+            .iter_mut()
+            .zip(s.as_chunks::<16>().0)
+        {
+            if sc[3] != 255 || sc[7] != 255 || sc[11] != 255 || sc[15] != 255 {
+                break;
+            }
+            *dc = *sc;
+            done += 16;
+        }
+        let (d, s) = (&mut d[done..], &s[done..]);
         for (dst, s) in d
             .as_chunks_mut::<4>()
             .0
@@ -1692,12 +2267,6 @@ pub(crate) fn premul_to_pixels(
             };
         }
     });
-}
-
-/// Converts a premultiplied pixmap into `0x00RRGGBB` composited on white.
-pub(crate) fn to_0rgb(pm: &Pixmap, out: &mut Vec<u32>, threads: usize) {
-    let w = pm.width() as usize;
-    premul_to_0rgb(pm.data(), w * 4, w, pm.height() as usize, out, threads);
 }
 
 /// Copies a premultiplied pixmap into straight-alpha RGBA.
@@ -1817,6 +2386,98 @@ mod tests {
             // ones only in single pixels where self-intersecting edges cross.
             assert!(mean < 1.0 && big < 40, "case {case}: mean {mean} big {big}");
         }
+    }
+
+    #[test]
+    #[allow(clippy::needless_range_loop)]
+    fn rectilinear_fill_matches_polygon_fill() {
+        let mut seed = 99u64;
+        let mut rnd = |lo: f64, hi: f64| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            lo + (seed % 10_000) as f64 / 10_000.0 * (hi - lo)
+        };
+        let c = Color::rgba(200, 30, 60, 0.9);
+        for case in 0..20 {
+            // Column envelope: top chain left→right, bottom chain back.
+            let x0 = 3.3 + case as f64 * 0.04;
+            let cols = 40;
+            let tops: Vec<f64> = (0..cols).map(|_| rnd(2.0, 30.0)).collect();
+            let bots: Vec<f64> = tops.iter().map(|t| t + rnd(0.5, 25.0)).collect();
+            let edge = |i: usize| if i == 0 { x0 } else { 4.0 + i as f64 };
+            let right = |i: usize| {
+                if i + 1 == cols {
+                    4.0 + cols as f64 - 0.4
+                } else {
+                    5.0 + i as f64
+                }
+            };
+            let mut cmds = vec![PathCmd::MoveTo(edge(0), tops[0])];
+            for i in 0..cols {
+                cmds.push(PathCmd::LineTo(edge(i), tops[i]));
+                cmds.push(PathCmd::LineTo(right(i), tops[i]));
+            }
+            for i in (0..cols).rev() {
+                cmds.push(PathCmd::LineTo(right(i), bots[i]));
+                cmds.push(PathCmd::LineTo(edge(i), bots[i]));
+            }
+            cmds.push(PathCmd::Close);
+            let clip = Clip::new(2.5, 1.0, 58.0, 62.0);
+            let mut a = Pixmap::new(64, 64).unwrap();
+            a.fill(sk::Color::WHITE);
+            let mut b = a.clone();
+            assert!(fill_rectilinear(
+                &mut a.as_mut(),
+                &cmds,
+                c,
+                Transform::identity(),
+                clip
+            ));
+            assert!(fill_polygon(
+                &mut b.as_mut(),
+                &cmds,
+                c,
+                Transform::identity(),
+                clip
+            ));
+            let worst = a
+                .data()
+                .iter()
+                .zip(b.data())
+                .map(|(p, q)| p.abs_diff(*q))
+                .max();
+            assert!(worst <= Some(2), "case {case}: {worst:?}");
+        }
+        // Fractional interior borders are refused (they would leave seams).
+        let cmds: Vec<PathCmd> = [
+            (0.0, 0.0),
+            (2.5, 0.0),
+            (2.5, 1.0),
+            (5.0, 1.0),
+            (5.0, 3.0),
+            (0.0, 3.0),
+        ]
+        .iter()
+        .cycle()
+        .take(18)
+        .enumerate()
+        .map(|(i, &(x, y))| {
+            if i == 0 {
+                PathCmd::MoveTo(x, y)
+            } else {
+                PathCmd::LineTo(x, y)
+            }
+        })
+        .collect();
+        let mut a = Pixmap::new(8, 8).unwrap();
+        assert!(!fill_rectilinear(
+            &mut a.as_mut(),
+            &cmds,
+            c,
+            Transform::identity(),
+            Clip::new(0.0, 0.0, 8.0, 8.0)
+        ));
     }
 
     #[test]

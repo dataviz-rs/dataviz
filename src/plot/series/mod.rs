@@ -482,6 +482,12 @@ where
     }
 }
 
+/// `v` shortened to `n` items, keeping its allocation (no copy).
+pub(crate) fn truncated(mut v: Vec<f64>, n: usize) -> Vec<f64> {
+    v.truncate(n);
+    v
+}
+
 /// Anything that yields labels.
 pub trait IntoLabels {
     /// Collects the labels.

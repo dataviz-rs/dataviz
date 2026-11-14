@@ -220,3 +220,34 @@ fn fs_post(@builtin(position) pos: vec4<f32>) -> @location(0) vec4<f32> {
     }
     return c;
 }
+
+// ---- marker sprites: pixel-aligned quads copying an RGBA sprite atlas ----
+
+struct SpriteOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) dst: vec4<f32>,
+    @location(1) uv: vec2<f32>,
+    @location(2) clip: vec4<f32>,
+    @location(3) alpha: f32,
+};
+
+@vertex
+fn vs_sprite(@builtin(vertex_index) vi: u32,
+             @location(0) dst: vec4<f32>,
+             @location(1) uv: vec2<f32>,
+             @location(2) clip: vec4<f32>,
+             @location(3) alpha: f32) -> SpriteOut {
+    var o: SpriteOut;
+    o.pos = ndc(corner(vi, dst));
+    o.dst = dst;
+    o.uv = uv;
+    o.clip = clip;
+    o.alpha = alpha;
+    return o;
+}
+
+@fragment
+fn fs_sprite(in: SpriteOut) -> @location(0) vec4<f32> {
+    let t = vec2<i32>(floor(in.uv + in.pos.xy - in.dst.xy));
+    return textureLoad(img, t, 0) * in.alpha * box_cov(in.pos.xy, in.clip);
+}
