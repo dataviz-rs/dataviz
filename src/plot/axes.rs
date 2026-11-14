@@ -1276,6 +1276,32 @@ fn anchor_points(nodes: &[Node]) -> Vec<(f64, f64)> {
                 }
             }
             Node::Group { children, .. } => v.extend(anchor_points(children)),
+            // Legend placement only needs the density: sample large sets.
+            Node::Instances { offsets, .. } => {
+                let k = (offsets.len() / 20_000).max(1);
+                v.extend(
+                    offsets
+                        .iter()
+                        .step_by(k)
+                        .map(|&(x, y)| (x as f64, y as f64)),
+                )
+            }
+            Node::MarkerGrid {
+                x,
+                y,
+                step,
+                cols,
+                bits,
+                ..
+            } => {
+                let n: usize = bits.iter().map(|w| w.count_ones() as usize).sum();
+                let k = (n / 20_000).max(1);
+                v.extend(
+                    crate::plot::scene::grid_positions(*x, *y, *step, *cols, bits)
+                        .step_by(k)
+                        .map(|(x, y)| (x as f64, y as f64)),
+                )
+            }
         }
     }
     v

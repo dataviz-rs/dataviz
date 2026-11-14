@@ -76,6 +76,7 @@ struct Gpu {
     shape: wgpu::RenderPipeline,
     glyph: wgpu::RenderPipeline,
     image: wgpu::RenderPipeline,
+    sprite: wgpu::RenderPipeline,
     post: wgpu::RenderPipeline,
     nearest: wgpu::Sampler,
     linear: wgpu::Sampler,
@@ -92,7 +93,7 @@ struct Gpu {
 struct State {
     targets: Option<Targets>,
     atlas: Atlas,
-    buffers: [Option<wgpu::Buffer>; 5],
+    buffers: [Option<wgpu::Buffer>; 6],
 }
 
 struct Targets {
@@ -337,6 +338,12 @@ impl Gpu {
             a(2, Float32x4, 24),
             a(3, Float32x4, 40),
         ];
+        let sprite_attrs = [
+            a(0, Float32x4, 0),
+            a(1, Float32x2, 16),
+            a(2, Float32x4, 24),
+            a(3, Float32, 40),
+        ];
         let image_attrs = [a(0, Float32x4, 0), a(1, Float32x4, 16), a(2, Float32, 32)];
 
         let face = |pass_op| wgpu::StencilFaceState { pass_op, ..keep };
@@ -378,6 +385,13 @@ impl Gpu {
             "vs_glyph",
             "fs_glyph",
             &[Some(vertex_layout(56, &glyph_attrs, true))],
+            ds(keep, keep, 0),
+            blend.clone(),
+        );
+        let sprite = pipeline(
+            "vs_sprite",
+            "fs_sprite",
+            &[Some(vertex_layout(44, &sprite_attrs, true))],
             ds(keep, keep, 0),
             blend.clone(),
         );
@@ -504,6 +518,7 @@ impl Gpu {
             shape,
             glyph,
             image,
+            sprite,
             post,
             globals,
             bind,
@@ -607,6 +622,7 @@ enum Cmd {
     Glyphs(Range<u32>),
     Fill { stencil: Range<u32>, cover: u32 },
     Image { instance: u32, bind: usize },
+    Sprites { instances: Range<u32>, bind: usize },
 }
 
 /// Geometry of one frame.
@@ -618,6 +634,7 @@ struct Frame {
     shapes: Vec<f32>,
     glyphs: Vec<f32>,
     images: Vec<f32>,
+    sprites: Vec<f32>,
     binds: Vec<wgpu::BindGroup>,
 }
 
@@ -1043,6 +1060,19 @@ impl Builder<'_> {
                 image,
                 smooth,
             } => self.image(*x, *y, *w, *h, image, *smooth, clip, alpha),
+            Node::Instances { template, offsets } => self.instances(template, offsets, clip, alpha),
+            Node::MarkerGrid {
+                template,
+                x,
+                y,
+                step,
+                cols,
+                bits,
+            } => {
+                let offsets: Vec<(f32, f32)> =
+                    super::scene::grid_positions(*x, *y, *step, *cols, bits).collect();
+                self.instances(template, &offsets, clip, alpha)
+            }
             Node::Group {
                 children,
                 clip: c,
@@ -1061,6 +1091,169 @@ impl Builder<'_> {
                     ];
                 }
                 self.nodes(children, clip, alpha * opacity.clamp(0.0, 1.0) as f32);
+            }
+        }
+    }
+
+    /// Markers: analytic circles/squares, otherwise CPU-rendered sprites at
+    /// the 16 quarter-pixel offsets, drawn as one instanced batch.
+    fn instances(&mut self, template: &Node, offsets: &[(f32, f32)], clip: [f32; 4], alpha: f32) {
+        let k = self.base.sx;
+        let dev = |b: &Self, x: f32, y: f32| (x * b.base.sx + b.base.tx, y * b.base.sy + b.base.ty);
+        match template {
+            Node::Circle {
+                cx,
+                cy,
+                r,
+                fill,
+                stroke,
+            } if stroke.as_ref().is_none_or(|s| s.dash.is_empty()) => {
+                let fc = fill.map_or([0.0; 4], |f| premul(f, alpha));
+                let (sc, sw) = stroke
+                    .as_ref()
+                    .filter(|s| s.color.is_visible() && s.width > 0.0)
+                    .map_or(([0.0; 4], 0.0), |s| {
+                        (premul(s.color, alpha), s.width as f32 * k)
+                    });
+                if fc[3] <= 0.0 && sc[3] <= 0.0 {
+                    return;
+                }
+                for &(x, y) in offsets {
+                    let (px, py) = dev(self, x + *cx as f32, y + *cy as f32);
+                    if px.is_finite() && py.is_finite() {
+                        self.frame
+                            .push_shape([px, py, *r as f32 * k, sw], fc, sc, clip, 1);
+                    }
+                }
+            }
+            Node::Rect {
+                x,
+                y,
+                w,
+                h,
+                rx,
+                fill: Some(f),
+                stroke: None,
+            } if *rx <= 0.0 => {
+                let c = premul(*f, alpha);
+                let (x0, x1) = (x.min(x + w) as f32, x.max(x + w) as f32);
+                let (y0, y1) = (y.min(y + h) as f32, y.max(y + h) as f32);
+                for &(ox, oy) in offsets {
+                    let (l, t) = dev(self, ox + x0, oy + y0);
+                    let (r, b) = dev(self, ox + x1, oy + y1);
+                    self.rect(l, t, r, b, c, clip);
+                }
+            }
+            _ => {
+                if raster::template_bounds(template).is_none() {
+                    // Not a sprite: draw it at every offset.
+                    let base = self.base;
+                    for &(x, y) in offsets {
+                        self.base = base.pre_translate(x, y);
+                        self.node(template, clip, alpha);
+                    }
+                    self.base = base;
+                    return;
+                }
+                // 4×4 atlas of the quarter-pixel variants.
+                let variants: Vec<_> = (0..16u8)
+                    .map(|i| raster::instance_sprite(self.fonts, template, k, i % 4, i / 4))
+                    .collect();
+                let Some(Some((first, ox, oy))) = variants.first() else {
+                    return;
+                };
+                let (w, h, ox, oy) = (first.width(), first.height(), *ox, *oy);
+                if variants.iter().any(|v| {
+                    v.as_ref()
+                        .is_none_or(|v| v.0.width() != w || v.0.height() != h)
+                }) {
+                    return;
+                }
+                let gpu = self.gpu;
+                let size = wgpu::Extent3d {
+                    width: w * 4,
+                    height: h * 4,
+                    depth_or_array_layers: 1,
+                };
+                let tex = gpu.device.create_texture(&wgpu::TextureDescriptor {
+                    label: None,
+                    size,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: COLOR,
+                    usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                    view_formats: &[],
+                });
+                for (i, v) in variants.iter().enumerate() {
+                    let Some((sp, _, _)) = v else { continue };
+                    gpu.queue.write_texture(
+                        wgpu::TexelCopyTextureInfo {
+                            texture: &tex,
+                            mip_level: 0,
+                            origin: wgpu::Origin3d {
+                                x: (i as u32 % 4) * w,
+                                y: (i as u32 / 4) * h,
+                                z: 0,
+                            },
+                            aspect: wgpu::TextureAspect::All,
+                        },
+                        sp.data(),
+                        wgpu::TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(w * 4),
+                            rows_per_image: Some(h),
+                        },
+                        wgpu::Extent3d {
+                            width: w,
+                            height: h,
+                            depth_or_array_layers: 1,
+                        },
+                    );
+                }
+                let view = tex.create_view(&Default::default());
+                let bind = gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &gpu.image_layout,
+                    entries: &[
+                        wgpu::BindGroupEntry {
+                            binding: 0,
+                            resource: wgpu::BindingResource::TextureView(&view),
+                        },
+                        wgpu::BindGroupEntry {
+                            binding: 1,
+                            resource: wgpu::BindingResource::Sampler(&gpu.nearest),
+                        },
+                    ],
+                });
+                self.frame.binds.push(bind);
+                let bind = self.frame.binds.len() - 1;
+                let start = (self.frame.sprites.len() / 11) as u32;
+                for &(x, y) in offsets {
+                    let (gx, gy) = dev(self, x, y);
+                    if !(gx.is_finite() && gy.is_finite()) {
+                        continue;
+                    }
+                    let (ix, iy) = (gx.floor(), gy.floor());
+                    let q = |f: f32| ((f * 4.0) as u32).min(3);
+                    let (qx, qy) = (q(gx - ix), q(gy - iy));
+                    let (l, t) = (ix - ox as f32, iy - oy as f32);
+                    self.frame
+                        .sprites
+                        .extend_from_slice(&[l, t, l + w as f32, t + h as f32]);
+                    self.frame
+                        .sprites
+                        .extend_from_slice(&[(qx * w) as f32, (qy * h) as f32]);
+                    self.frame.sprites.extend_from_slice(&clip);
+                    self.frame.sprites.push(alpha);
+                }
+                let end = (self.frame.sprites.len() / 11) as u32;
+                if end > start {
+                    self.frame.cmds.push(Cmd::Sprites {
+                        instances: start..end,
+                        bind,
+                    });
+                }
             }
         }
     }
@@ -1248,7 +1441,8 @@ fn render_inner(
     };
     gpu.queue
         .write_buffer(&gpu.globals, 0, bytes(&[w as f32, h as f32, mode, 0.0]));
-    let [b_stencil, b_cover, b_shapes, b_glyphs, b_images] = &mut state.buffers;
+    let [b_stencil, b_cover, b_shapes, b_glyphs, b_images, b_sprites] = &mut state.buffers;
+    let sprites = gpu.upload(b_sprites, &frame.sprites)?;
     let stencil = gpu.upload(b_stencil, &frame.stencil)?;
     let cover = gpu.upload(b_cover, &frame.cover)?;
     let shapes = gpu.upload(b_shapes, &frame.shapes)?;
@@ -1327,6 +1521,15 @@ fn render_inner(
                         pass.set_pipeline(&gpu.cover);
                         pass.set_vertex_buffer(0, cb.slice(..));
                         pass.draw(0..6, *c..*c + 1);
+                    }
+                }
+                Cmd::Sprites { instances, bind } => {
+                    if let Some(b) = sprites {
+                        pass.set_pipeline(&gpu.sprite);
+                        pass.set_bind_group(1, &frame.binds[*bind], &[]);
+                        pass.set_vertex_buffer(0, b.slice(..));
+                        pass.draw(0..6, instances.clone());
+                        pass.set_bind_group(1, &gpu.no_image, &[]);
                     }
                 }
                 Cmd::Image { instance, bind } => {

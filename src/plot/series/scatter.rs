@@ -41,8 +41,8 @@ impl Scatter {
     ) -> Self {
         let n = x.len().min(y.len());
         Self {
-            x: x[..n].to_vec(),
-            y: y[..n].to_vec(),
+            x: super::truncated(x, n),
+            y: super::truncated(y, n),
             label: None,
             color,
             marker: Marker::Circle,
@@ -63,8 +63,8 @@ impl Scatter {
     pub fn set_data(&mut self, x: impl super::IntoValues, y: impl super::IntoValues) -> &mut Self {
         let (x, y) = (x.into_values(), y.into_values());
         let n = x.len().min(y.len());
-        self.x = x[..n].to_vec();
-        self.y = y[..n].to_vec();
+        self.x = super::truncated(x, n);
+        self.y = super::truncated(y, n);
         self
     }
     /// Appends a point.
@@ -219,7 +219,9 @@ impl Series for Scatter {
             && self.names.is_none()
             && base.a >= 1.0;
         let margin = self.size * 2.0 + self.edge.as_ref().map_or(0.0, |e| e.width) + 4.0;
-        let (gx, gy) = (ctx.rect.x - margin, ctx.rect.y - margin);
+        // Grid aligned to whole units, so its cells are the rasterizer's
+        // quarter-pixel cells (at scale 1).
+        let (gx, gy) = ((ctx.rect.x - margin).floor(), (ctx.rect.y - margin).floor());
         let gw = ((ctx.rect.w + 2.0 * margin) * 4.0).ceil().max(1.0) as usize;
         let gh = ((ctx.rect.h + 2.0 * margin) * 4.0).ceil().max(1.0) as usize;
         let mut seen = if dedupe {
@@ -227,6 +229,39 @@ impl Series for Scatter {
         } else {
             Vec::new()
         };
+        // Identical markers: one template and a compact list of positions.
+        let uniform = self.sizes.is_none() && self.values.is_none() && self.names.is_none();
+        let template = (uniform && self.x.len() >= 64)
+            .then(|| {
+                self.marker
+                    .node(0.0, 0.0, self.size, base, self.edge.clone())
+            })
+            .flatten();
+        // Opaque identical markers: only the set of occupied cells matters
+        // (drawing order cannot change the result), so the positions are
+        // kept as the occupancy bitset itself (size independent of n).
+        if dedupe {
+            if let Some(template) = template {
+                for i in 0..self.x.len() {
+                    let (px, py) = ctx.point(self.x[i], self.y[i]);
+                    let (qx, qy) = (((px - gx) * 4.0).floor(), ((py - gy) * 4.0).floor());
+                    if qx >= 0.0 && qy >= 0.0 && (qx as usize) < gw && (qy as usize) < gh {
+                        let k = qy as usize * gw + qx as usize;
+                        seen[k / 64] |= 1 << (k % 64);
+                    }
+                }
+                ctx.push(Node::MarkerGrid {
+                    template: Box::new(template),
+                    x: gx,
+                    y: gy,
+                    step: 0.25,
+                    cols: gw,
+                    bits: seen,
+                });
+                return;
+            }
+        }
+        let mut offsets: Vec<(f32, f32)> = Vec::new();
         for i in 0..self.x.len() {
             let (px, py) = ctx.point(self.x[i], self.y[i]);
             if dedupe {
@@ -239,6 +274,12 @@ impl Series for Scatter {
                     continue;
                 }
                 seen[k / 64] |= 1 << (k % 64);
+            }
+            if template.is_some() {
+                if px.is_finite() && py.is_finite() {
+                    offsets.push((px as f32, py as f32));
+                }
+                continue;
             }
             let size = self
                 .sizes
@@ -266,6 +307,12 @@ impl Series for Scatter {
                 }),
                 None => ctx.push(node),
             }
+        }
+        if let Some(template) = template {
+            ctx.push(Node::Instances {
+                template: Box::new(template),
+                offsets,
+            });
         }
     }
 
@@ -369,6 +416,8 @@ mod dedupe_tests {
             .zip(&parts.rgba)
             .map(|(a, b)| a.abs_diff(*b))
             .max();
-        assert!(worst <= Some(1), "max difference {worst:?}");
+        // Same marker set; only 8-bit rounding of anti-aliased edges can
+        // depend on drawing order.
+        assert!(worst <= Some(2), "max difference {worst:?}");
     }
 }

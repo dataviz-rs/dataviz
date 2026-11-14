@@ -41,7 +41,7 @@ pub struct Bars {
 impl Bars {
     pub(crate) fn new(pos: Vec<f64>, heights: Vec<f64>, color: Color) -> Self {
         let n = pos.len().min(heights.len());
-        let pos = pos[..n].to_vec();
+        let pos = super::truncated(pos, n);
         // Default width: 80 % of the smallest spacing.
         let mut sorted: Vec<f64> = pos.iter().copied().filter(|v| v.is_finite()).collect();
         sorted.sort_by(f64::total_cmp);
@@ -57,7 +57,7 @@ impl Bars {
         };
         Self {
             pos,
-            heights: heights[..n].to_vec(),
+            heights: super::truncated(heights, n),
             bottoms: vec![0.0; n],
             width,
             offset: 0.0,

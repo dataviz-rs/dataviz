@@ -29,9 +29,60 @@ pub fn std_dev(values: &[f64]) -> f64 {
     (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (v.len() - 1) as f64).sqrt()
 }
 
-/// Count, minimum and maximum of the finite values, in one vectorizable
-/// pass (8 independent lanes).
+/// Count, minimum and maximum of the finite values.
+/// One thread: with AVX2 a single pass is memory bound and already faster
+/// than splitting it (which costs more CPU time in total).
 fn finite_min_max(values: &[f64]) -> (usize, f64, f64) {
+    finite_min_max_1(values)
+}
+
+/// [`finite_min_max_1`] with AVX2: 4 values per step, finiteness by
+/// `v - v == 0`. Returns (count, min, max, values processed).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+unsafe fn finite_min_max_avx2(values: &[f64]) -> (usize, f64, f64, usize) {
+    use std::arch::x86_64::*;
+    let (chunks, _) = values.as_chunks::<4>();
+    let (mut lo, mut hi) = (
+        _mm256_set1_pd(f64::INFINITY),
+        _mm256_set1_pd(f64::NEG_INFINITY),
+    );
+    let mut cnt = _mm256_setzero_si256();
+    let zero = _mm256_setzero_pd();
+    for c in chunks {
+        // SAFETY: `c` is 4 contiguous f64 (unaligned load).
+        let v = unsafe { _mm256_loadu_pd(c.as_ptr()) };
+        let ok = _mm256_cmp_pd::<_CMP_EQ_OQ>(_mm256_sub_pd(v, v), zero);
+        lo = _mm256_blendv_pd(lo, _mm256_min_pd(lo, v), ok);
+        hi = _mm256_blendv_pd(hi, _mm256_max_pd(hi, v), ok);
+        // ok lanes are all ones (-1 as i64): subtracting counts them.
+        cnt = _mm256_sub_epi64(cnt, _mm256_castpd_si256(ok));
+    }
+    let (mut l, mut h, mut k) = ([0.0f64; 4], [0.0f64; 4], [0i64; 4]);
+    // SAFETY: 4 × 8 bytes each.
+    unsafe {
+        _mm256_storeu_pd(l.as_mut_ptr(), lo);
+        _mm256_storeu_pd(h.as_mut_ptr(), hi);
+        _mm256_storeu_si256(k.as_mut_ptr().cast(), cnt);
+    }
+    let lo = l.iter().fold(f64::INFINITY, |a, b| a.min(*b));
+    let hi = h.iter().fold(f64::NEG_INFINITY, |a, b| a.max(*b));
+    (k.iter().sum::<i64>() as usize, lo, hi, chunks.len() * 4)
+}
+
+/// [`finite_min_max`] on one thread, in one vectorizable pass (8 lanes).
+fn finite_min_max_1(values: &[f64]) -> (usize, f64, f64) {
+    #[cfg(target_arch = "x86_64")]
+    if std::arch::is_x86_feature_detected!("avx2") {
+        // SAFETY: AVX2 support was checked at run time.
+        let (n, lo, hi, done) = unsafe { finite_min_max_avx2(values) };
+        let (m, l, h) = finite_min_max_scalar(&values[done..]);
+        return (n + m, lo.min(l), hi.max(h));
+    }
+    finite_min_max_scalar(values)
+}
+
+fn finite_min_max_scalar(values: &[f64]) -> (usize, f64, f64) {
     let mut lo = [f64::INFINITY; 8];
     let mut hi = [f64::NEG_INFINITY; 8];
     let mut n = [0usize; 8];
@@ -285,6 +336,68 @@ pub fn bin_edges(values: &[f64], bins: &Bins) -> Vec<f64> {
     }
 }
 
+/// Equal-width binning of 4 values per step with AVX2: range check, bin
+/// estimate and the near-edge test are vector operations; lanes near an edge
+/// go through `exact`. Counts land in `n` (slot `nb` = outside). Returns the
+/// number of values processed (a multiple of 4).
+#[cfg(target_arch = "x86_64")]
+#[target_feature(enable = "avx2")]
+#[allow(clippy::too_many_arguments)]
+unsafe fn count_avx2(
+    values: &[f64],
+    e0: f64,
+    en: f64,
+    inv: f64,
+    top: f64,
+    nb: usize,
+    exact: &dyn Fn(f64, usize) -> usize,
+    n: &mut [u32],
+) -> usize {
+    use std::arch::x86_64::*;
+    let (chunks, _) = values.as_chunks::<4>();
+    let (ve0, ven, vinv, vtop) = (
+        _mm256_set1_pd(e0),
+        _mm256_set1_pd(en),
+        _mm256_set1_pd(inv),
+        _mm256_set1_pd(top),
+    );
+    let (lo_eps, hi_eps) = (_mm256_set1_pd(1e-9), _mm256_set1_pd(1.0 - 1e-9));
+    let zero = _mm256_setzero_pd();
+    for c in chunks {
+        // SAFETY: `c` is 4 contiguous f64 (unaligned load).
+        let v = unsafe { _mm256_loadu_pd(c.as_ptr()) };
+        // inside: e0 <= v <= en (false for NaN).
+        let inside = _mm256_and_pd(
+            _mm256_cmp_pd::<_CMP_GE_OQ>(v, ve0),
+            _mm256_cmp_pd::<_CMP_LE_OQ>(v, ven),
+        );
+        let f = _mm256_min_pd(_mm256_mul_pd(_mm256_sub_pd(v, ve0), vinv), vtop);
+        let f = _mm256_blendv_pd(zero, f, inside);
+        let fl = _mm256_floor_pd(f);
+        let frac = _mm256_sub_pd(f, fl);
+        let near = _mm256_or_pd(
+            _mm256_cmp_pd::<_CMP_LT_OQ>(frac, lo_eps),
+            _mm256_cmp_pd::<_CMP_GT_OQ>(frac, hi_eps),
+        );
+        let idx = _mm256_cvttpd_epi32(fl);
+        let mut ix = [0i32; 4];
+        // SAFETY: 4 × i32 = 16 bytes.
+        unsafe { _mm_storeu_si128(ix.as_mut_ptr().cast(), idx) };
+        let (inside, near) = (_mm256_movemask_pd(inside), _mm256_movemask_pd(near));
+        for j in 0..4 {
+            let b = if inside & (1 << j) == 0 {
+                nb
+            } else if near & (1 << j) != 0 {
+                exact(c[j], ix[j] as usize)
+            } else {
+                ix[j] as usize
+            };
+            n[b] += 1;
+        }
+    }
+    chunks.len() * 4
+}
+
 /// Counts per bin (`edges.len() - 1` bins; the last bin includes its right
 /// edge; values outside are ignored).
 pub fn histogram(values: &[f64], edges: &[f64]) -> Vec<f64> {
@@ -303,34 +416,61 @@ pub fn histogram(values: &[f64], edges: &[f64]) -> Vec<f64> {
             .windows(2)
             .all(|w| ((w[1] - w[0]) - step).abs() <= step * 1e-9);
     if uniform {
-        // Four sub-histograms so that runs of equal bins do not serialize
-        // on one counter; values outside [e0, en] (and NaN) go to slot nb.
-        let mut n = vec![0u32; (nb + 1) * 4];
+        // The float estimate is exact except within rounding distance of an
+        // edge; only those values (rare, predictable branch) are checked
+        // against the edges so the result matches the binary search.
+        const LANES: usize = 1;
         let inv = 1.0 / step;
-        let bin = |v: f64| -> usize {
-            if !(v >= e0 && v <= en) {
-                return nb;
-            }
-            let mut i = (((v - e0) * inv) as usize).min(nb - 1);
-            // Rounding near an edge: match the binary search exactly.
-            if v < edges[i] {
+        let top = (nb - 1) as f64;
+        let exact = |v: f64, i: usize| -> usize {
+            let mut i = i.min(nb - 1);
+            while i > 0 && v < edges[i] {
                 i -= 1;
-            } else if i + 1 < nb && v >= edges[i + 1] {
+            }
+            while i + 1 < nb && v >= edges[i + 1] {
                 i += 1;
             }
             i
         };
-        let (chunks, rest) = values.as_chunks::<4>();
-        for c in chunks {
-            for j in 0..4 {
-                n[j * (nb + 1) + bin(c[j])] += 1;
+        let bin = |v: f64| -> usize {
+            if !(v >= e0 && v <= en) {
+                return nb;
             }
-        }
-        for &v in rest {
-            n[bin(v)] += 1;
-        }
+            let f = ((v - e0) * inv).min(top);
+            // SAFETY: v is in [e0, en] (checked above), so f is finite and in
+            // [0, nb - 1].
+            let i = unsafe { f.to_int_unchecked::<usize>() };
+            let frac = f - i as f64;
+            if !(1e-9..=1.0 - 1e-9).contains(&frac) {
+                return exact(v, i);
+            }
+            i
+        };
+        let count = |values: &[f64]| -> Vec<u32> {
+            let mut n = vec![0u32; (nb + 1) * LANES];
+            #[cfg(target_arch = "x86_64")]
+            if std::arch::is_x86_feature_detected!("avx2") {
+                // SAFETY: AVX2 support was checked at run time.
+                let done = unsafe { count_avx2(values, e0, en, inv, top, nb, &exact, &mut n) };
+                for &v in &values[done..] {
+                    n[bin(v)] += 1;
+                }
+                return n;
+            }
+            let (chunks, rest) = values.as_chunks::<LANES>();
+            for c in chunks {
+                for j in 0..LANES {
+                    n[j * (nb + 1) + bin(c[j])] += 1;
+                }
+            }
+            for &v in rest {
+                n[bin(v)] += 1;
+            }
+            n
+        };
+        let n = count(values);
         return (0..nb)
-            .map(|i| (0..4).map(|j| n[j * (nb + 1) + i] as f64).sum())
+            .map(|i| (0..LANES).map(|j| n[j * (nb + 1) + i] as f64).sum())
             .collect();
     }
     for v in values.iter().copied().filter(|v| v.is_finite()) {
@@ -643,6 +783,28 @@ mod fast_paths {
             v.extend(e.iter().copied());
             assert_eq!(histogram(&v, &e), reference(&v, &e), "{bins:?}");
         }
+    }
+
+    #[test]
+    fn large_histogram_matches_search() {
+        let mut x = 7u64;
+        let vals: Vec<f64> = (0..2_600_000)
+            .map(|i| {
+                x = x
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
+                if i % 100_003 == 0 {
+                    f64::NAN
+                } else {
+                    (x >> 11) as f64 / (1u64 << 53) as f64 * 37.0 - 5.0
+                }
+            })
+            .collect();
+        let e = bin_edges(&vals, &Bins::Count(64));
+        assert_eq!(histogram(&vals, &e), reference(&vals, &e));
+        let (n, lo, hi) = finite_min_max(&vals);
+        let s = sorted(&vals);
+        assert_eq!((n, lo, hi), (s.len(), s[0], s[s.len() - 1]));
     }
 
     #[test]

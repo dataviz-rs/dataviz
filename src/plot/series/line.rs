@@ -48,8 +48,8 @@ impl Line {
     ) -> Self {
         let n = x.len().min(y.len());
         Self {
-            x: x[..n].to_vec(),
-            y: y[..n].to_vec(),
+            x: super::truncated(x, n),
+            y: super::truncated(y, n),
             label: None,
             color,
             width,
@@ -131,8 +131,8 @@ impl Line {
     pub fn set_data(&mut self, x: impl super::IntoValues, y: impl super::IntoValues) -> &mut Self {
         let (x, y) = (x.into_values(), y.into_values());
         let n = x.len().min(y.len());
-        self.x = x[..n].to_vec();
-        self.y = y[..n].to_vec();
+        self.x = super::truncated(x, n);
+        self.y = super::truncated(y, n);
         self
     }
     /// Appends a point (streaming data).
@@ -299,22 +299,27 @@ pub(crate) fn envelope(pts: &[(f64, f64)], width: f64) -> Option<Vec<(f64, f64)>
         lo[i] = lo[i].min(y);
         hi[i] = hi[i].max(y);
     };
+    let hw = (width / 2.0).max(0.5);
+    // A sample reaches every column within half a line width horizontally
+    // (the stroke is as wide sideways as vertically).
+    let mut spread = |x: f64, y: f64| {
+        for c in (x - hw).floor() as i64..=(x + hw).floor() as i64 {
+            put(c, y);
+        }
+    };
     for w in pts.windows(2) {
         let ((ax, ay), (bx, by)) = (w[0], w[1]);
         let (ca, cb) = (ax.floor() as i64, bx.floor() as i64);
-        put(ca, ay);
-        put(cb, by);
+        spread(ax, ay);
+        spread(bx, by);
         // Columns crossed by the segment get the interpolated y at the edges.
         if cb > ca {
             for c in ca + 1..=cb {
                 let t = (c as f64 - ax) / (bx - ax);
-                let y = ay + (by - ay) * t;
-                put(c - 1, y);
-                put(c, y);
+                spread(c as f64, ay + (by - ay) * t);
             }
         }
     }
-    let hw = (width / 2.0).max(0.5);
     let mut poly = Vec::with_capacity(cols * 4);
     for i in 0..cols {
         let x = (c0 + i as i64) as f64;
@@ -497,10 +502,34 @@ impl Series for Line {
             }
         }
         if self.marker != Marker::None {
-            let raw: Vec<(f64, f64)> = self.points().map(|(x, y)| ctx.point(x, y)).collect();
-            for (x, y) in raw {
-                if let Some(n) = self.marker.node(x, y, self.marker_size, self.color, None) {
-                    ctx.push(n);
+            let template = (self.x.len() >= 64)
+                .then(|| {
+                    self.marker
+                        .node(0.0, 0.0, self.marker_size, self.color, None)
+                })
+                .flatten();
+            match template {
+                Some(template) => {
+                    let offsets = self
+                        .points()
+                        .map(|(x, y)| ctx.point(x, y))
+                        .filter(|p| p.0.is_finite() && p.1.is_finite())
+                        .map(|(x, y)| (x as f32, y as f32))
+                        .collect();
+                    ctx.push(crate::plot::scene::Node::Instances {
+                        template: Box::new(template),
+                        offsets,
+                    });
+                }
+                None => {
+                    let raw: Vec<(f64, f64)> =
+                        self.points().map(|(x, y)| ctx.point(x, y)).collect();
+                    for (x, y) in raw {
+                        if let Some(n) = self.marker.node(x, y, self.marker_size, self.color, None)
+                        {
+                            ctx.push(n);
+                        }
+                    }
                 }
             }
         }
@@ -578,9 +607,9 @@ impl FillBetween {
     pub(crate) fn new(x: Vec<f64>, y1: Vec<f64>, y2: Vec<f64>, color: Color) -> Self {
         let n = x.len().min(y1.len()).min(y2.len());
         Self {
-            x: x[..n].to_vec(),
-            y1: y1[..n].to_vec(),
-            y2: y2[..n].to_vec(),
+            x: super::truncated(x, n),
+            y1: super::truncated(y1, n),
+            y2: super::truncated(y2, n),
             label: None,
             color,
             opacity: 0.35,

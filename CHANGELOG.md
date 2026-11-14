@@ -1,8 +1,15 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
 
-Performance: faster rendering with less CPU and memory, no new dependencies.
+Performance: faster rendering with less CPU and memory; the only new
+(optional) dependency is `wgpu` for the `gpu` feature.
+
+### Breaking
+- `plot::scene::Node` is `#[non_exhaustive]` and has two new variants,
+  `Instances` (one marker template at many positions) and `MarkerGrid`
+  (markers at the set cells of an occupancy grid). Code matching on `Node`
+  needs a wildcard arm.
 
 ### Added
 - **Backends**: `Figure::backend(Backend)` chooses where raster output is
@@ -25,6 +32,21 @@ Performance: faster rendering with less CPU and memory, no new dependencies.
   histogram min/max and counting in vectorizable multi-lane loops. The GPU
   backend requests the adapter's largest buffers, reports geometry above the
   limit as an error and never uses a software (CPU) adapter.
+- **Markers** are one template plus 8-byte positions (`Node::Instances`),
+  drawn from cached quarter-pixel sprites (CPU) or instanced (GPU); SVG uses
+  `<defs>`/`<use>`. Dense opaque scatter plots become an occupancy grid
+  (`Node::MarkerGrid`): memory no longer grows with the number of points.
+- **No data copies**: series keep the vectors they are given (pass `Vec`s by
+  value to avoid any copy).
+- **Rendering into the output buffer**: `render_0rgb`/`render_into` draw
+  straight into the caller's buffer and convert in place (one 4-byte-per-pixel
+  buffer instead of two).
+- **Faster primitives**: rectilinear fills (column envelopes) as rectangles,
+  steep line segments walked by column, exact touched-pixel spans for line
+  blending, constant-alpha row blending, AVX2 histogram binning/min-max and
+  pixel conversions (run-time detected, scalar fallback), PNG with the "Up"
+  filter written straight from the render buffer, reused buffers between
+  figures on a thread.
 - `Figure::render_into(&mut Pixels)` and `Figure::render_0rgb(&mut Vec<u32>)`
   render into reused buffers (real-time redraws without allocations);
   `Pixels::write_0rgb`.

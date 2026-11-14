@@ -48,6 +48,14 @@ pub struct Figure {
     pub(crate) backend: Backend,
 }
 
+impl Drop for Figure {
+    fn drop(&mut self) {
+        if let Some(pm) = self.pixmap.take() {
+            super::render::recycle(pm);
+        }
+    }
+}
+
 impl Figure {
     /// A figure of `width` × `height` pixels with the default theme.
     pub fn new(width: u32, height: u32) -> Self {
@@ -376,6 +384,16 @@ impl Figure {
             Format::Svg | Format::Pdf => {
                 let scene = self.to_scene();
                 output::encode(&scene, &self.fonts(), format, self.scale)
+            }
+            Format::Png => {
+                let scene = self.to_scene();
+                let fonts = self.fonts();
+                super::render::render(&scene, &fonts, self.scale, self.backend, &mut self.pixmap)?;
+                let pm = self
+                    .pixmap
+                    .as_ref()
+                    .ok_or_else(|| Error::Render("empty image".into()))?;
+                output::encode_png_premul(pm.data(), pm.width(), pm.height())
             }
             raster => self.to_pixels()?.encode(raster),
         }

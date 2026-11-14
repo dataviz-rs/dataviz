@@ -82,23 +82,22 @@ Every image links to its example in
 
 ## **Performance**
 
-A built-in rasterizer draws the scene directly into pixels (embedded DejaVu
-Sans font, no system font scan, reusable pixel buffers via
-`Figure::render_into` / `Figure::render_0rgb`). Dense lines are drawn as
-per-pixel-column envelopes, so the cost does not grow with the number of
-points on screen.
+A built-in rasterizer draws the scene straight into the output buffer
+(embedded DejaVu Sans, no system font scan, no copies of the data passed to
+a series). Dense lines are drawn as pixel-column envelopes, dense opaque
+scatter plots as an occupancy grid, so time and memory stay flat as the data
+grows. Measured against plotters, ruviz, kuva and charts-rs (800×600 PNG,
+Linux x86-64, single thread; `dataviz-bench`):
 
-Real-time chart, 800×600, rolling window, one new point and a full redraw
-per frame (Linux x86-64, single thread):
-
-| points | p50 latency | p95 latency | CPU / frame | peak RSS |
-|-------:|------------:|------------:|------------:|---------:|
-| 1 000 | 1.6 ms | 1.6 ms | 1.6 ms | 8 MB |
-| 10 000 | 1.5 ms | 1.8 ms | 1.5 ms | 10 MB |
-| 100 000 | 2.3 ms | 2.4 ms | 2.4 ms | 15 MB |
-
-Static PNG (warm, encode included): line with 1 M points 24 ms,
-histogram of 1 M values 6 ms, scatter with 100 k points 14 ms.
+| Chart | dataviz | plotters | ruviz | kuva | charts-rs |
+|---|---:|---:|---:|---:|---:|
+| line, 1 000 points | **1.30 ms** | 1.41 ms | 3.58 ms | 4.39 ms | 11.4 ms |
+| bar, 20 bars | **0.69 ms** | 0.71 ms | 4.41 ms | 3.04 ms | 1.79 ms |
+| scatter, 100 000 points | **8.6 ms** | 16.6 ms | 16.7 ms | 14.7 ms | 657 ms |
+| line, 10 M points | **94 ms** | 426 ms | 316 ms | 2.38 s | fails |
+| scatter, 10 M points | **189 ms** | 1.27 s | 1.23 s | 1.36 s | fails |
+| histogram, 100 M values | **241 ms** | 277 ms | 3.62 s | 1.53 s | 1.15 s |
+| memory above the data (10 M points) | **+7–8 MB** | +11–314 MB | +199–389 MB | +177–788 MB | +161 MB |
 
 ### Backends: CPU, multi-core CPU, GPU
 
@@ -111,27 +110,27 @@ fig.backend(Backend::Cpu { threads: 0 });  // all cores: lowest latency without 
 fig.backend(Backend::Gpu);                 // `gpu` feature: Vulkan / Metal / DX12 / OpenGL
 ```
 
-The same real-time chart (line, rolling 100 000 points), latency p50 and
-CPU time per frame (RTX 5070 Ti laptop GPU, 20-core CPU):
+Real-time line chart, rolling 100 000 points, one new point and a full
+redraw per frame: latency p50 / CPU time per frame / peak RSS (RTX 5070 Ti
+laptop GPU, 20-core CPU):
 
-| Resolution | CPU 1 thread | CPU all cores | GPU |
-|---|---|---|---|
-| 800×600 | 2.3 ms / 2.4 ms CPU | 1.9 ms / 4.2 ms CPU | 1.7 ms / 1.4 ms CPU |
-| 1920×1080 | 11.7 ms / 11.8 ms CPU | 3.5 ms / 19.1 ms CPU | 2.5 ms / 2.2 ms CPU |
-| 3840×2160 | 49.7 ms / 50.8 ms CPU | 9.3 ms / 80.1 ms CPU | 5.9 ms / 4.8 ms CPU |
+| Resolution | CPU 1 thread | CPU all cores | GPU | plotters |
+|---|---|---|---|---|
+| 800×600 | 2.1 ms / 2.1 ms / 11 MB | 1.9 ms / 4.7 ms / 13 MB | 1.5 ms / 1.3 ms / 241 MB | 5.5 ms / 5.5 ms / 16 MB |
+| 1920×1080 | 5.5 ms / 5.4 ms / 18 MB | 3.3 ms / 14.8 ms / 20 MB | 2.5 ms / 2.3 ms / 248 MB | 8.7 ms / 8.7 ms / 21 MB |
 
 The GPU backend needs the least CPU time and is fastest for large images
-and many markers; it costs ~30 ms of start-up and ~230 MB of driver memory
-(peak RSS 240–290 MB vs 9–110 MB on the CPU), so the default stays on the
-CPU. Output of all backends matches within anti-aliasing differences
+and many markers; it costs ~0.3 s of start-up (more if a laptop's discrete
+GPU has to wake up) and ~230 MB of driver memory, so the default stays on
+the CPU. Output of all backends matches within anti-aliasing differences
 (`Backend::gpu_available()` tells whether a GPU can be used). Try
 `cargo run --release --example plot_backends --features gpu`.
 
 ## **Installation**
 ```toml
 [dependencies]
-dataviz = "0.2"
-# dataviz = { version = "0.2", features = ["pdf"] }
+dataviz = "0.3"
+# dataviz = { version = "0.3", features = ["pdf"] }
 ```
 
 Requires Rust 1.89 or newer. On Linux the `window` feature needs the usual
