@@ -12,6 +12,10 @@
 //! overlays, at the rate they change; see [`crate::plot::anim`]), `H`
 //! toggles the hover tooltip, `C` the crosshair, `Esc` closes the window.
 //!
+//! In 3D plots dragging turns the scene (left/right around the z-axis,
+//! up/down tilts it), the wheel zooms, `X`, `Y` and `Z` turn it by 15°
+//! around that axis (Shift+key the other way) and `R` restores the camera.
+//!
 //! The crosshair follows the mouse with the cursor's x and y values on the
 //! axes; plots showing the same x range (e.g. [`Figure::share_x`]) get a
 //! linked cursor at the same x with the values of their series there, and
@@ -33,6 +37,7 @@ use super::color::Color;
 use super::figure::Figure;
 use super::output::{self, Error, Pixels};
 use super::scene::{Anchor, Baseline, Node, PathCmd, Scene, Stroke, TextNode};
+use super::series::three_d::Axis3;
 use super::series::Rect;
 use super::text::FontSet;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
@@ -101,6 +106,9 @@ impl Figure {
     fn apply_views(&mut self, views: &[Option<AxesLimits>], auto: bool) {
         for (i, v) in views.iter().enumerate() {
             if let (Some(v), Some(a)) = (v, self.cell_axes(i)) {
+                if a.kind == AxesKind::ThreeD {
+                    continue;
+                }
                 if auto {
                     (a.x.min, a.x.max) = (v.0, v.1);
                     (a.y.min, a.y.max, a.y2.min, a.y2.max) = (None, None, None, None);
@@ -359,7 +367,23 @@ impl Figure {
                 (false, Some(_), None) => box_start = None,
                 _ => {}
             }
+            // X / Y / Z turn 3D plots (the one under the mouse, or all)
+            // by 15° around that axis; with Shift the other way.
+            for (key, axis) in [(Key::X, Axis3::X), (Key::Y, Axis3::Y), (Key::Z, Axis3::Z)] {
+                if window.is_key_pressed(key, KeyRepeat::Yes) {
+                    let deg = if shift { -15.0 } else { 15.0 };
+                    let under = mouse.and_then(|m| in_axes(m, &layouts));
+                    for i in 0..layouts.len() {
+                        if under.is_none_or(|u| u == i) && self.rotate_view(i, axis, deg) {
+                            dirty = true;
+                        }
+                    }
+                }
+            }
             if window.is_key_pressed(Key::R, KeyRepeat::No) {
+                for a in self.all_axes() {
+                    a.reset_camera();
+                }
                 views.clear();
                 self.selection = None;
                 measure = None;

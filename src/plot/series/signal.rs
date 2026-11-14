@@ -253,7 +253,7 @@ fn unwrap_deg(p: &mut [f64]) {
 
 impl Axes {
     /// Amplitude spectrum of a signal sampled at `sample_rate` Hz (FFT
-    /// with a Hann window): frequency [Hz] against amplitude.
+    /// with a Hann window): frequency \[Hz\] against amplitude.
     pub fn spectrum(&mut self, signal: impl IntoValues, sample_rate: f64) -> &mut Line {
         let (f, a) = spectrum(&signal.into_values(), sample_rate);
         self.x.label.get_or_insert_with(|| "frequency [Hz]".into());

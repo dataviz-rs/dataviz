@@ -33,11 +33,37 @@
   (four-parameter logistic fit, IC50), `Axes::kaplan_meier` (95 % bands,
   censoring marks, log-rank p) and `Axes::forest_plot` (pooled diamond);
   functions `bio::logo_heights`, `kaplan_meier`, `logrank`, `fit_4pl`.
+- **3D scenes**: all 3D series of a plot share one scene (one box, one
+  camera, one depth order) with lighting (diffuse and specular), shaded
+  spheres and tubes, optional perspective (`Axes::perspective`) and depth
+  cueing (`Axes::depth_cue`). The camera (`Camera`) is a rotation matrix:
+  `Axes::rotate(Axis3, deg)` turns around the x, y or z axis,
+  `Axes::roll`, `Axes::camera(azimuth, elevation)`, `Axes::set_camera`,
+  `Camera::principal` (longest extent across the screen). In a window
+  dragging turns the scene, the wheel zooms and `X`/`Y`/`Z` rotate by 15°
+  (Shift+key the other way); `Figure::rotate_view`, `pan_by` and `zoom_at`
+  do the same in GUI and web apps; `R` / `reset_view` restore the camera.
+  New 3D series: `Axes::spheres3d` (radii in data units),
+  `Axes::mesh3d` / `trisurf` (smooth-shaded, translucent),
+  `Axes::ellipsoid`, `Axes::text3d`; `Axes::z_label`, `z_limits`,
+  `box3d`, `lighting`; `Points3d::values`, `label`, `shaded`;
+  `Surface::edges`, `opacity`. Custom series draw 3D through
+  `Series::bounds3d`, `draw3d` and `hit3d` (`Scene3d`).
+- **3D biology** (`series::bio3d`): `Axes::dna_helix` (B-DNA double helix
+  with base pairs colored by base, highlighted regions, RNA pairs A–U),
+  `Axes::molecule` with `Molecule::from_pdb` / `from_xyz` (bonds from
+  covalent radii in linear time; ball-and-stick, sticks, space-filling and
+  backbone styles; colors by element, chain or along the chain; water
+  hidden), `Axes::embedding3d` (single-cell clusters on a 3D UMAP).
 - `Annotate::background`: a box behind text annotations (readable over
   dense data).
 - `Figure::resize(width, height)` (figures embedded in resizable panels).
 
 ### Changed
+- 3D: the camera, axis labels (`x_label`, `y_label`, `z_label`) and
+  limits belong to the axes instead of each 3D series
+  (`Surface::camera` / `labels` and `Points3d::camera` / `labels` are
+  gone); 3D scatter points are shaded spheres; `AxesKind::ThreeD`.
 - Terminal half blocks keep the color of thin lines and text (the most
   distinct pixel of each half cell) instead of averaging them into the
   background, so lines stay vivid.

@@ -84,6 +84,12 @@ impl Stroke {
         self.cap = cap;
         self
     }
+
+    /// With a join style.
+    pub fn join(mut self, join: LineJoin) -> Self {
+        self.join = join;
+        self
+    }
 }
 
 /// Horizontal text anchor.

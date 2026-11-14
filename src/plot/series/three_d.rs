@@ -1,247 +1,1254 @@
-//! 3D charts (orthographic projection): surface, wireframe, scatter, line.
+//! 3D charts: surface, wireframe, scatter, line, spheres, meshes.
+//!
+//! All 3D series of an axes share one scene: one data box, one camera and
+//! one depth order, so a molecule's bonds pass behind its atoms and a
+//! trajectory through a surface is hidden where it should be. The camera
+//! turns freely around the x, y and z axes ([`Axes::rotate`]); in a window
+//! (and through [`Figure::pan_by`](crate::plot::Figure::pan_by)) dragging
+//! turns the scene, the wheel zooms, `X`/`Y`/`Z` rotate by 15° around that
+//! axis (with Shift the other way) and `R` returns to the start.
+//!
+//! Faces are lit by a light from the upper left (diffuse and specular),
+//! spheres are drawn shaded, and [`Axes::depth_cue`] fades far parts
+//! toward the background for depth perception.
 
-use super::{short, ColorScale, Context, Extent, Hit, IntoValues, Rect, Series};
+use super::{
+    short, ColorScale, Context, Extent, Hit, IntoValues, LegendEntry, LegendSymbol, Rect, Series,
+};
 use crate::plot::axes::{Axes, AxesKind};
-use crate::plot::axis::AxisMap;
 use crate::plot::color::{Color, Colormap};
-use crate::plot::scene::{Anchor, Baseline, Node, Stroke};
+use crate::plot::scene::{Anchor, Baseline, LineCap, Node, PathCmd, Stroke, TextNode};
+use crate::plot::style::Marker;
+use crate::plot::text::FontSet;
+use crate::plot::theme::Theme;
 use crate::plot::ticks;
 use std::any::Any;
 
-/// Viewing angles and data box of a 3D chart.
+/// Data range of a 3D scene: `[(x_min, x_max), (y_min, y_max), (z_min, z_max)]`.
+pub type Bounds3 = [(f64, f64); 3];
+
+type M3 = [[f64; 3]; 3];
+
+fn mul(a: &M3, b: &M3) -> M3 {
+    let mut o = [[0.0; 3]; 3];
+    for (i, row) in o.iter_mut().enumerate() {
+        for (j, v) in row.iter_mut().enumerate() {
+            *v = (0..3).map(|k| a[i][k] * b[k][j]).sum();
+        }
+    }
+    o
+}
+
+/// Rotation by `deg` around basis axis `axis` (right-handed).
+fn rotation(axis: usize, deg: f64) -> M3 {
+    let (s, c) = deg.to_radians().sin_cos();
+    match axis {
+        0 => [[1.0, 0.0, 0.0], [0.0, c, -s], [0.0, s, c]],
+        1 => [[c, 0.0, s], [0.0, 1.0, 0.0], [-s, 0.0, c]],
+        _ => [[c, -s, 0.0], [s, c, 0.0], [0.0, 0.0, 1.0]],
+    }
+}
+
+fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
+    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+}
+
+fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+}
+
+fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
+    [
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    ]
+}
+
+fn unit(a: [f64; 3]) -> [f64; 3] {
+    let l = dot(a, a).sqrt();
+    if l > 0.0 {
+        [a[0] / l, a[1] / l, a[2] / l]
+    } else {
+        [0.0, 0.0, 1.0]
+    }
+}
+
+/// Rows made orthonormal again (rotations add up rounding errors).
+fn orthonormal(m: M3) -> M3 {
+    let r0 = unit(m[0]);
+    let r1 = unit(sub(m[1], {
+        let d = dot(m[1], r0);
+        [r0[0] * d, r0[1] * d, r0[2] * d]
+    }));
+    [r0, r1, cross(r0, r1)]
+}
+
+/// One of the three data axes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Axis3 {
+    /// x-axis.
+    X,
+    /// y-axis.
+    Y,
+    /// z-axis.
+    Z,
+}
+
+impl Axis3 {
+    fn index(self) -> usize {
+        match self {
+            Axis3::X => 0,
+            Axis3::Y => 1,
+            Axis3::Z => 2,
+        }
+    }
+}
+
+/// Orientation, zoom and perspective of a 3D scene.
+///
+/// The orientation is a rotation matrix, so the scene can be turned
+/// freely around any axis (no gimbal lock): start from azimuth and
+/// elevation ([`Camera::new`]) and add rotations around the data axes
+/// ([`Camera::rotate`]) or the screen axes ([`Camera::turn`],
+/// [`Camera::roll`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera {
-    /// Rotation around the vertical axis in degrees.
-    pub azimuth: f64,
-    /// Angle above the x/y plane in degrees.
-    pub elevation: f64,
+    /// Data → view rotation (rows: screen right, screen up, towards viewer).
+    m: M3,
+    /// Magnification (1 = the scene fits the plot).
+    pub zoom: f64,
+    /// Perspective strength (0 = orthographic, 1 = strong).
+    pub perspective: f64,
 }
 
 impl Default for Camera {
     fn default() -> Self {
+        Self::new(-60.0, 30.0)
+    }
+}
+
+impl Camera {
+    /// Camera looking from `azimuth` degrees around the z-axis and
+    /// `elevation` degrees above the x/y plane (z points up).
+    pub fn new(azimuth: f64, elevation: f64) -> Self {
+        let (sa, ca) = azimuth.to_radians().sin_cos();
+        let (se, ce) = elevation.clamp(-90.0, 90.0).to_radians().sin_cos();
         Self {
-            azimuth: -60.0,
-            elevation: 30.0,
+            m: [
+                [ca, -sa, 0.0],
+                [sa * se, ca * se, ce],
+                [-sa * ce, -ca * ce, se],
+            ],
+            zoom: 1.0,
+            perspective: 0.0,
+        }
+    }
+
+    /// A camera that shows the longest extent of `points` across the
+    /// screen and the second longest upwards (principal axes).
+    pub fn principal(points: &[[f64; 3]]) -> Self {
+        let n = points.len().max(1) as f64;
+        let mut mean = [0.0; 3];
+        for p in points {
+            for k in 0..3 {
+                mean[k] += p[k] / n;
+            }
+        }
+        let mut c = [[0.0; 3]; 3];
+        for p in points {
+            let d = sub(*p, mean);
+            for i in 0..3 {
+                for j in 0..3 {
+                    c[i][j] += d[i] * d[j] / n;
+                }
+            }
+        }
+        let (vals, vecs) = jacobi(c);
+        let mut order = [0usize, 1, 2];
+        order.sort_by(|a, b| vals[*b].total_cmp(&vals[*a]));
+        let col = |k: usize| [vecs[0][k], vecs[1][k], vecs[2][k]];
+        let (r0, r1) = (unit(col(order[0])), unit(col(order[1])));
+        Self {
+            m: orthonormal([r0, r1, cross(r0, r1)]),
+            zoom: 1.0,
+            perspective: 0.0,
+        }
+    }
+
+    /// Turns the scene by `deg` degrees around a data axis.
+    pub fn rotate(&mut self, axis: Axis3, deg: f64) -> &mut Self {
+        self.m = orthonormal(mul(&self.m, &rotation(axis.index(), deg)));
+        self
+    }
+
+    /// Turns the scene around the screen axes: `horizontal` degrees around
+    /// the vertical screen axis, `vertical` degrees around the horizontal
+    /// one (positive tilts the top towards the viewer).
+    pub fn turn(&mut self, horizontal: f64, vertical: f64) -> &mut Self {
+        let m = mul(&rotation(1, horizontal), &self.m);
+        self.m = orthonormal(mul(&rotation(0, -vertical), &m));
+        self
+    }
+
+    /// Turns the scene around the viewing direction (clockwise for positive
+    /// degrees).
+    pub fn roll(&mut self, deg: f64) -> &mut Self {
+        self.m = orthonormal(mul(&rotation(2, -deg), &self.m));
+        self
+    }
+
+    /// Drag rotation: horizontal moves turn around the data z-axis (a
+    /// turntable), vertical moves tilt around the screen's horizontal axis.
+    pub fn drag(&mut self, dx: f64, dy: f64) -> &mut Self {
+        self.rotate(Axis3::Z, dx * 0.5);
+        self.m = orthonormal(mul(&rotation(0, dy * 0.5), &self.m));
+        self
+    }
+
+    /// View coordinates (screen right, screen up, towards the viewer) of a
+    /// direction in (normalized) data space.
+    pub fn view(&self, v: [f64; 3]) -> [f64; 3] {
+        [dot(self.m[0], v), dot(self.m[1], v), dot(self.m[2], v)]
+    }
+
+    /// The rotation matrix (data → view).
+    pub fn matrix(&self) -> [[f64; 3]; 3] {
+        self.m
+    }
+}
+
+/// Eigenvalues and eigenvectors (columns) of a symmetric 3×3 matrix.
+fn jacobi(mut a: M3) -> ([f64; 3], M3) {
+    let mut v = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    for _ in 0..50 {
+        let (mut p, mut q, mut big) = (0, 1, 0.0);
+        for (i, j) in [(0, 1), (0, 2), (1, 2)] {
+            if a[i][j].abs() > big {
+                (p, q, big) = (i, j, a[i][j].abs());
+            }
+        }
+        if big < 1e-14 {
+            break;
+        }
+        let theta = (a[q][q] - a[p][p]) / (2.0 * a[p][q]);
+        let t = theta.signum().max(0.0) * 2.0 - 1.0;
+        let t = t / (theta.abs() + (theta * theta + 1.0).sqrt());
+        let c = 1.0 / (t * t + 1.0).sqrt();
+        let s = t * c;
+        let mut r = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+        r[p][p] = c;
+        r[q][q] = c;
+        r[p][q] = s;
+        r[q][p] = -s;
+        let rt = [
+            [r[0][0], r[1][0], r[2][0]],
+            [r[0][1], r[1][1], r[2][1]],
+            [r[0][2], r[1][2], r[2][2]],
+        ];
+        a = mul(&rt, &mul(&a, &r));
+        v = mul(&v, &r);
+    }
+    ([a[0][0], a[1][1], a[2][2]], v)
+}
+
+/// Settings of the 3D scene of an axes.
+#[derive(Clone, Debug)]
+pub(crate) struct View3d {
+    pub camera: Camera,
+    pub home: Camera,
+    pub show_box: bool,
+    pub z_label: Option<String>,
+    pub z_limits: (Option<f64>, Option<f64>),
+    pub fog: f64,
+    pub light: bool,
+}
+
+impl Default for View3d {
+    fn default() -> Self {
+        Self {
+            camera: Camera::default(),
+            home: Camera::default(),
+            show_box: true,
+            z_label: None,
+            z_limits: (None, None),
+            fog: 0.0,
+            light: true,
         }
     }
 }
 
-type Bounds3 = [(f64, f64); 3];
-
-struct Projector {
+/// Mapping of data coordinates to the canvas for one rendered 3D scene.
+#[derive(Clone, Debug)]
+pub struct Projection3d {
     bounds: Bounds3,
+    mid: [f64; 3],
+    /// Data unit → normalized box unit, per axis.
+    k: [f64; 3],
+    /// Half sizes of the box in normalized units.
+    ext: [f64; 3],
     cam: Camera,
     scale: f64,
     center: (f64, f64),
+    radius: f64,
+    dist: f64,
 }
 
-impl Projector {
-    fn new(bounds: Bounds3, cam: Camera, r: Rect) -> Self {
-        let mut p = Self {
-            bounds,
-            cam,
-            scale: 1.0,
-            center: (0.0, 0.0),
-        };
-        // Fit the projected unit cube into the rect.
-        let corners: Vec<(f64, f64)> = (0..8)
-            .map(|i| {
-                let c = [
-                    (i & 1) as f64 * 2.0 - 1.0,
-                    ((i >> 1) & 1) as f64 * 2.0 - 1.0,
-                    ((i >> 2) & 1) as f64 * 2.0 - 1.0,
-                ];
-                let (x, y, _) = p.rotate(c);
-                (x, y)
-            })
+impl Projection3d {
+    pub(crate) fn new(
+        bounds: Bounds3,
+        equal: bool,
+        cam: Camera,
+        home: Camera,
+        boxed: bool,
+        r: Rect,
+    ) -> Self {
+        let half: Vec<f64> = bounds
+            .iter()
+            .map(|(a, b)| ((b - a) / 2.0).max(1e-12))
             .collect();
-        let (x0, x1) = corners
-            .iter()
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), c| {
-                (a.min(c.0), b.max(c.0))
-            });
-        let (y0, y1) = corners
-            .iter()
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), c| {
-                (a.min(c.1), b.max(c.1))
-            });
-        let margin = 0.82;
-        p.scale = (r.w / (x1 - x0)).min(r.h / (y1 - y0)) * margin;
-        let (cx, cy) = r.center();
-        p.center = (
-            cx - (x0 + x1) / 2.0 * p.scale,
-            cy + (y0 + y1) / 2.0 * p.scale,
+        let mid = [
+            (bounds[0].0 + bounds[0].1) / 2.0,
+            (bounds[1].0 + bounds[1].1) / 2.0,
+            (bounds[2].0 + bounds[2].1) / 2.0,
+        ];
+        let (k, ext) = if equal {
+            let h = half.iter().copied().fold(0.0, f64::max);
+            ([1.0 / h; 3], [half[0] / h, half[1] / h, half[2] / h])
+        } else {
+            let ext = [1.0, 1.0, 0.75];
+            ([ext[0] / half[0], ext[1] / half[1], ext[2] / half[2]], ext)
+        };
+        let radius = dot(ext, ext).sqrt();
+        let dist = if cam.perspective > 0.0 {
+            radius * (1.0 + 2.0 / cam.perspective.min(1.0))
+        } else {
+            0.0
+        };
+        // The box as seen from the starting camera fits the plot; the
+        // scale stays while the scene turns, so it does not pump.
+        let (mut x0, mut x1, mut y0, mut y1) = (
+            f64::INFINITY,
+            f64::NEG_INFINITY,
+            f64::INFINITY,
+            f64::NEG_INFINITY,
         );
-        p
-    }
-
-    fn norm(&self, v: [f64; 3]) -> [f64; 3] {
-        let mut o = [0.0; 3];
-        for i in 0..3 {
-            let (a, b) = self.bounds[i];
-            o[i] = if b > a {
-                (v[i] - a) / (b - a) * 2.0 - 1.0
+        for i in 0..8 {
+            let c = [
+                if i & 1 == 0 { -ext[0] } else { ext[0] },
+                if i & 2 == 0 { -ext[1] } else { ext[1] },
+                if i & 4 == 0 { -ext[2] } else { ext[2] },
+            ];
+            let v = home.view(c);
+            let f = if dist > 0.0 {
+                dist / (dist - v[2])
             } else {
-                0.0
+                1.0
             };
+            (x0, x1) = (x0.min(v[0] * f), x1.max(v[0] * f));
+            (y0, y1) = (y0.min(v[1] * f), y1.max(v[1] * f));
         }
-        o[2] *= 0.75; // flatter box like matplotlib
-        o
+        let margin = if boxed { 0.8 } else { 0.95 };
+        let scale = (r.w / (x1 - x0).max(1e-9)).min(r.h / (y1 - y0).max(1e-9))
+            * margin
+            * cam.zoom.max(1e-3);
+        Self {
+            bounds,
+            mid,
+            k,
+            ext,
+            cam,
+            scale,
+            center: r.center(),
+            radius,
+            dist,
+        }
     }
 
-    /// Rotated coordinates (screen x, screen y up, depth towards viewer).
-    fn rotate(&self, c: [f64; 3]) -> (f64, f64, f64) {
-        let (az, el) = (
-            self.cam.azimuth.to_radians(),
-            self.cam.elevation.to_radians(),
-        );
-        let x1 = c[0] * az.cos() - c[1] * az.sin();
-        let y1 = c[0] * az.sin() + c[1] * az.cos();
-        let sy = c[2] * el.cos() + y1 * el.sin();
-        let depth = -y1 * el.cos() + c[2] * el.sin();
-        (x1, sy, depth)
+    /// Data range shown.
+    pub fn bounds(&self) -> Bounds3 {
+        self.bounds
     }
 
-    fn project(&self, v: [f64; 3]) -> (f64, f64, f64) {
-        let (x, y, d) = self.rotate(self.norm(v));
+    /// Normalized box coordinates of a data point.
+    fn norm(&self, v: [f64; 3]) -> [f64; 3] {
+        [
+            (v[0] - self.mid[0]) * self.k[0],
+            (v[1] - self.mid[1]) * self.k[1],
+            (v[2] - self.mid[2]) * self.k[2],
+        ]
+    }
+
+    fn screen(&self, q: [f64; 3]) -> (f64, f64, f64) {
+        let f = self.persp(q[2]);
         (
-            self.center.0 + x * self.scale,
-            self.center.1 - y * self.scale,
-            d,
+            self.center.0 + q[0] * self.scale * f,
+            self.center.1 - q[1] * self.scale * f,
+            q[2],
         )
     }
 
-    fn project_unit(&self, c: [f64; 3]) -> (f64, f64, f64) {
-        let c = [c[0], c[1], c[2] * 0.75];
-        let (x, y, d) = self.rotate(c);
-        (
-            self.center.0 + x * self.scale,
-            self.center.1 - y * self.scale,
-            d,
-        )
-    }
-}
-
-/// Draws the back panes, grid and axis labels of the 3D box.
-fn draw_box(ctx: &mut Context, p: &Projector, labels: &[Option<String>; 3]) {
-    let grid = Stroke::new(ctx.theme.grid, 1.0);
-    let axis = Stroke::new(ctx.theme.axis, 1.0);
-    // Back panes: for each axis pick the side facing away from the viewer.
-    let side = |i: usize| -> f64 {
-        let mut a = [0.0; 3];
-        a[i] = 1.0;
-        let (_, _, d1) = p.project_unit(a);
-        let (_, _, d0) = p.project_unit([0.0; 3]);
-        if d1 > d0 {
-            -1.0
+    fn persp(&self, depth: f64) -> f64 {
+        if self.dist > 0.0 {
+            self.dist / (self.dist - depth).max(self.radius * 0.05)
         } else {
             1.0
         }
+    }
+
+    /// View coordinates of a data point.
+    fn view(&self, v: [f64; 3]) -> [f64; 3] {
+        self.cam.view(self.norm(v))
+    }
+
+    /// Canvas position and depth (larger = nearer the viewer) of a data point.
+    pub fn project(&self, v: [f64; 3]) -> (f64, f64, f64) {
+        self.screen(self.view(v))
+    }
+
+    fn project_box(&self, c: [f64; 3]) -> (f64, f64, f64) {
+        self.screen(self.cam.view(c))
+    }
+
+    /// Pixels per data unit along x at a depth.
+    pub fn px_per_unit(&self, depth: f64) -> f64 {
+        self.k[0] * self.scale * self.persp(depth)
+    }
+
+    /// Depth mapped to 0 (farthest) … 1 (nearest).
+    fn nearness(&self, depth: f64) -> f64 {
+        ((depth / self.radius + 1.0) / 2.0).clamp(0.0, 1.0)
+    }
+}
+
+/// Light direction in view space (upper left, towards the viewer).
+const LIGHT: [f64; 3] = [-0.42, 0.56, 0.71];
+
+/// Brightness of a face with view-space normal `n` (two-sided).
+fn lambert(n: [f64; 3]) -> (f64, f64) {
+    let n = if n[2] < 0.0 { [-n[0], -n[1], -n[2]] } else { n };
+    let d = dot(n, LIGHT).max(0.0);
+    let h = unit([LIGHT[0], LIGHT[1], LIGHT[2] + 1.0]);
+    let s = dot(n, h).max(0.0).powi(28);
+    (0.42 + 0.62 * d, 0.32 * s)
+}
+
+fn lit(c: Color, (diffuse, spec): (f64, f64)) -> Color {
+    let base = if diffuse < 1.0 {
+        c.darken(1.0 - diffuse)
+    } else {
+        c.lighten((diffuse - 1.0) * 0.6)
     };
-    let (sx, sy, sz) = (side(0), side(1), -1.0);
-    let panes = [
-        // (fixed axis, fixed value)
-        (0usize, sx),
-        (1usize, sy),
-        (2usize, sz),
-    ];
-    for (axis_i, v) in panes {
-        let (u, w) = match axis_i {
-            0 => (1, 2),
-            1 => (0, 2),
-            _ => (0, 1),
-        };
-        let corner = |a: f64, b: f64| {
-            let mut c = [0.0; 3];
-            c[axis_i] = v;
-            c[u] = a;
-            c[w] = b;
-            let (x, y, _) = p.project_unit(c);
-            (x, y)
-        };
-        let pts = [
-            corner(-1.0, -1.0),
-            corner(1.0, -1.0),
-            corner(1.0, 1.0),
-            corner(-1.0, 1.0),
-        ];
-        ctx.polygon(
-            &pts,
-            Some(ctx.theme.plot_background.darken(0.03)),
-            Some(grid.clone()),
-        );
-        for k in 1..4 {
-            let t = -1.0 + k as f64 * 0.5;
-            ctx.polyline(&[corner(t, -1.0), corner(t, 1.0)], grid.clone());
-            ctx.polyline(&[corner(-1.0, t), corner(1.0, t)], grid.clone());
+    if spec > 0.004 {
+        base.lighten(spec)
+    } else {
+        base
+    }
+}
+
+enum Prim {
+    Poly {
+        pts: [(f64, f64); 4],
+        n: u8,
+        fill: Option<Color>,
+        stroke: Option<Stroke>,
+    },
+    Ball {
+        x: f64,
+        y: f64,
+        r: f64,
+        color: Color,
+        shaded: bool,
+    },
+    Seg {
+        a: (f64, f64),
+        b: (f64, f64),
+        color: Color,
+        width: f64,
+        tube: bool,
+    },
+}
+
+struct Label3 {
+    x: f64,
+    y: f64,
+    text: String,
+    size: f64,
+    color: Color,
+    background: Option<Color>,
+    bold: bool,
+}
+
+/// What 3D series draw into: primitives in data coordinates that the axes
+/// sorts by depth (farthest first) and draws with lighting.
+pub struct Scene3d<'a> {
+    proj: &'a Projection3d,
+    prims: Vec<(f64, Prim)>,
+    labels: Vec<Label3>,
+    fog: f64,
+    background: Color,
+    light: bool,
+}
+
+impl Scene3d<'_> {
+    /// The projection of this scene.
+    pub fn projection(&self) -> &Projection3d {
+        self.proj
+    }
+
+    fn cue(&self, c: Color, depth: f64) -> Color {
+        if self.fog > 0.0 {
+            c.mix(
+                self.background.with_alpha(c.a),
+                self.fog * (1.0 - self.proj.nearness(depth)),
+            )
+        } else {
+            c
         }
     }
-    // Tick labels along three front edges.
-    let ts = ctx.theme.tick_size * 0.85;
-    for i in 0..3 {
-        let (lo, hi) = p.bounds[i];
-        let t = ticks::linear_ticks(lo, hi, 4);
-        let mut base = [0.0; 3];
-        match i {
-            0 => base = [0.0, -sy, -1.0],
-            1 => base = [-sx, 0.0, -1.0],
-            _ => base[0] = sx.min(0.0).abs() * 2.0 - 1.0,
+
+    /// A flat polygon (3 or 4 corners; more are split into a fan) lit by
+    /// its orientation. `edge` outlines it.
+    pub fn polygon(&mut self, v: &[[f64; 3]], color: Color, edge: Option<Stroke>) {
+        self.face(v, color, edge, None, false);
+    }
+
+    /// A polygon with a given view-space normal (for smooth meshes) or
+    /// computed from the corners; with `cull` faces turned away are skipped
+    /// (`normal` must then point outwards).
+    fn face(
+        &mut self,
+        v: &[[f64; 3]],
+        color: Color,
+        edge: Option<Stroke>,
+        normal: Option<[f64; 3]>,
+        cull: bool,
+    ) {
+        if v.len() < 3 {
+            return;
         }
-        if i == 2 {
-            base = [-sx, sy, 0.0];
+        if v.len() > 4 {
+            for i in 1..v.len() - 1 {
+                self.face(&[v[0], v[i], v[i + 1]], color, edge.clone(), normal, cull);
+            }
+            return;
         }
-        let mut endpoints = Vec::new();
-        for v in &t.0 {
-            let f = if hi > lo {
-                (v - lo) / (hi - lo) * 2.0 - 1.0
+        let q: Vec<[f64; 3]> = v.iter().map(|p| self.proj.view(*p)).collect();
+        if q.iter().any(|p| !p.iter().all(|c| c.is_finite())) {
+            return;
+        }
+        let n = normal.unwrap_or_else(|| unit(cross(sub(q[1], q[0]), sub(q[2], q[0]))));
+        if cull && n[2] < -0.02 {
+            return;
+        }
+        let depth = q.iter().map(|p| p[2]).sum::<f64>() / q.len() as f64;
+        let c = if self.light {
+            lit(color, lambert(n))
+        } else {
+            color
+        };
+        let c = self.cue(c, depth);
+        let mut pts = [(0.0, 0.0); 4];
+        for (i, p) in q.iter().enumerate() {
+            let s = self.proj.screen(*p);
+            pts[i] = (s.0, s.1);
+        }
+        let k = q.len();
+        if c.a > 0.99 {
+            // Opaque faces grow by a third of a pixel on every edge so
+            // anti-aliased neighbours leave no hairline seams (cheaper than
+            // an outline).
+            grow(&mut pts[..k], 0.35);
+        }
+        let stroke = edge.map(|s| Stroke {
+            color: self.cue(s.color, depth),
+            ..s
+        });
+        self.prims.push((
+            depth,
+            Prim::Poly {
+                pts,
+                n: q.len() as u8,
+                fill: Some(c),
+                stroke,
+            },
+        ));
+    }
+
+    /// A shaded sphere with a radius in data units (x-axis units).
+    pub fn sphere(&mut self, c: [f64; 3], radius: f64, color: Color) {
+        let (x, y, d) = self.proj.project(c);
+        let r = radius * self.proj.px_per_unit(d);
+        self.ball(x, y, d, r, color, true);
+    }
+
+    /// A marker (shaded when `shaded`) of `size` pixels across.
+    pub fn marker(&mut self, c: [f64; 3], size: f64, color: Color, shaded: bool) {
+        let (x, y, d) = self.proj.project(c);
+        let r = size / 2.0 * self.proj.persp(d);
+        self.ball(x, y, d, r, color, shaded);
+    }
+
+    fn ball(&mut self, x: f64, y: f64, d: f64, r: f64, color: Color, shaded: bool) {
+        if !(x.is_finite() && y.is_finite() && r.is_finite()) || r <= 0.0 {
+            return;
+        }
+        let color = self.cue(color, d);
+        self.prims.push((
+            d,
+            Prim::Ball {
+                x,
+                y,
+                r,
+                color,
+                shaded: shaded && self.light,
+            },
+        ));
+    }
+
+    /// A straight line of `width` pixels.
+    pub fn line(&mut self, a: [f64; 3], b: [f64; 3], color: Color, width: f64) {
+        self.seg(a, b, color, width, false, false);
+    }
+
+    /// A shaded cylinder (rounded ends) with a radius in data units.
+    pub fn tube(&mut self, a: [f64; 3], b: [f64; 3], radius: f64, color: Color) {
+        self.seg(a, b, color, radius, true, true);
+    }
+
+    fn seg(&mut self, a: [f64; 3], b: [f64; 3], color: Color, w: f64, data: bool, tube: bool) {
+        let (pa, pb) = (self.proj.project(a), self.proj.project(b));
+        if !(pa.0.is_finite() && pa.1.is_finite() && pb.0.is_finite() && pb.1.is_finite()) {
+            return;
+        }
+        let d = (pa.2 + pb.2) / 2.0;
+        let width = if data {
+            2.0 * w * self.proj.px_per_unit(d)
+        } else {
+            w * self.proj.persp(d)
+        };
+        let color = self.cue(color, d);
+        self.prims.push((
+            d,
+            Prim::Seg {
+                a: (pa.0, pa.1),
+                b: (pb.0, pb.1),
+                color,
+                width,
+                tube: tube && self.light,
+            },
+        ));
+    }
+
+    /// A text label at a data point, drawn above everything else.
+    pub fn text(&mut self, at: [f64; 3], text: impl Into<String>, size: f64, color: Color) {
+        self.label(at, text.into(), size, color, None, false);
+    }
+
+    /// A bold text label on a rounded background.
+    pub fn tag(
+        &mut self,
+        at: [f64; 3],
+        text: impl Into<String>,
+        size: f64,
+        color: Color,
+        background: Color,
+    ) {
+        self.label(at, text.into(), size, color, Some(background), true);
+    }
+
+    fn label(
+        &mut self,
+        at: [f64; 3],
+        text: String,
+        size: f64,
+        color: Color,
+        background: Option<Color>,
+        bold: bool,
+    ) {
+        let (x, y, _) = self.proj.project(at);
+        if x.is_finite() && y.is_finite() {
+            self.labels.push(Label3 {
+                x,
+                y,
+                text,
+                size,
+                color,
+                background,
+                bold,
+            });
+        }
+    }
+
+    fn finish(mut self, fonts: &FontSet, out: &mut Vec<Node>) {
+        self.prims.sort_by(|a, b| a.0.total_cmp(&b.0));
+        for (_, p) in self.prims {
+            match p {
+                Prim::Poly {
+                    pts,
+                    n,
+                    fill,
+                    stroke,
+                } => {
+                    let mut cmds = Vec::with_capacity(n as usize + 1);
+                    cmds.push(PathCmd::MoveTo(pts[0].0, pts[0].1));
+                    for p in &pts[1..n as usize] {
+                        cmds.push(PathCmd::LineTo(p.0, p.1));
+                    }
+                    cmds.push(PathCmd::Close);
+                    out.push(Node::Path { cmds, fill, stroke });
+                }
+                Prim::Ball {
+                    x,
+                    y,
+                    r,
+                    color,
+                    shaded,
+                } => draw_ball(out, x, y, r, color, shaded),
+                Prim::Seg {
+                    a,
+                    b,
+                    color,
+                    width,
+                    tube,
+                } => draw_seg(out, a, b, color, width, tube),
+            }
+        }
+        for l in self.labels {
+            if let Some(bg) = l.background {
+                let w = fonts.width(&l.text, l.size) + l.size * 0.8;
+                let h = l.size * 1.45;
+                out.push(Node::Rect {
+                    x: l.x - w / 2.0,
+                    y: l.y - h / 2.0,
+                    w,
+                    h,
+                    rx: h * 0.3,
+                    fill: Some(bg),
+                    stroke: None,
+                });
+            }
+            out.push(Node::Text(TextNode {
+                x: l.x,
+                y: l.y,
+                text: l.text,
+                size: l.size,
+                color: l.color,
+                anchor: Anchor::Middle,
+                baseline: Baseline::Middle,
+                rotate: 0.0,
+                bold: l.bold,
+                italic: false,
+            }));
+        }
+    }
+}
+
+/// Moves the edges of a convex polygon outwards by `d` pixels (miter
+/// joins, limited for sharp corners).
+fn grow(p: &mut [(f64, f64)], d: f64) {
+    let k = p.len();
+    let area: f64 = (0..k)
+        .map(|i| {
+            let (a, b) = (p[i], p[(i + 1) % k]);
+            a.0 * b.1 - b.0 * a.1
+        })
+        .sum();
+    if area.abs() < 1e-9 {
+        return;
+    }
+    let s = if area > 0.0 { 1.0 } else { -1.0 };
+    // Outward unit normal of edge i (from p[i] to p[i + 1]).
+    let normal = |a: (f64, f64), b: (f64, f64)| {
+        let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+        let l = dx.hypot(dy);
+        if l < 1e-12 {
+            None
+        } else {
+            Some((s * dy / l, -s * dx / l))
+        }
+    };
+    let src: Vec<(f64, f64)> = p.to_vec();
+    for i in 0..k {
+        let prev = normal(src[(i + k - 1) % k], src[i]);
+        let next = normal(src[i], src[(i + 1) % k]);
+        let (nx, ny) = match (prev, next) {
+            (Some(a), Some(b)) => {
+                let c = 1.0 + a.0 * b.0 + a.1 * b.1;
+                let m = (2.0 / c.max(0.25)).min(4.0);
+                ((a.0 + b.0) / 2.0 * m, (a.1 + b.1) / 2.0 * m)
+            }
+            (Some(a), None) | (None, Some(a)) => a,
+            _ => continue,
+        };
+        p[i] = (src[i].0 + nx * d, src[i].1 + ny * d);
+    }
+}
+
+/// A sphere as stacked circles moving towards the light: a soft gradient
+/// from the shadowed rim to the highlight that every backend can draw.
+fn draw_ball(out: &mut Vec<Node>, x: f64, y: f64, r: f64, color: Color, shaded: bool) {
+    if !shaded || r < 1.6 {
+        out.push(Node::Circle {
+            cx: x,
+            cy: y,
+            r,
+            fill: Some(color),
+            stroke: if shaded || r < 1.6 {
+                None
             } else {
-                0.0
-            };
+                Some(Stroke::new(color.darken(0.3), 0.6))
+            },
+        });
+        return;
+    }
+    let rim = color.darken(0.5);
+    let steps = ((r / 1.4) as usize).clamp(3, 18);
+    let (ox, oy) = (LIGHT[0] * 0.62, -LIGHT[1] * 0.62);
+    out.push(Node::Circle {
+        cx: x,
+        cy: y,
+        r,
+        fill: Some(rim),
+        stroke: None,
+    });
+    for k in 1..=steps {
+        let t = k as f64 / steps as f64;
+        // Radius shrinks, centre moves towards the highlight.
+        let rr = r * (1.0 - 0.9 * t);
+        let off = r * t * 0.55;
+        let c = if t < 0.72 {
+            rim.mix(color, (t / 0.72).powf(0.7))
+        } else {
+            color.mix(color.lighten(0.6), (t - 0.72) / 0.28)
+        };
+        out.push(Node::Circle {
+            cx: x + ox * off,
+            cy: y + oy * off,
+            r: rr,
+            fill: Some(c.with_alpha(color.a)),
+            stroke: None,
+        });
+    }
+}
+
+fn draw_seg(
+    out: &mut Vec<Node>,
+    a: (f64, f64),
+    b: (f64, f64),
+    color: Color,
+    width: f64,
+    tube: bool,
+) {
+    let path =
+        |a: (f64, f64), b: (f64, f64)| vec![PathCmd::MoveTo(a.0, a.1), PathCmd::LineTo(b.0, b.1)];
+    let stroke = |c: Color, w: f64| Stroke::new(c, w.max(0.3)).cap(LineCap::Round);
+    if !tube || width < 2.5 {
+        out.push(Node::Path {
+            cmds: path(a, b),
+            fill: None,
+            stroke: Some(stroke(color, width)),
+        });
+        return;
+    }
+    // Perpendicular offset towards the light for the highlight bands.
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let l = dx.hypot(dy).max(1e-9);
+    let (mut nx, mut ny) = (-dy / l, dx / l);
+    if nx * LIGHT[0] - ny * LIGHT[1] < 0.0 {
+        (nx, ny) = (-nx, -ny);
+    }
+    let bands = [
+        (1.0, 0.0, color.darken(0.45)),
+        (0.72, 0.1, color),
+        (0.36, 0.22, color.lighten(0.38)),
+    ];
+    for (wf, of, c) in bands {
+        let o = width * of;
+        out.push(Node::Path {
+            cmds: path((a.0 + nx * o, a.1 + ny * o), (b.0 + nx * o, b.1 + ny * o)),
+            fill: None,
+            stroke: Some(stroke(c, width * wf)),
+        });
+    }
+}
+
+/// Draws the back panes, grid lines, ticks and axis labels of the box.
+fn draw_box(
+    out: &mut Vec<Node>,
+    p: &Projection3d,
+    labels: [Option<&str>; 3],
+    theme: &Theme,
+    fonts: &FontSet,
+) {
+    let e = p.ext;
+    let grid = Stroke::new(theme.grid, 1.0);
+    let ticks: Vec<(Vec<f64>, f64)> = (0..3)
+        .map(|i| ticks::linear_ticks(p.bounds[i].0, p.bounds[i].1, if e[i] < 0.4 { 2 } else { 4 }))
+        .collect();
+    let nv = |i: usize, v: f64| (v - p.mid[i]) * p.k[i];
+    // For each axis the pane on the side away from the viewer.
+    let far: Vec<f64> = (0..3)
+        .map(|i| {
+            let mut a = [0.0; 3];
+            a[i] = 1.0;
+            if p.cam.view(a)[2] > 0.0 {
+                -e[i]
+            } else {
+                e[i]
+            }
+        })
+        .collect();
+    for i in 0..3 {
+        let (u, w) = ((i + 1) % 3, (i + 2) % 3);
+        let corner = |a: f64, b: f64| {
+            let mut c = [0.0; 3];
+            c[i] = far[i];
+            c[u] = a;
+            c[w] = b;
+            let s = p.project_box(c);
+            (s.0, s.1)
+        };
+        let q = [
+            corner(-e[u], -e[w]),
+            corner(e[u], -e[w]),
+            corner(e[u], e[w]),
+            corner(-e[u], e[w]),
+        ];
+        out.push(Node::Path {
+            cmds: vec![
+                PathCmd::MoveTo(q[0].0, q[0].1),
+                PathCmd::LineTo(q[1].0, q[1].1),
+                PathCmd::LineTo(q[2].0, q[2].1),
+                PathCmd::LineTo(q[3].0, q[3].1),
+                PathCmd::Close,
+            ],
+            fill: Some(theme.plot_background.darken(0.035)),
+            stroke: Some(Stroke::new(theme.axis.with_alpha(0.35), 1.0)),
+        });
+        for (axis, other) in [(u, w), (w, u)] {
+            for v in &ticks[axis].0 {
+                let t = nv(axis, *v);
+                if t.abs() > e[axis] + 1e-9 {
+                    continue;
+                }
+                let (a, b) = if axis == u {
+                    (corner(t, -e[other]), corner(t, e[other]))
+                } else {
+                    (corner(-e[other], t), corner(e[other], t))
+                };
+                out.push(Node::Path {
+                    cmds: vec![PathCmd::MoveTo(a.0, a.1), PathCmd::LineTo(b.0, b.1)],
+                    fill: None,
+                    stroke: Some(grid.clone()),
+                });
+            }
+        }
+    }
+    // Ticks along one outer edge per axis: the lowest edge for axes that
+    // run across the screen, the leftmost for those that run up.
+    let center = p.project_box([0.0; 3]);
+    let ts = theme.tick_size * 0.85;
+    for i in 0..3 {
+        let (u, w) = ((i + 1) % 3, (i + 2) % 3);
+        let dir = {
+            let mut a = [0.0; 3];
+            a[i] = 1.0;
+            let v = p.cam.view(a);
+            (v[0], v[1])
+        };
+        if dir.0.hypot(dir.1) < 0.12 {
+            continue; // seen end-on
+        }
+        let across = dir.0.abs() >= dir.1.abs();
+        let mut best: Option<([f64; 3], f64)> = None;
+        for (su, sw) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let mut c = [0.0; 3];
+            c[u] = su * e[u];
+            c[w] = sw * e[w];
+            // Skip edges between two back panes (inside the box outline).
+            let back = (c[u] == far[u]) as u8 + (c[w] == far[w]) as u8;
+            if back == 2 {
+                continue;
+            }
+            let s = p.project_box(c);
+            let score = if across { s.1 } else { -s.0 };
+            if best.is_none_or(|b| score > b.1) {
+                best = Some((c, score));
+            }
+        }
+        let Some((base, _)) = best else { continue };
+        let at = |t: f64| {
             let mut c = base;
-            c[i] = f;
-            let (x, y, _) = p.project_unit(c);
+            c[i] = t;
+            p.project_box(c)
+        };
+        let (m0, m1) = (at(-e[i]), at(e[i]));
+        let mid = ((m0.0 + m1.0) / 2.0, (m0.1 + m1.1) / 2.0);
+        let (mut ox, mut oy) = (mid.0 - center.0, mid.1 - center.1);
+        let ol = ox.hypot(oy).max(1e-9);
+        (ox, oy) = (ox / ol, oy / ol);
+        out.push(Node::Path {
+            cmds: vec![PathCmd::MoveTo(m0.0, m0.1), PathCmd::LineTo(m1.0, m1.1)],
+            fill: None,
+            stroke: Some(Stroke::new(theme.axis, 1.0)),
+        });
+        let anchor = if ox < -0.45 {
+            Anchor::End
+        } else if ox > 0.45 {
+            Anchor::Start
+        } else {
+            Anchor::Middle
+        };
+        let (lo, hi) = p.bounds[i];
+        let mut widest: f64 = 0.0;
+        for v in &ticks[i].0 {
+            let t = nv(i, *v);
+            if t.abs() > e[i] + 1e-9 {
+                continue;
+            }
+            let s = at(t);
             let label = ticks::format_value(
                 *v,
                 &ticks::TickFormat::Auto,
                 &crate::plot::Scale::Linear,
-                t.1,
+                ticks[i].1,
                 lo.abs().max(hi.abs()),
                 None,
             );
-            let anchor = if i == 2 { Anchor::End } else { Anchor::Middle };
-            let dx = if i == 2 { -6.0 } else { 0.0 };
-            ctx.text(
-                x + dx,
-                y + if i == 2 { 0.0 } else { 10.0 },
-                label,
-                ts,
-                ctx.theme.text,
+            widest = widest.max(fonts.width(&label, ts));
+            out.push(Node::Path {
+                cmds: vec![
+                    PathCmd::MoveTo(s.0, s.1),
+                    PathCmd::LineTo(s.0 + ox * 4.0, s.1 + oy * 4.0),
+                ],
+                fill: None,
+                stroke: Some(Stroke::new(theme.axis, 1.0)),
+            });
+            out.push(Node::Text(TextNode {
+                x: s.0 + ox * 9.0,
+                y: s.1 + oy * 9.0,
+                text: label,
+                size: ts,
+                color: theme.text,
                 anchor,
-                Baseline::Middle,
-            );
-            endpoints.push((x, y));
+                baseline: Baseline::Middle,
+                rotate: 0.0,
+                bold: false,
+                italic: false,
+            }));
         }
-        if let (Some(a), Some(b)) = (endpoints.first(), endpoints.last()) {
-            ctx.polyline(&[*a, *b], axis.clone());
-            if let Some(l) = &labels[i] {
-                let (mx, my) = ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0);
-                let (x, y) = if i == 2 {
-                    (mx - 40.0, my)
-                } else {
-                    (mx, my + 28.0)
-                };
-                ctx.text(
-                    x,
-                    y,
-                    l.clone(),
-                    ctx.theme.label_size,
-                    ctx.theme.text,
-                    Anchor::Middle,
-                    Baseline::Middle,
-                );
-            }
+        if let Some(l) = labels[i] {
+            let d = 16.0 + ts + widest * ox.abs();
+            out.push(Node::Text(TextNode {
+                x: mid.0 + ox * d,
+                y: mid.1 + oy * d,
+                text: l.to_string(),
+                size: theme.label_size,
+                color: theme.text,
+                anchor: Anchor::Middle,
+                baseline: Baseline::Middle,
+                rotate: 0.0,
+                bold: false,
+                italic: false,
+            }));
         }
     }
+}
+
+impl Axes {
+    fn use_3d(&mut self) {
+        self.kind = AxesKind::ThreeD;
+    }
+
+    /// Data range of the visible 3D series, with the axis limits applied.
+    pub(crate) fn bounds3d(&self) -> Bounds3 {
+        let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+        for s in self.shown() {
+            if let Some(sb) = s.bounds3d() {
+                for i in 0..3 {
+                    b[i].0 = b[i].0.min(sb[i].0);
+                    b[i].1 = b[i].1.max(sb[i].1);
+                }
+            }
+        }
+        let lim = [
+            (self.x.min, self.x.max),
+            (self.y.min, self.y.max),
+            self.view3d.z_limits,
+        ];
+        for i in 0..3 {
+            if let Some(v) = lim[i].0 {
+                b[i].0 = v;
+            }
+            if let Some(v) = lim[i].1 {
+                b[i].1 = v;
+            }
+            if !(b[i].0.is_finite() && b[i].1.is_finite()) {
+                b[i] = (0.0, 1.0);
+            } else if b[i].1 - b[i].0 <= 1e-12 * b[i].0.abs().max(1.0) {
+                b[i] = (b[i].0 - 0.5, b[i].1 + 0.5);
+            }
+        }
+        b
+    }
+
+    /// The projection of this axes' 3D scene into the plot rectangle.
+    pub(crate) fn projection3d(&self, plot: Rect) -> Projection3d {
+        Projection3d::new(
+            self.bounds3d(),
+            self.equal_aspect,
+            self.view3d.camera,
+            self.view3d.home,
+            self.view3d.show_box,
+            plot,
+        )
+    }
+
+    pub(crate) fn render3d(&self, plot: Rect, theme: &Theme, fonts: &FontSet, out: &mut Vec<Node>) {
+        let proj = self.projection3d(plot);
+        if self.view3d.show_box {
+            draw_box(
+                out,
+                &proj,
+                [
+                    self.x.label.as_deref(),
+                    self.y.label.as_deref(),
+                    self.view3d.z_label.as_deref(),
+                ],
+                theme,
+                fonts,
+            );
+        }
+        let mut scene = Scene3d {
+            proj: &proj,
+            prims: Vec::new(),
+            labels: Vec::new(),
+            fog: self.view3d.fog,
+            background: theme.plot_background,
+            light: self.view3d.light,
+        };
+        for s in self.shown() {
+            s.draw3d(&mut scene);
+        }
+        scene.finish(fonts, out);
+    }
+
+    pub(crate) fn hit3d(&self, plot: Rect, px: f64, py: f64) -> Option<Hit> {
+        let proj = self.projection3d(plot);
+        self.shown()
+            .filter_map(|s| s.hit3d(&proj, px, py))
+            .min_by(|a, b| a.distance.total_cmp(&b.distance))
+    }
+
+    /// Camera of the 3D scene from azimuth and elevation in degrees (also
+    /// the view `R` returns to). Keeps zoom and perspective.
+    pub fn camera(&mut self, azimuth: f64, elevation: f64) -> &mut Self {
+        let c = &mut self.view3d.camera;
+        *c = Camera {
+            zoom: c.zoom,
+            perspective: c.perspective,
+            ..Camera::new(azimuth, elevation)
+        };
+        self.view3d.home = *c;
+        self
+    }
+
+    /// Turns the 3D scene by `deg` degrees around a data axis.
+    pub fn rotate(&mut self, axis: Axis3, deg: f64) -> &mut Self {
+        self.view3d.camera.rotate(axis, deg);
+        self.view3d.home = self.view3d.camera;
+        self
+    }
+
+    /// Turns the 3D scene around the viewing direction.
+    pub fn roll(&mut self, deg: f64) -> &mut Self {
+        self.view3d.camera.roll(deg);
+        self.view3d.home = self.view3d.camera;
+        self
+    }
+
+    /// Replaces the camera of the 3D scene.
+    pub fn set_camera(&mut self, camera: Camera) -> &mut Self {
+        self.view3d.camera = camera;
+        self.view3d.home = camera;
+        self
+    }
+
+    /// The current camera of the 3D scene (after any interactive rotation).
+    pub fn current_camera(&self) -> Camera {
+        self.view3d.camera
+    }
+
+    /// Magnification of the 3D scene (1 = fits the plot).
+    pub fn zoom3d(&mut self, zoom: f64) -> &mut Self {
+        self.view3d.camera.zoom = zoom.max(1e-3);
+        self.view3d.home.zoom = self.view3d.camera.zoom;
+        self
+    }
+
+    /// Perspective strength of the 3D scene (0 = orthographic, the default;
+    /// 1 = strong).
+    pub fn perspective(&mut self, strength: f64) -> &mut Self {
+        self.view3d.camera.perspective = strength.clamp(0.0, 1.0);
+        self.view3d.home.perspective = self.view3d.camera.perspective;
+        self
+    }
+
+    /// Shows the 3D box with panes, grid and ticks (default on).
+    pub fn box3d(&mut self, on: bool) -> &mut Self {
+        self.view3d.show_box = on;
+        self
+    }
+
+    /// Fades far parts of the 3D scene toward the background (`0..1`).
+    pub fn depth_cue(&mut self, amount: f64) -> &mut Self {
+        self.view3d.fog = amount.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Lighting of 3D faces and spheres (default on).
+    pub fn lighting(&mut self, on: bool) -> &mut Self {
+        self.view3d.light = on;
+        self
+    }
+
+    /// z-axis label of a 3D scene.
+    pub fn z_label(&mut self, label: impl Into<String>) -> &mut Self {
+        self.view3d.z_label = Some(label.into());
+        self
+    }
+
+    /// z limits of a 3D scene.
+    pub fn z_limits(&mut self, min: f64, max: f64) -> &mut Self {
+        self.view3d.z_limits = (Some(min.min(max)), Some(min.max(max)));
+        self
+    }
+
+    /// Interactive turn (drag by `dx`, `dy` pixels).
+    pub(crate) fn drag3d(&mut self, dx: f64, dy: f64) {
+        self.view3d.camera.drag(dx, dy);
+    }
+
+    /// Interactive zoom (`factor` < 1 zooms in).
+    pub(crate) fn zoom3d_by(&mut self, factor: f64) {
+        let z = &mut self.view3d.camera.zoom;
+        *z = (*z / factor).clamp(0.05, 50.0);
+    }
+
+    /// Back to the camera set in code.
+    pub(crate) fn reset_camera(&mut self) {
+        self.view3d.camera = self.view3d.home;
+    }
+}
+
+fn finite_range(v: impl Iterator<Item = f64>) -> Option<(f64, f64)> {
+    let (a, b) = v
+        .filter(|t| t.is_finite())
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), t| {
+            (a.min(t), b.max(t))
+        });
+    a.is_finite().then_some((a, b))
 }
 
 /// Surface or wireframe `z[row][col]` over `x_range × y_range` (row 0 at
@@ -253,23 +1260,20 @@ pub struct Surface {
     pub(crate) y_range: (f64, f64),
     pub(crate) colormap: Colormap,
     pub(crate) wireframe: bool,
-    pub(crate) camera: Camera,
-    pub(crate) labels: [Option<String>; 3],
+    pub(crate) edges: bool,
+    pub(crate) opacity: f32,
     pub(crate) colorbar: Option<String>,
 }
 
 impl Surface {
-    /// Viewing angles in degrees.
-    pub fn camera(&mut self, azimuth: f64, elevation: f64) -> &mut Self {
-        self.camera = Camera {
-            azimuth,
-            elevation: elevation.clamp(-90.0, 90.0),
-        };
-        self
-    }
     /// Lines only.
     pub fn wireframe(&mut self, on: bool) -> &mut Self {
         self.wireframe = on;
+        self
+    }
+    /// Thin grid lines on the faces.
+    pub fn edges(&mut self, on: bool) -> &mut Self {
+        self.edges = on;
         self
     }
     /// Colormap.
@@ -277,9 +1281,9 @@ impl Surface {
         self.colormap = cm;
         self
     }
-    /// Axis labels.
-    pub fn labels(&mut self, x: &str, y: &str, z: &str) -> &mut Self {
-        self.labels = [Some(x.into()), Some(y.into()), Some(z.into())];
+    /// Opacity of the faces.
+    pub fn opacity(&mut self, a: f32) -> &mut Self {
+        self.opacity = a.clamp(0.0, 1.0);
         self
     }
     /// Shows a colorbar.
@@ -287,25 +1291,14 @@ impl Surface {
         self.colorbar = Some(label.into());
         self
     }
+    fn cols(&self) -> usize {
+        self.z.iter().map(|r| r.len()).min().unwrap_or(0)
+    }
     fn z_range(&self) -> (f64, f64) {
-        let (a, b) = self
-            .z
-            .iter()
-            .flatten()
-            .copied()
-            .filter(|v| v.is_finite())
-            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| {
-                (a.min(v), b.max(v))
-            });
-        if a.is_finite() {
-            (a, b)
-        } else {
-            (0.0, 1.0)
-        }
+        finite_range(self.z.iter().flatten().copied()).unwrap_or((0.0, 1.0))
     }
     fn grid_point(&self, r: usize, c: usize) -> [f64; 3] {
-        let rows = self.z.len();
-        let cols = self.z.iter().map(|r| r.len()).min().unwrap_or(0);
+        let (rows, cols) = (self.z.len(), self.cols());
         let x = self.x_range.0
             + (self.x_range.1 - self.x_range.0) * c as f64 / (cols.max(2) - 1) as f64;
         let y = self.y_range.0
@@ -318,23 +1311,22 @@ impl Series for Surface {
     fn extent(&self) -> Option<Extent> {
         Some(Extent::point(0.0, 0.0).include(1.0, 1.0))
     }
-    fn draw(&self, ctx: &mut Context) {
-        let rows = self.z.len();
-        let cols = self.z.iter().map(|r| r.len()).min().unwrap_or(0);
+    fn draw(&self, _ctx: &mut Context) {}
+    fn bounds3d(&self) -> Option<Bounds3> {
+        Some([self.x_range, self.y_range, self.z_range()])
+    }
+    fn draw3d(&self, scene: &mut Scene3d) {
+        let (rows, cols) = (self.z.len(), self.cols());
         if rows < 2 || cols < 2 {
             return;
         }
         let zr = self.z_range();
-        let p = Projector::new([self.x_range, self.y_range, zr], self.camera, ctx.rect);
-        draw_box(ctx, &p, &self.labels);
         let cs = ColorScale {
             colormap: self.colormap,
             min: zr.0,
             max: zr.1,
             label: None,
         };
-        // Painter's algorithm: far quads first.
-        let mut quads = Vec::with_capacity(rows * cols);
         for r in 0..rows - 1 {
             for c in 0..cols - 1 {
                 let v = [
@@ -346,22 +1338,20 @@ impl Series for Surface {
                 if v.iter().any(|q| !q[2].is_finite()) {
                     continue;
                 }
-                let pr: Vec<(f64, f64, f64)> = v.iter().map(|q| p.project(*q)).collect();
-                let depth = pr.iter().map(|q| q.2).sum::<f64>() / 4.0;
-                let zm = v.iter().map(|q| q[2]).sum::<f64>() / 4.0;
-                quads.push((depth, pr, zm));
-            }
-        }
-        quads.sort_by(|a, b| a.0.total_cmp(&b.0));
-        for (_, pr, zm) in quads {
-            let pts: Vec<(f64, f64)> = pr.iter().map(|q| (q.0, q.1)).collect();
-            let c = cs.color(zm);
-            if self.wireframe {
-                let mut closed = pts.clone();
-                closed.push(pts[0]);
-                ctx.polyline(&closed, Stroke::new(c, 0.8));
-            } else {
-                ctx.polygon(&pts, Some(c), Some(Stroke::new(c.darken(0.25), 0.4)));
+                let color = cs.color(v.iter().map(|q| q[2]).sum::<f64>() / 4.0);
+                if self.wireframe {
+                    for k in 0..4 {
+                        if (k == 2 && r + 2 < rows) || (k == 1 && c + 2 < cols) {
+                            continue; // shared with the next quad
+                        }
+                        scene.line(v[k], v[(k + 1) % 4], color, 1.0);
+                    }
+                } else {
+                    let edge = self
+                        .edges
+                        .then(|| Stroke::new(color.darken(0.35).with_alpha(0.7), 0.5));
+                    scene.polygon(&v, color.with_alpha(self.opacity), edge);
+                }
             }
         }
     }
@@ -373,6 +1363,9 @@ impl Series for Surface {
             max: b,
             label: Some(l.clone()),
         })
+    }
+    fn kind(&self) -> &'static str {
+        "3D surface"
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
@@ -387,24 +1380,25 @@ pub struct Points3d {
     pub(crate) z: Vec<f64>,
     pub(crate) color: Color,
     pub(crate) colormap: Option<Colormap>,
+    pub(crate) values: Option<Vec<f64>>,
     pub(crate) line: bool,
     pub(crate) size: f64,
-    pub(crate) camera: Camera,
-    pub(crate) labels: [Option<String>; 3],
+    pub(crate) shaded: bool,
+    pub(crate) label: Option<String>,
 }
 
 impl Points3d {
-    /// Viewing angles in degrees.
-    pub fn camera(&mut self, azimuth: f64, elevation: f64) -> &mut Self {
-        self.camera = Camera {
-            azimuth,
-            elevation: elevation.clamp(-90.0, 90.0),
-        };
-        self
-    }
-    /// Colors points by z with a colormap.
+    /// Colors points by z (or by [`Points3d::values`]) with a colormap.
     pub fn colormap(&mut self, cm: Colormap) -> &mut Self {
         self.colormap = Some(cm);
+        self
+    }
+    /// Values that set the colors through the colormap (default: z).
+    pub fn values(&mut self, v: impl IntoValues) -> &mut Self {
+        self.values = Some(v.into_values());
+        if self.colormap.is_none() {
+            self.colormap = Some(Colormap::Viridis);
+        }
         self
     }
     /// Uniform color.
@@ -412,36 +1406,33 @@ impl Points3d {
         self.color = c.into();
         self
     }
-    /// Marker size / line width.
+    /// Marker size / line width in pixels.
     pub fn size(&mut self, s: f64) -> &mut Self {
         self.size = s.max(0.5);
         self
     }
-    /// Axis labels.
-    pub fn labels(&mut self, x: &str, y: &str, z: &str) -> &mut Self {
-        self.labels = [Some(x.into()), Some(y.into()), Some(z.into())];
+    /// Shaded spheres (default) or flat dots.
+    pub fn shaded(&mut self, on: bool) -> &mut Self {
+        self.shaded = on;
         self
     }
-    fn bounds(&self) -> Bounds3 {
-        let r = |v: &[f64]| {
-            let (a, b) = v
-                .iter()
-                .copied()
-                .filter(|t| t.is_finite())
-                .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), t| {
-                    (a.min(t), b.max(t))
-                });
-            if a.is_finite() {
-                if b > a {
-                    (a, b)
-                } else {
-                    (a - 0.5, a + 0.5)
-                }
-            } else {
-                (0.0, 1.0)
-            }
-        };
-        [r(&self.x), r(&self.y), r(&self.z)]
+    /// Legend label.
+    pub fn label(&mut self, l: impl Into<String>) -> &mut Self {
+        self.label = Some(l.into());
+        self
+    }
+    fn n(&self) -> usize {
+        self.x.len().min(self.y.len()).min(self.z.len())
+    }
+    fn scale(&self) -> Option<ColorScale> {
+        let v = self.values.as_deref().unwrap_or(&self.z);
+        let (a, b) = finite_range(v.iter().copied()).unwrap_or((0.0, 1.0));
+        self.colormap.map(|cm| ColorScale {
+            colormap: cm,
+            min: a,
+            max: b,
+            label: None,
+        })
     }
 }
 
@@ -449,59 +1440,48 @@ impl Series for Points3d {
     fn extent(&self) -> Option<Extent> {
         Some(Extent::point(0.0, 0.0).include(1.0, 1.0))
     }
-    fn draw(&self, ctx: &mut Context) {
-        let b = self.bounds();
-        let p = Projector::new(b, self.camera, ctx.rect);
-        draw_box(ctx, &p, &self.labels);
-        let n = self.x.len().min(self.y.len()).min(self.z.len());
-        let pts: Vec<(f64, f64, f64, f64)> = (0..n)
-            .map(|i| {
-                let (x, y, d) = p.project([self.x[i], self.y[i], self.z[i]]);
-                (x, y, d, self.z[i])
+    fn draw(&self, _ctx: &mut Context) {}
+    fn bounds3d(&self) -> Option<Bounds3> {
+        let r = |v: &[f64]| finite_range(v.iter().copied()).unwrap_or((0.0, 1.0));
+        Some([r(&self.x), r(&self.y), r(&self.z)])
+    }
+    fn draw3d(&self, scene: &mut Scene3d) {
+        let n = self.n();
+        let cs = self.scale();
+        let vals = self.values.as_deref().unwrap_or(&self.z);
+        let color = |i: usize| {
+            cs.as_ref().map_or(self.color, |s| {
+                s.color(vals.get(i).copied().unwrap_or(f64::NAN))
             })
-            .collect();
-        let cs = self.colormap.map(|cm| ColorScale {
-            colormap: cm,
-            min: b[2].0,
-            max: b[2].1,
-            label: None,
-        });
+        };
+        let p = |i: usize| [self.x[i], self.y[i], self.z[i]];
         if self.line {
-            for w in pts.windows(2) {
-                let c = cs
-                    .as_ref()
-                    .map_or(self.color, |s| s.color((w[0].3 + w[1].3) / 2.0));
-                ctx.polyline(
-                    &[(w[0].0, w[0].1), (w[1].0, w[1].1)],
-                    Stroke::new(c, self.size),
-                );
+            for i in 1..n {
+                let c = if cs.is_some() {
+                    color(i - 1).mix(color(i), 0.5)
+                } else {
+                    self.color
+                };
+                scene.line(p(i - 1), p(i), c, self.size);
             }
         } else {
-            let mut order: Vec<usize> = (0..pts.len()).collect();
-            order.sort_by(|a, b| pts[*a].2.total_cmp(&pts[*b].2));
-            for i in order {
-                let (x, y, _, z) = pts[i];
-                let c = cs.as_ref().map_or(self.color, |s| s.color(z));
-                ctx.push(Node::Circle {
-                    cx: x,
-                    cy: y,
-                    r: self.size / 2.0,
-                    fill: Some(c),
-                    stroke: Some(Stroke::new(c.darken(0.3), 0.6)),
-                });
+            for i in 0..n {
+                scene.marker(p(i), self.size, color(i), self.shaded);
             }
         }
     }
-    fn hit(&self, _x: &AxisMap, _y: &AxisMap, rect: Rect, px: f64, py: f64) -> Option<Hit> {
-        let p = Projector::new(self.bounds(), self.camera, rect);
-        (0..self.x.len().min(self.y.len()).min(self.z.len()))
+    fn hit3d(&self, proj: &Projection3d, px: f64, py: f64) -> Option<Hit> {
+        (0..self.n())
             .map(|i| {
-                let (x, y, _) = p.project([self.x[i], self.y[i], self.z[i]]);
+                let (x, y, _) = proj.project([self.x[i], self.y[i], self.z[i]]);
                 Hit {
                     px: x,
                     py: y,
                     label: format!(
-                        "({}, {}, {})",
+                        "{}({}, {}, {})",
+                        self.label
+                            .as_ref()
+                            .map_or(String::new(), |l| format!("{l}: ")),
                         short(self.x[i]),
                         short(self.y[i]),
                         short(self.z[i])
@@ -512,9 +1492,448 @@ impl Series for Points3d {
             .filter(|h| h.distance.is_finite())
             .min_by(|a, b| a.distance.total_cmp(&b.distance))
     }
+    fn legend(&self) -> Vec<LegendEntry> {
+        self.label
+            .iter()
+            .map(|l| LegendEntry {
+                label: l.clone(),
+                symbol: if self.line {
+                    LegendSymbol::Line {
+                        color: self.color,
+                        width: self.size,
+                        dash: Default::default(),
+                        marker: None,
+                    }
+                } else {
+                    LegendSymbol::Marker {
+                        marker: Marker::Circle,
+                        size: self.size.clamp(5.0, 12.0),
+                        color: self.color,
+                    }
+                },
+            })
+            .collect()
+    }
+    fn kind(&self) -> &'static str {
+        if self.line {
+            "3D line"
+        } else {
+            "3D scatter"
+        }
+    }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+}
+
+/// Spheres with radii in data units (cells, atoms, particles). Created by
+/// [`Axes::spheres3d`].
+#[derive(Clone, Debug)]
+pub struct Spheres {
+    pub(crate) centers: Vec<[f64; 3]>,
+    pub(crate) radii: Vec<f64>,
+    pub(crate) color: Color,
+    pub(crate) colors: Option<Vec<Color>>,
+    pub(crate) values: Option<(Vec<f64>, Colormap)>,
+    pub(crate) opacity: f32,
+    pub(crate) label: Option<String>,
+    pub(crate) names: Option<Vec<String>>,
+}
+
+impl Spheres {
+    /// Uniform color.
+    pub fn color(&mut self, c: impl Into<Color>) -> &mut Self {
+        self.color = c.into();
+        self
+    }
+    /// One color per sphere.
+    pub fn colors(&mut self, c: Vec<Color>) -> &mut Self {
+        self.colors = Some(c);
+        self
+    }
+    /// Colors from values through a colormap.
+    pub fn values(&mut self, v: impl IntoValues, cm: Colormap) -> &mut Self {
+        self.values = Some((v.into_values(), cm));
+        self
+    }
+    /// Opacity.
+    pub fn opacity(&mut self, a: f32) -> &mut Self {
+        self.opacity = a.clamp(0.0, 1.0);
+        self
+    }
+    /// Legend label.
+    pub fn label(&mut self, l: impl Into<String>) -> &mut Self {
+        self.label = Some(l.into());
+        self
+    }
+    /// Names shown in the hover tooltip.
+    pub fn names<S: AsRef<str>>(&mut self, names: &[S]) -> &mut Self {
+        self.names = Some(names.iter().map(|s| s.as_ref().to_string()).collect());
+        self
+    }
+    fn radius(&self, i: usize) -> f64 {
+        self.radii
+            .get(i)
+            .or(self.radii.last())
+            .copied()
+            .unwrap_or(1.0)
+    }
+    fn scale(&self) -> Option<ColorScale> {
+        self.values.as_ref().map(|(v, cm)| {
+            let (a, b) = finite_range(v.iter().copied()).unwrap_or((0.0, 1.0));
+            ColorScale {
+                colormap: *cm,
+                min: a,
+                max: b,
+                label: None,
+            }
+        })
+    }
+}
+
+impl Series for Spheres {
+    fn extent(&self) -> Option<Extent> {
+        Some(Extent::point(0.0, 0.0).include(1.0, 1.0))
+    }
+    fn draw(&self, _ctx: &mut Context) {}
+    fn bounds3d(&self) -> Option<Bounds3> {
+        let mut b = [(f64::INFINITY, f64::NEG_INFINITY); 3];
+        for (i, c) in self.centers.iter().enumerate() {
+            let r = self.radius(i);
+            for k in 0..3 {
+                if c[k].is_finite() {
+                    b[k] = (b[k].0.min(c[k] - r), b[k].1.max(c[k] + r));
+                }
+            }
+        }
+        b[0].0.is_finite().then_some(b)
+    }
+    fn draw3d(&self, scene: &mut Scene3d) {
+        let cs = self.scale();
+        for (i, c) in self.centers.iter().enumerate() {
+            let color = match (&self.colors, &cs, &self.values) {
+                (Some(v), _, _) => v.get(i).copied().unwrap_or(self.color),
+                (None, Some(s), Some((v, _))) => s.color(v.get(i).copied().unwrap_or(f64::NAN)),
+                _ => self.color,
+            };
+            scene.sphere(*c, self.radius(i), color.with_alpha(color.a * self.opacity));
+        }
+    }
+    fn hit3d(&self, proj: &Projection3d, px: f64, py: f64) -> Option<Hit> {
+        self.centers
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let (x, y, d) = proj.project(*c);
+                let r = self.radius(i) * proj.px_per_unit(d);
+                let name = self
+                    .names
+                    .as_ref()
+                    .and_then(|n| n.get(i).cloned())
+                    .or_else(|| self.label.clone())
+                    .unwrap_or_else(|| format!("#{i}"));
+                Hit {
+                    px: x,
+                    py: y,
+                    label: format!("{name} ({}, {}, {})", short(c[0]), short(c[1]), short(c[2])),
+                    distance: ((x - px).hypot(y - py) - r).max(0.0) - d * 1e-6,
+                }
+            })
+            .filter(|h| h.distance.is_finite())
+            .min_by(|a, b| a.distance.total_cmp(&b.distance))
+    }
+    fn legend(&self) -> Vec<LegendEntry> {
+        self.label
+            .iter()
+            .map(|l| LegendEntry {
+                label: l.clone(),
+                symbol: LegendSymbol::Marker {
+                    marker: Marker::Circle,
+                    size: 9.0,
+                    color: self.color,
+                },
+            })
+            .collect()
+    }
+    fn color_scale(&self) -> Option<ColorScale> {
+        self.scale()
+    }
+    fn kind(&self) -> &'static str {
+        "3D spheres"
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// A triangle/quad mesh (cell surfaces, organs, isosurfaces). Created by
+/// [`Axes::mesh3d`] and [`Axes::ellipsoid`].
+#[derive(Clone, Debug)]
+pub struct Mesh3d {
+    pub(crate) vertices: Vec<[f64; 3]>,
+    /// Faces as vertex indices (`u32::MAX` in the last slot for triangles).
+    pub(crate) faces: Vec<[u32; 4]>,
+    pub(crate) color: Color,
+    pub(crate) values: Option<(Vec<f64>, Colormap)>,
+    pub(crate) opacity: f32,
+    pub(crate) edges: Option<Color>,
+    pub(crate) smooth: bool,
+    pub(crate) closed: bool,
+    pub(crate) label: Option<String>,
+}
+
+impl Mesh3d {
+    /// Color.
+    pub fn color(&mut self, c: impl Into<Color>) -> &mut Self {
+        self.color = c.into();
+        self
+    }
+    /// Per-vertex values colored through a colormap.
+    pub fn values(&mut self, v: impl IntoValues, cm: Colormap) -> &mut Self {
+        self.values = Some((v.into_values(), cm));
+        self
+    }
+    /// Opacity (translucent meshes show what is inside).
+    pub fn opacity(&mut self, a: f32) -> &mut Self {
+        self.opacity = a.clamp(0.0, 1.0);
+        self
+    }
+    /// Draws the face edges in a color.
+    pub fn edges(&mut self, c: impl Into<Color>) -> &mut Self {
+        self.edges = Some(c.into());
+        self
+    }
+    /// Smooth shading from vertex normals (default on).
+    pub fn smooth(&mut self, on: bool) -> &mut Self {
+        self.smooth = on;
+        self
+    }
+    /// The mesh is closed with faces wound counter-clockwise seen from
+    /// outside: faces turned away are not drawn when it is opaque.
+    pub fn closed(&mut self, on: bool) -> &mut Self {
+        self.closed = on;
+        self
+    }
+    /// Legend label.
+    pub fn label(&mut self, l: impl Into<String>) -> &mut Self {
+        self.label = Some(l.into());
+        self
+    }
+    fn face_ids(f: &[u32; 4]) -> &[u32] {
+        if f[3] == u32::MAX {
+            &f[..3]
+        } else {
+            &f[..]
+        }
+    }
+}
+
+impl Series for Mesh3d {
+    fn extent(&self) -> Option<Extent> {
+        Some(Extent::point(0.0, 0.0).include(1.0, 1.0))
+    }
+    fn draw(&self, _ctx: &mut Context) {}
+    fn bounds3d(&self) -> Option<Bounds3> {
+        let r = |k: usize| finite_range(self.vertices.iter().map(|v| v[k]));
+        Some([r(0)?, r(1)?, r(2)?])
+    }
+    fn draw3d(&self, scene: &mut Scene3d) {
+        let proj = scene.proj;
+        let view: Vec<[f64; 3]> = self.vertices.iter().map(|v| proj.view(*v)).collect();
+        let face_normal = |ids: &[u32]| {
+            let q: Vec<[f64; 3]> = ids.iter().map(|&i| view[i as usize]).collect();
+            // Newell's method (robust for quads).
+            let mut n = [0.0; 3];
+            for k in 0..q.len() {
+                let (a, b) = (q[k], q[(k + 1) % q.len()]);
+                n[0] += (a[1] - b[1]) * (a[2] + b[2]);
+                n[1] += (a[2] - b[2]) * (a[0] + b[0]);
+                n[2] += (a[0] - b[0]) * (a[1] + b[1]);
+            }
+            unit(n)
+        };
+        let valid = |f: &[u32; 4]| Self::face_ids(f).iter().all(|&i| (i as usize) < view.len());
+        let normals: Vec<[f64; 3]> = if self.smooth {
+            let mut acc = vec![[0.0; 3]; view.len()];
+            for f in self.faces.iter().filter(|f| valid(f)) {
+                let ids = Self::face_ids(f);
+                let n = face_normal(ids);
+                for &i in ids {
+                    let a = &mut acc[i as usize];
+                    a[0] += n[0];
+                    a[1] += n[1];
+                    a[2] += n[2];
+                }
+            }
+            acc.into_iter().map(unit).collect()
+        } else {
+            Vec::new()
+        };
+        let cs = self.values.as_ref().map(|(v, cm)| {
+            let (a, b) = finite_range(v.iter().copied()).unwrap_or((0.0, 1.0));
+            (
+                v,
+                ColorScale {
+                    colormap: *cm,
+                    min: a,
+                    max: b,
+                    label: None,
+                },
+            )
+        });
+        let cull = self.closed && self.opacity > 0.99;
+        let edge = self.edges.map(|c| Stroke::new(c, 0.6));
+        let mut pts = Vec::with_capacity(4);
+        for f in self.faces.iter().filter(|f| valid(f)) {
+            let ids = Self::face_ids(f);
+            let flat = face_normal(ids);
+            let n = if self.smooth {
+                let mut s = [0.0; 3];
+                for &i in ids {
+                    let v = normals[i as usize];
+                    s = [s[0] + v[0], s[1] + v[1], s[2] + v[2]];
+                }
+                let s = unit(s);
+                // Keep the side of the face (two-sided lighting).
+                if dot(s, flat) < 0.0 {
+                    [-s[0], -s[1], -s[2]]
+                } else {
+                    s
+                }
+            } else {
+                flat
+            };
+            if cull && flat[2] < -0.02 {
+                continue;
+            }
+            let color = match &cs {
+                Some((v, s)) => {
+                    let m = ids
+                        .iter()
+                        .map(|&i| v.get(i as usize).copied().unwrap_or(f64::NAN))
+                        .sum::<f64>()
+                        / ids.len() as f64;
+                    s.color(m)
+                }
+                None => self.color,
+            };
+            pts.clear();
+            pts.extend(ids.iter().map(|&i| self.vertices[i as usize]));
+            // Back faces of translucent meshes a little darker.
+            let n = if !cull && flat[2] < 0.0 {
+                [n[0] * 0.6, n[1] * 0.6, n[2]]
+            } else {
+                n
+            };
+            scene.face(
+                &pts,
+                color.with_alpha(color.a * self.opacity),
+                edge.clone(),
+                Some(n),
+                false,
+            );
+        }
+    }
+    fn legend(&self) -> Vec<LegendEntry> {
+        self.label
+            .iter()
+            .map(|l| LegendEntry {
+                label: l.clone(),
+                symbol: LegendSymbol::Patch {
+                    fill: self.color.with_alpha(self.opacity.max(0.4)),
+                    edge: None,
+                },
+            })
+            .collect()
+    }
+    fn kind(&self) -> &'static str {
+        "3D mesh"
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// Text labels at 3D points, drawn above the scene. Created by
+/// [`Axes::text3d`].
+#[derive(Clone, Debug)]
+pub struct Text3d {
+    pub(crate) items: Vec<([f64; 3], String)>,
+    pub(crate) size: f64,
+    pub(crate) color: Option<Color>,
+    pub(crate) background: Option<Color>,
+}
+
+impl Text3d {
+    /// Font size.
+    pub fn size(&mut self, s: f64) -> &mut Self {
+        self.size = s;
+        self
+    }
+    /// Text color.
+    pub fn color(&mut self, c: impl Into<Color>) -> &mut Self {
+        self.color = Some(c.into());
+        self
+    }
+    /// Bold text on a rounded background.
+    pub fn background(&mut self, c: impl Into<Color>) -> &mut Self {
+        self.background = Some(c.into());
+        self
+    }
+}
+
+impl Series for Text3d {
+    fn extent(&self) -> Option<Extent> {
+        None
+    }
+    fn draw(&self, _ctx: &mut Context) {}
+    fn draw3d(&self, scene: &mut Scene3d) {
+        let color = self.color.unwrap_or(Color::rgb(30, 30, 30));
+        for (p, t) in &self.items {
+            match self.background {
+                Some(bg) => scene.tag(*p, t.clone(), self.size, color, bg),
+                None => scene.text(*p, t.clone(), self.size, color),
+            }
+        }
+    }
+    fn kind(&self) -> &'static str {
+        "annotation"
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+/// Faces of an `n × m` (longitude × latitude) grid on a sphere-like
+/// surface, wound outwards.
+pub(crate) fn uv_mesh(
+    lon: usize,
+    lat: usize,
+    point: impl Fn(f64, f64) -> [f64; 3],
+) -> (Vec<[f64; 3]>, Vec<[u32; 4]>) {
+    let mut v = Vec::with_capacity((lon + 1) * (lat + 1));
+    for j in 0..=lat {
+        let theta = std::f64::consts::PI * j as f64 / lat as f64; // 0 = north pole
+        for i in 0..=lon {
+            let phi = std::f64::consts::TAU * i as f64 / lon as f64;
+            v.push(point(theta, phi));
+        }
+    }
+    let id = |i: usize, j: usize| (j * (lon + 1) + i) as u32;
+    let mut f = Vec::with_capacity(lon * lat);
+    for j in 0..lat {
+        for i in 0..lon {
+            let (a, b, c, d) = (id(i, j), id(i, j + 1), id(i + 1, j + 1), id(i + 1, j));
+            if j == 0 {
+                f.push([a, b, c, u32::MAX]);
+            } else if j == lat - 1 {
+                f.push([a, b, d, u32::MAX]);
+            } else {
+                f.push([a, b, c, d]);
+            }
+        }
+    }
+    (v, f)
 }
 
 impl Axes {
@@ -525,7 +1944,7 @@ impl Axes {
         y_range: (f64, f64),
         z: Vec<Vec<f64>>,
     ) -> &mut Surface {
-        self.kind = AxesKind::Frameless;
+        self.use_3d();
         let cm = self.defaults.colormap;
         self.add(Surface {
             z,
@@ -533,8 +1952,8 @@ impl Axes {
             y_range,
             colormap: cm,
             wireframe: false,
-            camera: Camera::default(),
-            labels: [None, None, None],
+            edges: false,
+            opacity: 1.0,
             colorbar: None,
         })
     }
@@ -547,7 +1966,7 @@ impl Axes {
         y_range: (f64, f64),
         n: usize,
     ) -> &mut Surface {
-        let n = n.clamp(2, 200);
+        let n = n.clamp(2, 400);
         let z = (0..n)
             .map(|r| {
                 let y = y_range.0 + (y_range.1 - y_range.0) * r as f64 / (n - 1) as f64;
@@ -564,14 +1983,14 @@ impl Axes {
         self.surface(x_range, y_range, z)
     }
 
-    /// 3D scatter plot.
+    /// 3D scatter plot (shaded spheres of a fixed pixel size).
     pub fn scatter3d(
         &mut self,
         x: impl IntoValues,
         y: impl IntoValues,
         z: impl IntoValues,
     ) -> &mut Points3d {
-        self.kind = AxesKind::Frameless;
+        self.use_3d();
         let color = self.next_color();
         self.add(Points3d {
             x: x.into_values(),
@@ -579,10 +1998,11 @@ impl Axes {
             z: z.into_values(),
             color,
             colormap: None,
+            values: None,
             line: false,
             size: 7.0,
-            camera: Camera::default(),
-            labels: [None, None, None],
+            shaded: true,
+            label: None,
         })
     }
 
@@ -597,5 +2017,171 @@ impl Axes {
         p.line = true;
         p.size = 2.0;
         p
+    }
+
+    /// Spheres at `(x, y, z)` with radii in data units (one radius for all
+    /// when `radius` has one value).
+    pub fn spheres3d(
+        &mut self,
+        x: impl IntoValues,
+        y: impl IntoValues,
+        z: impl IntoValues,
+        radius: impl IntoValues,
+    ) -> &mut Spheres {
+        self.use_3d();
+        let (x, y, z) = (x.into_values(), y.into_values(), z.into_values());
+        let centers = x
+            .iter()
+            .zip(&y)
+            .zip(&z)
+            .map(|((a, b), c)| [*a, *b, *c])
+            .collect();
+        let color = self.next_color();
+        self.add(Spheres {
+            centers,
+            radii: radius.into_values(),
+            color,
+            colors: None,
+            values: None,
+            opacity: 1.0,
+            label: None,
+            names: None,
+        })
+    }
+
+    /// A mesh from vertices and faces (triangles `[a, b, c]` as
+    /// `[a, b, c, u32::MAX]`, or quads `[a, b, c, d]`).
+    pub fn mesh3d(&mut self, vertices: Vec<[f64; 3]>, faces: Vec<[u32; 4]>) -> &mut Mesh3d {
+        self.use_3d();
+        let color = self.next_color();
+        self.add(Mesh3d {
+            vertices,
+            faces,
+            color,
+            values: None,
+            opacity: 1.0,
+            edges: None,
+            smooth: true,
+            closed: false,
+            label: None,
+        })
+    }
+
+    /// A mesh from triangles.
+    pub fn trisurf(&mut self, vertices: Vec<[f64; 3]>, triangles: &[[u32; 3]]) -> &mut Mesh3d {
+        let faces = triangles
+            .iter()
+            .map(|t| [t[0], t[1], t[2], u32::MAX])
+            .collect();
+        self.mesh3d(vertices, faces)
+    }
+
+    /// An ellipsoid (a sphere when the radii are equal) as a smooth closed
+    /// mesh.
+    pub fn ellipsoid(&mut self, center: [f64; 3], radii: [f64; 3]) -> &mut Mesh3d {
+        let (v, f) = uv_mesh(48, 28, |t, p| {
+            [
+                center[0] + radii[0] * t.sin() * p.cos(),
+                center[1] + radii[1] * t.sin() * p.sin(),
+                center[2] + radii[2] * t.cos(),
+            ]
+        });
+        let m = self.mesh3d(v, f);
+        m.closed = true;
+        m
+    }
+
+    /// Text labels at 3D points.
+    pub fn text3d<S: AsRef<str>>(&mut self, items: &[([f64; 3], S)]) -> &mut Text3d {
+        self.use_3d();
+        let size = self.defaults_text_size();
+        self.add(Text3d {
+            items: items
+                .iter()
+                .map(|(p, s)| (*p, s.as_ref().to_string()))
+                .collect(),
+            size,
+            color: None,
+            background: None,
+        })
+    }
+
+    fn defaults_text_size(&self) -> f64 {
+        12.0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::prelude::*;
+
+    #[test]
+    fn camera_rotations_stay_orthonormal() {
+        let mut c = Camera::new(-60.0, 30.0);
+        for k in 0..1000 {
+            c.rotate(Axis3::X, 7.0)
+                .rotate(Axis3::Y, 3.0)
+                .turn(1.0, k as f64 * 0.01)
+                .roll(2.0);
+        }
+        let m = c.matrix();
+        for i in 0..3 {
+            for j in 0..3 {
+                let d = dot(m[i], m[j]);
+                assert!((d - if i == j { 1.0 } else { 0.0 }).abs() < 1e-9);
+            }
+        }
+        // Right-handed.
+        let z = cross(m[0], m[1]);
+        assert!(dot(z, m[2]) > 0.999);
+    }
+
+    #[test]
+    fn principal_axes_lay_the_long_side_across() {
+        let pts: Vec<[f64; 3]> = (0..200)
+            .map(|i| {
+                let t = i as f64;
+                [t * 0.1, (t * 0.7).sin() * 0.5, 20.0 - t * 0.3]
+            })
+            .collect();
+        let c = Camera::principal(&pts);
+        let dir = unit([0.1, 0.0, -0.3]);
+        assert!(c.view(dir)[0].abs() > 0.99, "{:?}", c.view(dir));
+    }
+
+    #[test]
+    fn full_turn_returns() {
+        let c0 = Camera::new(-60.0, 30.0);
+        for axis in [Axis3::X, Axis3::Y, Axis3::Z] {
+            let mut c = c0;
+            for _ in 0..24 {
+                c.rotate(axis, 15.0);
+            }
+            let (a, b) = (c.matrix(), c0.matrix());
+            for i in 0..3 {
+                for j in 0..3 {
+                    assert!((a[i][j] - b[i][j]).abs() < 1e-9);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn shared_scene_and_depth_order() {
+        let mut fig = Figure::new(500, 400);
+        let ax = fig.axes();
+        ax.scatter3d([0.0, 1.0], [0.0, 1.0], [0.0, 1.0]);
+        ax.spheres3d([0.5], [0.5], [0.5], [0.2]).color("red");
+        ax.ellipsoid([0.5, 0.5, 0.5], [0.1, 0.1, 0.3]);
+        let b = fig.axes().bounds3d();
+        assert_eq!(b[0], (0.0, 1.0));
+        let mut px = Pixels::default();
+        fig.render_into(&mut px).unwrap();
+        // Rotation changes the picture but not the size of the scene.
+        fig.axes().rotate(Axis3::X, 90.0);
+        let mut px2 = Pixels::default();
+        fig.render_into(&mut px2).unwrap();
+        assert_ne!(px.rgba, px2.rgba);
     }
 }

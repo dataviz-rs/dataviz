@@ -10,6 +10,7 @@ use std::any::Any;
 
 pub mod bar;
 pub mod bio;
+pub mod bio3d;
 pub mod contour;
 pub mod distribution;
 pub mod finance;
@@ -487,6 +488,16 @@ pub trait Series: Any {
     /// for hover readouts in interactive output (HTML). Default: none.
     fn data_points(&self, _max: usize) -> Vec<(f64, f64)> {
         Vec::new()
+    }
+    /// Data range of a 3D series (None for 2D series).
+    fn bounds3d(&self) -> Option<three_d::Bounds3> {
+        None
+    }
+    /// Draws a 3D series into the shared scene of its axes.
+    fn draw3d(&self, _scene: &mut three_d::Scene3d) {}
+    /// Nearest point of a 3D series to a canvas position.
+    fn hit3d(&self, _proj: &three_d::Projection3d, _px: f64, _py: f64) -> Option<Hit> {
+        None
     }
     /// For downcasting to the concrete type.
     fn as_any_mut(&mut self) -> &mut dyn Any;

@@ -23,6 +23,10 @@ use super::figure::Figure;
 impl Axes {
     /// Zooms around a canvas position by `factor` (< 1 zooms in).
     pub(crate) fn zoom_at(&mut self, lay: &Layout, px: f64, py: f64, factor: f64) {
+        if self.kind == AxesKind::ThreeD {
+            self.zoom3d_by(factor);
+            return;
+        }
         if self.kind != AxesKind::Cartesian {
             return;
         }
@@ -48,6 +52,10 @@ impl Axes {
 
     /// Pans by a canvas offset.
     pub(crate) fn pan(&mut self, lay: &Layout, dx: f64, dy: f64) {
+        if self.kind == AxesKind::ThreeD {
+            self.drag3d(dx, dy);
+            return;
+        }
         if self.kind != AxesKind::Cartesian {
             return;
         }
@@ -167,8 +175,29 @@ impl Figure {
         }
     }
 
-    /// Back to the limits from before the first zoom or pan.
+    /// Turns the 3D scene of plot `plot` by `deg` degrees around a data
+    /// axis (false when it is not a 3D plot).
+    pub fn rotate_view(
+        &mut self,
+        plot: usize,
+        axis: super::series::three_d::Axis3,
+        deg: f64,
+    ) -> bool {
+        match self.cells_mut().into_iter().nth(plot) {
+            Some(a) if a.kind == AxesKind::ThreeD => {
+                a.view3d.camera.rotate(axis, deg);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// Back to the limits from before the first zoom or pan (and 3D scenes
+    /// to their camera).
     pub fn reset_view(&mut self) {
+        for a in self.all_axes() {
+            a.reset_camera();
+        }
         if let Some(home) = self.home.take() {
             for (a, l) in self.all_axes().zip(&home) {
                 (a.x.min, a.x.max, a.y.min, a.y.max, a.y2.min, a.y2.max) = *l;

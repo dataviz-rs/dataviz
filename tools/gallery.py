@@ -20,6 +20,8 @@ SECTIONS = [
         ("plot-data-science", "data_science.png", "Data science: ROC, confusion matrix, regression"),
         ("plot-biology", "biology.png", "Biology: DNA logo, GWAS, volcano, UMAP, survival"),
         ("plot-biology", "clustermap.png", "Clustermap of gene expression"),
+        ("plot-biology-3d", "rotate.gif", "3D DNA and cell turning around x, y, z"),
+        ("plot-biology-3d", "biology_3d.png", "3D: DNA, PDB molecules, cell, organoid, UMAP"),
         ("plot-engineering", "engineering.png", "Engineering: spectrum, spectrogram, Nyquist, Smith"),
         ("plot-engineering", "bode.png", "Bode plot"),
         ("plot-trading", "trading.png", "Trading: Ichimoku, VWAP, volume profile, depth"),
@@ -55,7 +57,7 @@ SECTIONS = [
         ("plot-heatmap", "heatmap.png", "Heatmap (correlation matrix)"),
         ("plot-contour", "contour.png", "Contour plots"),
         ("plot-image", "image.png", "Images"),
-        ("plot-three-d", "three_d.png", "3D surface and scatter"),
+        ("plot-three-d", "three_d.png", "3D surface, Lorenz attractor, mesh"),
     ]),
     ("Maps", [
         ("plot-maps", "maps.png", "Choropleth and flight routes"),

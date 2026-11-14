@@ -608,8 +608,8 @@ fn charts() -> Vec<Chart> {
                 (-8.0, 8.0),
                 40,
             )
-            .colormap(Colormap::Viridis)
-            .labels("x", "y", "z");
+            .colormap(Colormap::Viridis);
+            ax.x_label("x").y_label("y").z_label("z");
             let ax = f.at(0, 1);
             ax.title("3D trajectory");
             let t: Vec<f64> = (0..600).map(|i| i as f64 / 30.0).collect();
@@ -618,8 +618,8 @@ fn charts() -> Vec<Chart> {
                 t.iter().map(|v| v.sin() * (1.0 + v / 10.0)),
                 &t,
             )
-            .colormap(Colormap::Plasma)
-            .labels("x", "y", "t");
+            .colormap(Colormap::Plasma);
+            ax.x_label("x").y_label("y").z_label("t");
         }),
         ("subplots_shared", |f| {
             f.grid(2, 2).share_x(true);

@@ -25,6 +25,8 @@ pub enum AxesKind {
     Polar,
     /// No axes (pie, treemap, sankey, …).
     Frameless,
+    /// 3D scene with a box, a camera and depth sorting.
+    ThreeD,
 }
 
 /// Defaults copied from the figure theme when the axes is created.
@@ -78,6 +80,8 @@ pub struct Axes {
     pub(crate) frame: bool,
     /// Overview of all data below the plot with the shown x range.
     pub(crate) range_slider: bool,
+    /// Camera and settings of the 3D scene.
+    pub(crate) view3d: super::series::three_d::View3d,
 }
 
 /// Limits of x, y and the secondary y-axis.
@@ -125,6 +129,7 @@ impl Axes {
             projection: None,
             frame: true,
             range_slider: false,
+            view3d: Default::default(),
         }
     }
 
@@ -1088,7 +1093,21 @@ impl Axes {
         // Series, clipped to the plot area; each in a group with an id
         // (`s<index>`, for interactive output).
         let mut data = Vec::new();
+        if self.kind == AxesKind::ThreeD {
+            let mut nodes = Vec::new();
+            self.render3d(p, theme, fonts, &mut nodes);
+            data.push(Node::Group {
+                children: nodes,
+                clip: None,
+                opacity: 1.0,
+                tooltip: None,
+                id: Some("s3d".into()),
+            });
+        }
         for (k, s) in self.series.iter().enumerate() {
+            if self.kind == AxesKind::ThreeD {
+                break;
+            }
             if !self.is_visible(k) {
                 continue;
             }
@@ -1571,6 +1590,9 @@ impl Axes {
 
     /// Nearest data point to a canvas position (for hover).
     pub(crate) fn hit(&self, lay: &Layout, px: f64, py: f64) -> Option<super::series::Hit> {
+        if self.kind == AxesKind::ThreeD {
+            return self.hit3d(lay.plot, px, py);
+        }
         self.shown()
             .filter_map(|s| {
                 let y = if s.secondary() {
