@@ -31,9 +31,10 @@ memory of the Rust plotting libraries.**
 
 - **Fast and lean.** Its own rasterizer draws straight into the output
   buffer: a 10-million-point line renders in about 0.1 s with a few MB of
-  extra memory, a live chart redraws in 1–2 ms. Faster and lighter than
-  plotters, ruviz, kuva and charts-rs in nearly every measurement
-  ([numbers below](#performance)). Optional multi-core and GPU backends.
+  extra memory, a live chart redraws in 1–2 ms. 8–50× faster than
+  matplotlib, and faster and lighter than plotters, ruviz, kuva and
+  charts-rs in nearly every measurement ([numbers below](#performance)).
+  Optional multi-core and GPU backends.
 - **Everything in one crate.** 50+ chart types — lines, bars, statistics,
   finance with indicators, heatmaps, contours, 3D, maps, sankey, networks —
   with themes, subplots, shared and broken axes, legends and colorbars.
@@ -204,42 +205,44 @@ fig.backend(Backend::Gpu);                 // `gpu` feature: Vulkan / Metal / DX
 
 ## Performance
 
-Measured against plotters, ruviz, kuva and charts-rs: same charts, separate processes, medians (Intel(R) Core(TM) Ultra 7 255HX, NVIDIA GeForce RTX 5070 Ti Laptop GPU, Linux). Full results, method and the code to rerun them: [dataviz-examples/benchmarks](https://github.com/dataviz-rs/dataviz-examples/tree/main/benchmarks).
+Measured against **matplotlib** (Python) and the Rust libraries plotters, ruviz, kuva and charts-rs: the same charts, separate processes, medians (Intel(R) Core(TM) Ultra 7 255HX, NVIDIA GeForce RTX 5070 Ti Laptop GPU, Linux). Full results, method and the code to rerun them: [dataviz-examples/benchmarks](https://github.com/dataviz-rs/dataviz-examples/tree/main/benchmarks).
+
+> **Compared with matplotlib**: 8–51× faster for charts saved to PNG, 29× faster for a live 100 000-point chart, and 151× less memory for 10 M points.
 
 **Charts to an 800×600 PNG** (one thread, time per chart):
 
-| Chart | dataviz | plotters | ruviz | kuva | charts-rs |
-|---|---:|---:|---:|---:|---:|
-| line, 1 000 points | **1.62 ms** | 3.76 ms | 3.97 ms | 11.3 ms | 11.4 ms |
-| bar, 20 bars | **0.81 ms** | 0.83 ms | 3.98 ms | 3.64 ms | 2.14 ms |
-| scatter, 10 000 points | **2.25 ms** | 2.90 ms | 4.38 ms | 8.71 ms | 76.6 ms |
-| scatter, 100 000 points | **10.1 ms** | 16.7 ms | 16.6 ms | 17.4 ms | 776.4 ms |
-| line, 100 000 points | **2.13 ms** | 5.99 ms | 8.22 ms | 28.4 ms | 831.8 ms |
-| histogram, 1 000 000 values | **1.99 ms** | 2.77 ms | 29.7 ms | 15.8 ms | 12.4 ms |
+| Chart | dataviz | plotters | ruviz | kuva | charts-rs | matplotlib |
+|---|---:|---:|---:|---:|---:|---:|
+| line, 1 000 points | **1.62 ms** | 3.76 ms | 3.97 ms | 11.3 ms | 11.4 ms | 29.5 ms |
+| bar, 20 bars | **0.81 ms** | 0.83 ms | 3.98 ms | 3.64 ms | 2.14 ms | 41.6 ms |
+| scatter, 10 000 points | **2.25 ms** | 2.90 ms | 4.38 ms | 8.71 ms | 76.6 ms | 37.5 ms |
+| scatter, 100 000 points | **10.1 ms** | 16.7 ms | 16.6 ms | 17.4 ms | 776.4 ms | 80.7 ms |
+| line, 100 000 points | **2.13 ms** | 5.99 ms | 8.22 ms | 28.4 ms | 831.8 ms | 49.8 ms |
+| histogram, 1 M values | **1.99 ms** | 2.77 ms | 29.7 ms | 15.8 ms | 12.4 ms | 49.7 ms |
 
 **Big data** (time / memory above the data itself):
 
-| Chart | dataviz | dataviz all cores | plotters | ruviz | kuva | charts-rs |
-|---|---:|---:|---:|---:|---:|---:|
-| line, 10 M points | 122.3 ms / +8 MB | **99.6 ms / +8 MB** | 486.1 ms / +315 MB | 329.5 ms / +389 MB | 2.71 s / +787 MB | fails |
-| scatter, 10 M points | 222.1 ms / +9 MB | **176.5 ms / +9 MB** | 1.53 s / +12 MB | 1.23 s / +379 MB | 1.55 s / +788 MB | fails |
-| histogram, 100 M values | 242.3 ms / +7 MB | **237.6 ms / +7 MB** | 260.6 ms / +12 MB | 3.58 s / +1915 MB | 1.62 s / +1551 MB | 1.21 s / +1532 MB |
+| Chart | dataviz | dataviz all cores | plotters | ruviz | kuva | charts-rs | matplotlib |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| line, 10 M points | 122.3 ms / +8 MB | **99.6 ms / +8 MB** | 486.1 ms / +315 MB | 329.5 ms / +389 MB | 2.71 s / +787 MB | fails | 565.7 ms / +1162 MB |
+| scatter, 10 M points | 222.1 ms / +9 MB | **176.5 ms / +9 MB** | 1.53 s / +12 MB | 1.23 s / +379 MB | 1.55 s / +788 MB | fails | 5.11 s / +910 MB |
+| histogram, 100 M values | 242.3 ms / +7 MB | **237.6 ms / +7 MB** | 260.6 ms / +12 MB | 3.58 s / +1915 MB | 1.62 s / +1551 MB | 1.21 s / +1532 MB | 520.0 ms / +13 MB |
 
-**Live chart** (rolling window, one new point and a full redraw per frame; latency p50 / CPU per frame / memory):
+**Live chart** (rolling window, one new point and a full redraw per frame; latency p50 / CPU per frame / memory of the process):
 
-| Window | dataviz 1 thread | dataviz all cores | dataviz GPU | plotters | ruviz | kuva |
-|---|---:|---:|---:|---:|---:|---:|
-| 1 000 points, 800×600 | 0.74 ms / 0.73 ms / 8 MB | **0.52 ms / 2.53 ms / 9 MB** | 0.83 ms / 0.43 ms / 238 MB | 0.63 ms / 0.63 ms / 14 MB | 5.26 ms / 5.27 ms / 11 MB | 5.21 ms / 5.20 ms / 27 MB |
-| 100 000 points, 800×600 | 2.06 ms / 2.03 ms / 12 MB | 1.81 ms / 4.50 ms / 14 MB | **1.76 ms / 1.30 ms / 242 MB** | 5.39 ms / 5.43 ms / 16 MB | 30.8 ms / 30.8 ms / 17 MB | 45.6 ms / 45.8 ms / 36 MB |
-| 1 000 points, 1920×1080 | 1.60 ms / 1.63 ms / 16 MB | **0.77 ms / 5.83 ms / 18 MB** | 1.71 ms / 1.37 ms / 244 MB | 1.44 ms / 1.43 ms / 18 MB | 14.9 ms / 14.9 ms / 18 MB | 17.3 ms / 17.3 ms / 33 MB |
-| 100 000 points, 1920×1080 | 5.15 ms / 5.17 ms / 19 MB | 3.14 ms / 14.1 ms / 21 MB | **2.80 ms / 2.40 ms / 249 MB** | 8.15 ms / 8.17 ms / 21 MB | 119.5 ms / 119.5 ms / 28 MB | 111.8 ms / 112.1 ms / 42 MB |
+| Window | dataviz 1 thread | dataviz all cores | dataviz GPU | plotters | ruviz | kuva | matplotlib |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 1 000 points, 800×600 | 0.74 ms / 0.73 ms / 8 MB | **0.52 ms / 2.53 ms / 9 MB** | 0.83 ms / 0.43 ms / 238 MB | 0.63 ms / 0.63 ms / 14 MB | 5.26 ms / 5.27 ms / 11 MB | 5.21 ms / 5.20 ms / 27 MB | 9.98 ms / 9.97 ms / 74 MB |
+| 100 000 points, 800×600 | 2.06 ms / 2.03 ms / 12 MB | 1.81 ms / 4.50 ms / 14 MB | **1.76 ms / 1.30 ms / 242 MB** | 5.39 ms / 5.43 ms / 16 MB | 30.8 ms / 30.8 ms / 17 MB | 45.6 ms / 45.8 ms / 36 MB | 60.0 ms / 60.2 ms / 113 MB |
+| 1 000 points, 1920×1080 | 1.60 ms / 1.63 ms / 16 MB | **0.77 ms / 5.83 ms / 18 MB** | 1.71 ms / 1.37 ms / 244 MB | 1.44 ms / 1.43 ms / 18 MB | 14.9 ms / 14.9 ms / 18 MB | 17.3 ms / 17.3 ms / 33 MB | 12.0 ms / 12.0 ms / 80 MB |
+| 100 000 points, 1920×1080 | 5.15 ms / 5.17 ms / 19 MB | 3.14 ms / 14.1 ms / 21 MB | **2.80 ms / 2.40 ms / 249 MB** | 8.15 ms / 8.17 ms / 21 MB | 119.5 ms / 119.5 ms / 28 MB | 111.8 ms / 112.1 ms / 42 MB | 135.8 ms / 135.8 ms / 177 MB |
 
 **Animated GIF** (800×600, 120 frames; time, file size):
 
-| Animation | dataviz | plotters | ruviz |
-|---|---:|---:|---:|
-| whole plot moves | **252.0 ms, 1001 KB** | 1.08 s, 3227 KB | 2.93 s, 1741 KB |
-| line grows on fixed axes | **81.0 ms, 38 KB** | 2.38 s, 3257 KB | 2.93 s, 1701 KB |
+| Animation | dataviz | plotters | ruviz | matplotlib |
+|---|---:|---:|---:|---:|
+| whole plot moves | **252.0 ms, 1001 KB** | 1.08 s, 3227 KB | 2.93 s, 1741 KB | 5.90 s, 1119 KB |
+| line grows on fixed axes | **81.0 ms, 38 KB** | 2.38 s, 3257 KB | 2.93 s, 1701 KB | 6.10 s, 420 KB |
 
 What makes it fast: the scene is drawn straight into the output buffer by
 dataviz's own anti-aliased rasterizer; dense lines become one pixel-column

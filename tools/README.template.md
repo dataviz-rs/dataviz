@@ -31,9 +31,10 @@ memory of the Rust plotting libraries.**
 
 - **Fast and lean.** Its own rasterizer draws straight into the output
   buffer: a 10-million-point line renders in about 0.1 s with a few MB of
-  extra memory, a live chart redraws in 1–2 ms. Faster and lighter than
-  plotters, ruviz, kuva and charts-rs in nearly every measurement
-  ([numbers below](#performance)). Optional multi-core and GPU backends.
+  extra memory, a live chart redraws in 1–2 ms. 8–50× faster than
+  matplotlib, and faster and lighter than plotters, ruviz, kuva and
+  charts-rs in nearly every measurement ([numbers below](#performance)).
+  Optional multi-core and GPU backends.
 - **Everything in one crate.** 50+ chart types — lines, bars, statistics,
   finance with indicators, heatmaps, contours, 3D, maps, sankey, networks —
   with themes, subplots, shared and broken axes, legends and colorbars.
