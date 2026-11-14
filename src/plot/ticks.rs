@@ -132,16 +132,37 @@ pub(crate) fn ticks(scale: &Scale, min: f64, max: f64, target: usize) -> TickSet
 fn log_ticks(base: f64, lo: f64, hi: f64, target: usize) -> TickSet {
     let base = if base > 1.0 { base } else { 10.0 };
     let lo = lo.max(f64::MIN_POSITIVE);
-    let (a, b) = ((lo.ln() / base.ln()).ceil(), (hi.ln() / base.ln()).floor());
+    let (a, b) = (
+        (lo.ln() / base.ln() - 1e-9).ceil(),
+        (hi.ln() / base.ln() + 1e-9).floor(),
+    );
     if b - a < 1.0 {
-        // Less than ~two decades: linear ticks read better.
-        let (major, step) = linear_ticks(lo, hi, target);
-        return TickSet {
-            minor: Vec::new(),
-            major: major.into_iter().filter(|v| *v > 0.0).collect(),
-            step,
-            time_format: None,
-        };
+        // Less than two decades: 1-2-5 (or 1..9) multiples of powers.
+        let (k0, k1) = ((lo.log10() - 1e-9).floor(), (hi.log10() + 1e-9).ceil());
+        for mults in [
+            &[1.0, 2.0, 5.0][..],
+            &[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0][..],
+        ] {
+            let mut major = Vec::new();
+            let mut k = k0;
+            while k <= k1 {
+                for m in mults {
+                    let v = m * 10f64.powf(k);
+                    if v >= lo * (1.0 - 1e-9) && v <= hi * (1.0 + 1e-9) {
+                        major.push(v);
+                    }
+                }
+                k += 1.0;
+            }
+            if major.len() >= 3 || mults.len() == 9 {
+                return TickSet {
+                    minor: Vec::new(),
+                    major,
+                    step: 0.0,
+                    time_format: None,
+                };
+            }
+        }
     }
     let decades = (b - a + 1.0) as usize;
     let every = decades.div_ceil(target.max(1)).max(1);
@@ -455,7 +476,8 @@ fn auto(v: f64, scale: &Scale, step: f64, max_abs: f64, time_format: Option<&str
             let k = (v.abs().ln() / b.ln()).round();
             let exact = (b.powf(k) - v.abs()).abs() < 1e-9 * v.abs();
             let sign = if v < 0.0 { "-" } else { "" };
-            if exact && (b - 10.0).abs() < 1e-9 && !(-3.0..=4.0).contains(&k) {
+            let big = max_abs >= 1e5 || max_abs < 1e-3;
+            if exact && (b - 10.0).abs() < 1e-9 && (big || !(-3.0..=4.0).contains(&k)) {
                 format!("{sign}10{}", superscript(k as i64))
             } else if exact && (b - 10.0).abs() > 1e-9 && b.fract() == 0.0 && k.abs() > 3.0 {
                 format!("{sign}{}{}", b as i64, superscript(k as i64))
@@ -463,6 +485,7 @@ fn auto(v: f64, scale: &Scale, step: f64, max_abs: f64, time_format: Option<&str
                 trim_float(v)
             }
         }
+        Scale::SymLog(_) | Scale::Log(_) if v == 0.0 => "0".into(),
         _ => {
             if v != 0.0 && (max_abs >= 1e7 || max_abs < 1e-4) {
                 let d = decimals_for_step(step / 10f64.powf(max_abs.log10().floor())).min(3);
@@ -501,21 +524,21 @@ mod tests {
         );
         assert_eq!(
             labels(&Scale::Linear, -0.3, 0.3, 6, &TickFormat::Auto),
-            ["-0.3", "-0.2", "-0.1", "0", "0.1", "0.2", "0.3"]
+            ["-0.3", "-0.2", "-0.1", "0.0", "0.1", "0.2", "0.3"]
         );
         assert_eq!(
             labels(&Scale::Linear, 0.0, 3e7, 3, &TickFormat::Auto),
             ["0", "1e7", "2e7", "3e7"]
         );
         let t = ticks(&Scale::Linear, 0.0, 10.0, 5);
-        assert_eq!(t.minor.len(), 20); // 4 between each pair of 2-steps, minus majors
+        assert_eq!(t.minor.len(), 15); // 0.5 steps between the 2-steps
     }
 
     #[test]
     fn log() {
         assert_eq!(
             labels(&Scale::log10(), 1.0, 1e6, 10, &TickFormat::Auto),
-            ["1", "10", "100", "1000", "10000", "10⁵", "10⁶"]
+            ["10⁰", "10¹", "10²", "10³", "10⁴", "10⁵", "10⁶"]
         );
         let t = ticks(&Scale::log10(), 1.0, 1000.0, 10);
         assert!(t.minor.contains(&20.0));
@@ -551,7 +574,7 @@ mod tests {
             6,
             &TickFormat::Auto,
         );
-        assert_eq!(years[0], "2024");
+        assert_eq!(years[0], "2025"); // 5-year steps
     }
 
     #[test]

@@ -1,5 +1,6 @@
 //! Scatter and bubble plots.
 
+use super::Rect;
 use super::{
     nearest_point, short, ColorScale, Context, Extent, Hit, LegendEntry, LegendSymbol, Series,
 };
@@ -222,7 +223,7 @@ impl Series for Scatter {
             .collect()
     }
 
-    fn hit(&self, x: &AxisMap, y: &AxisMap, px: f64, py: f64) -> Option<Hit> {
+    fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
         let pts = self.x.iter().copied().zip(self.y.iter().copied());
         let ((dx, dy), (cx, cy), d) = nearest_point(pts, x, y, px, py)?;
         let i = self

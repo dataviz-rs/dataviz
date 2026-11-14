@@ -428,7 +428,7 @@ pub trait Series: Any {
         Vec::new()
     }
     /// Nearest point to a canvas position, for hover tooltips.
-    fn hit(&self, _x: &AxisMap, _y: &AxisMap, _px: f64, _py: f64) -> Option<Hit> {
+    fn hit(&self, _x: &AxisMap, _y: &AxisMap, _rect: Rect, _px: f64, _py: f64) -> Option<Hit> {
         None
     }
     /// Whether the series uses the secondary y-axis.

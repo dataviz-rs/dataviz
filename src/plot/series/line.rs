@@ -1,5 +1,6 @@
 //! Line, area and fill-between series.
 
+use super::Rect;
 use super::{nearest_point, short, Context, Extent, Hit, LegendEntry, LegendSymbol, Series};
 use crate::plot::axis::AxisMap;
 use crate::plot::color::Color;
@@ -366,7 +367,7 @@ impl Series for Line {
         }]
     }
 
-    fn hit(&self, x: &AxisMap, y: &AxisMap, px: f64, py: f64) -> Option<Hit> {
+    fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
         let ((dx, dy), (cx, cy), d) = nearest_point(self.points(), x, y, px, py)?;
         let name = self
             .label
@@ -519,7 +520,7 @@ impl Series for FillBetween {
             .collect()
     }
 
-    fn hit(&self, x: &AxisMap, y: &AxisMap, px: f64, py: f64) -> Option<Hit> {
+    fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
         let pts = self.x.iter().copied().zip(self.y1.iter().copied());
         let ((dx, dy), (cx, cy), d) = nearest_point(pts, x, y, px, py)?;
         let name = self
