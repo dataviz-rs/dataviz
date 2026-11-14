@@ -1,7 +1,7 @@
 # dataviz roadmap: full plotting & data-visualization coverage
 
-New, additive API in `dataviz::plot` (re-exported by `dataviz::prelude`).
-The 0.1 API (`dataviz::figure::*`) stays unchanged and supported.
+The plotting API lives in `dataviz::plot` (common types in `dataviz::prelude`).
+The 0.1 API (`dataviz::figure::*`) was removed in 0.4.
 
 Architecture: every chart draws into a backend-independent `Scene`
 (paths, shapes, text, images, clipping); the scene is written as SVG,

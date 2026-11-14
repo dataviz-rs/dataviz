@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.0
+
+### Removed
+- The classic 0.1 API (`dataviz::figure`: `FigureConfig`, `PixelCanvas`,
+  `SvgCanvas`, `Quadrant1Graph`, `CartesianGraph`, `GroupBarChart`, …,
+  `Winop`) and its `imageproc` dependency. Everything it did is covered by
+  `dataviz::plot` (`use dataviz::prelude::*;`); see the README and
+  [dataviz-examples](https://github.com/dataviz-rs/dataviz-examples).
+
+### Changed
+- README and crate documentation describe only the `plot` API.
+
 ## 0.3.0
 
 Performance: faster rendering with less CPU and memory; the only new
