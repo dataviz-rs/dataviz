@@ -1,5 +1,6 @@
 //! Bar charts: vertical/horizontal, grouped, stacked, percent, value labels.
 
+use super::Rect;
 use super::{short, Context, Extent, Hit, LegendEntry, LegendSymbol, Series};
 use crate::plot::axis::AxisMap;
 use crate::plot::color::Color;
@@ -268,7 +269,7 @@ impl Series for Bars {
             .collect()
     }
 
-    fn hit(&self, x: &AxisMap, y: &AxisMap, px: f64, py: f64) -> Option<Hit> {
+    fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
         let mut best: Option<Hit> = None;
         for (i, a, b, lo, hi) in self.geometry() {
             let (x0, y0, x1, y1) = if self.horizontal {

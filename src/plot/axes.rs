@@ -691,6 +691,18 @@ impl Axes {
             decor.colorbar = Some((cs.clone(), w));
         }
 
+        if self.kind == AxesKind::Polar {
+            let (plot, x, y) = self.polar.maps(self, r, theme);
+            return (
+                Layout {
+                    plot,
+                    x,
+                    y,
+                    y2: None,
+                },
+                decor,
+            );
+        }
         if self.kind != AxesKind::Cartesian {
             let plot = r.inset(4.0);
             let (x, y, _) = self.axis_limits();
@@ -1076,7 +1088,7 @@ impl Axes {
                     seg(x, y, x + dir * tl, y, &axis, out);
                 }
                 let h = fonts.height(ts);
-                if (last - y).abs() < h * 0.9 && last.is_finite() {
+                if (last - y).abs() < h * 1.05 && last.is_finite() {
                     continue;
                 }
                 last = y;
@@ -1175,7 +1187,7 @@ impl Axes {
                 } else {
                     &lay.y
                 };
-                s.hit(&lay.x, y, px, py)
+                s.hit(&lay.x, y, lay.plot, px, py)
             })
             .min_by(|a, b| a.distance.total_cmp(&b.distance))
     }
