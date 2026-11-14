@@ -353,10 +353,18 @@ impl Projection3d {
             (x0, x1) = (x0.min(v[0] * f), x1.max(v[0] * f));
             (y0, y1) = (y0.min(v[1] * f), y1.max(v[1] * f));
         }
-        let margin = if boxed { 0.8 } else { 0.95 };
-        let scale = (r.w / (x1 - x0).max(1e-9)).min(r.h / (y1 - y0).max(1e-9))
-            * margin
-            * cam.zoom.max(1e-3);
+        // A boxed scene leaves room for tick and axis labels around it.
+        let (pw, ph, margin) = if boxed {
+            (
+                (r.w - 110.0).max(r.w * 0.5),
+                (r.h - 50.0).max(r.h * 0.5),
+                0.94,
+            )
+        } else {
+            (r.w, r.h, 0.95)
+        };
+        let scale =
+            (pw / (x1 - x0).max(1e-9)).min(ph / (y1 - y0).max(1e-9)) * margin * cam.zoom.max(1e-3);
         Self {
             bounds,
             mid,
@@ -377,6 +385,11 @@ impl Projection3d {
     /// Data range shown.
     pub fn bounds(&self) -> Bounds3 {
         self.bounds
+    }
+
+    /// The camera of the scene.
+    pub fn camera(&self) -> Camera {
+        self.cam
     }
 
     /// Normalized box coordinates of a data point.
@@ -620,6 +633,11 @@ impl Scene3d<'_> {
         self.face(v, color, edge, None, false);
     }
 
+    /// A polygon (3 or 4 corners) with a known view-space normal.
+    pub(crate) fn face_data(&mut self, v: &[[f64; 3]], color: Color, normal: Option<[f64; 3]>) {
+        self.face(v, color, None, normal, false);
+    }
+
     /// A polygon with a given view-space normal (for smooth meshes) or
     /// computed from the corners; with `cull` faces turned away are skipped
     /// (`normal` must then point outwards).
@@ -734,6 +752,49 @@ impl Scene3d<'_> {
     /// A straight line of `width` pixels.
     pub fn line(&mut self, a: [f64; 3], b: [f64; 3], color: Color, width: f64) {
         self.seg(a, b, color, width, false, false);
+    }
+
+    /// An arrow from `a` to `b`: a line of `width` pixels and a head of
+    /// about `head` pixels facing the screen.
+    pub fn arrow(&mut self, a: [f64; 3], b: [f64; 3], color: Color, width: f64, head: f64) {
+        let (pa, pb) = (self.proj.project(a), self.proj.project(b));
+        if !(pa.0.is_finite() && pa.1.is_finite() && pb.0.is_finite() && pb.1.is_finite()) {
+            return;
+        }
+        let (dx, dy) = (pb.0 - pa.0, pb.1 - pa.1);
+        let l = dx.hypot(dy);
+        let d = (pa.2 + pb.2) / 2.0;
+        let color = self.cue(color, d);
+        if l < 0.5 {
+            return;
+        }
+        let (ux, uy) = (dx / l, dy / l);
+        let h = head.min(l * 0.6);
+        let base = (pb.0 - ux * h, pb.1 - uy * h);
+        self.add(
+            d,
+            Prim::Line {
+                pts: vec![(pa.0, pa.1), base],
+                color,
+                width,
+            },
+        );
+        let w = h * 0.45;
+        let tri = [
+            (pb.0 as f32, pb.1 as f32),
+            ((base.0 - uy * w) as f32, (base.1 + ux * w) as f32),
+            ((base.0 + uy * w) as f32, (base.1 - ux * w) as f32),
+            (0.0, 0.0),
+        ];
+        self.add(
+            pb.2,
+            Prim::Poly {
+                pts: tri,
+                n: 3,
+                fill: Some(color),
+                stroke: None,
+            },
+        );
     }
 
     /// A shaded cylinder (rounded ends) with a radius in data units.
@@ -1077,13 +1138,21 @@ fn draw_box(
     out: &mut Vec<Node>,
     p: &Projection3d,
     labels: [Option<&str>; 3],
+    categories: [&[String]; 3],
     theme: &Theme,
     fonts: &FontSet,
 ) {
     let e = p.ext;
     let grid = Stroke::new(theme.grid, 1.0);
+    // Category axes: a tick at each index 0, 1, … with its name.
     let ticks: Vec<(Vec<f64>, f64)> = (0..3)
-        .map(|i| ticks::linear_ticks(p.bounds[i].0, p.bounds[i].1, if e[i] < 0.4 { 2 } else { 4 }))
+        .map(|i| {
+            if categories[i].is_empty() {
+                ticks::linear_ticks(p.bounds[i].0, p.bounds[i].1, if e[i] < 0.4 { 2 } else { 4 })
+            } else {
+                ((0..categories[i].len()).map(|k| k as f64).collect(), 1.0)
+            }
+        })
         .collect();
     let nv = |i: usize, v: f64| (v - p.mid[i]) * p.k[i];
     // For each axis the pane on the side away from the viewer.
@@ -1207,14 +1276,17 @@ fn draw_box(
                 continue;
             }
             let s = at(t);
-            let label = ticks::format_value(
-                *v,
-                &ticks::TickFormat::Auto,
-                &crate::plot::Scale::Linear,
-                ticks[i].1,
-                lo.abs().max(hi.abs()),
-                None,
-            );
+            let label = match categories[i].get(*v as usize) {
+                Some(name) if !categories[i].is_empty() => name.clone(),
+                _ => ticks::format_value(
+                    *v,
+                    &ticks::TickFormat::Auto,
+                    &crate::plot::Scale::Linear,
+                    ticks[i].1,
+                    lo.abs().max(hi.abs()),
+                    None,
+                ),
+            };
             widest = widest.max(fonts.width(&label, ts));
             out.push(Node::Path {
                 cmds: vec![
@@ -1238,16 +1310,28 @@ fn draw_box(
             }));
         }
         if let Some(l) = labels[i] {
-            let d = 16.0 + ts + widest * ox.abs();
+            // Beyond the tick labels, aligned away from the box (a label
+            // to the left ends there instead of reaching over the ticks).
+            // Labels of axes running up the screen are turned like a 2D
+            // y-axis label (narrow, so they stay inside the plot).
+            let (d, anchor, rotate) = if across {
+                (14.0 + ts * 0.6 + widest * ox.abs(), anchor, 0.0)
+            } else {
+                (
+                    14.0 + widest * ox.abs() + theme.label_size * 0.6,
+                    Anchor::Middle,
+                    -90.0,
+                )
+            };
             out.push(Node::Text(TextNode {
                 x: mid.0 + ox * d,
                 y: mid.1 + oy * d,
                 text: l.to_string(),
                 size: theme.label_size,
                 color: theme.text,
-                anchor: Anchor::Middle,
+                anchor,
                 baseline: Baseline::Middle,
-                rotate: 0.0,
+                rotate,
                 bold: false,
                 italic: false,
             }));
@@ -1315,6 +1399,7 @@ impl Axes {
                     self.y.label.as_deref(),
                     self.view3d.z_label.as_deref(),
                 ],
+                [&self.x.categories, &self.y.categories, &[]],
                 theme,
                 fonts,
             );

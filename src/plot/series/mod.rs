@@ -13,8 +13,11 @@ pub mod bio;
 pub mod bio3d;
 pub mod contour;
 pub mod distribution;
+pub mod engineering;
+pub mod evaluation;
 pub mod finance;
 pub mod frameless;
+pub mod general;
 pub mod grid;
 pub mod line;
 pub mod misc;
@@ -24,6 +27,7 @@ pub mod scatter;
 pub mod signal;
 pub mod stats;
 pub mod three_d;
+pub mod trading;
 
 /// Data extent of a series, with "sticky" edges that get no margin
 /// (e.g. the zero baseline of bars).
