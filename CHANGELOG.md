@@ -38,6 +38,9 @@
 - `Figure::resize(width, height)` (figures embedded in resizable panels).
 
 ### Changed
+- Terminal half blocks keep the color of thin lines and text (the most
+  distinct pixel of each half cell) instead of averaging them into the
+  background, so lines stay vivid.
 - With `Axes::auto_scale_y` on, `zoom_at`, `pan_by` and `zoom_to_box`
   only change x; the y-axes keep fitting the visible data.
 

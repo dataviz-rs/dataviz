@@ -14,6 +14,7 @@ SECTIONS = [
         ("plot-wasm", "wasm.png", "In the browser (WebAssembly)"),
         ("plot-egui", "egui.png", "Inside an egui app"),
         ("plot-backends", "backends.png", "CPU, multi-core and GPU backends"),
+        ("plot-terminal", "terminal.png", "Charts in the terminal"),
     ]),
     ("For data scientists, biologists, engineers and traders", [
         ("plot-data-science", "data_science.png", "Data science: ROC, confusion matrix, regression"),

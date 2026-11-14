@@ -45,6 +45,40 @@ fn area_average(p: &Pixels, x0: f64, y0: f64, x1: f64, y1: f64) -> [f64; 3] {
     }
 }
 
+/// The color of an area for half blocks: thin lines and text keep their
+/// own color (the pixel that differs most from the background `bg`, when
+/// it differs clearly) instead of fading into the background as an
+/// average would.
+fn area_ink(p: &Pixels, x0: f64, y0: f64, x1: f64, y1: f64, bg: [f64; 3]) -> [f64; 3] {
+    let avg = area_average(p, x0, y0, x1, y1);
+    let (xa, xb) = (
+        x0.floor() as u32,
+        (x1.ceil() as u32).min(p.width).max(x0.floor() as u32 + 1),
+    );
+    let (ya, yb) = (
+        y0.floor() as u32,
+        (y1.ceil() as u32).min(p.height).max(y0.floor() as u32 + 1),
+    );
+    let mut best = (0.0, avg);
+    for y in ya..yb {
+        for x in xa..xb {
+            if let Some(px) = p.get(x, y) {
+                let a = px[3] as f64 / 255.0;
+                let c = [0, 1, 2].map(|k| px[k] as f64 * a + 255.0 * (1.0 - a));
+                let d = (0..3).map(|k| (c[k] - bg[k]).abs()).sum::<f64>();
+                if d > best.0 {
+                    best = (d, c);
+                }
+            }
+        }
+    }
+    if best.0 > 90.0 {
+        [0, 1, 2].map(|k| best.1[k] * 0.85 + avg[k] * 0.15)
+    } else {
+        avg
+    }
+}
+
 /// Renders pixels into `cols` × `rows` character cells.
 pub fn render_pixels(p: &Pixels, cols: usize, rows: usize, mode: TerminalMode) -> String {
     let (cols, rows) = (cols.max(1), rows.max(1));
@@ -55,17 +89,25 @@ pub fn render_pixels(p: &Pixels, cols: usize, rows: usize, mode: TerminalMode) -
                 p.width as f64 / cols as f64,
                 p.height as f64 / (rows * 2) as f64,
             );
+            let bg = area_average(p, 0.0, 0.0, 2.0, 2.0);
             for r in 0..rows {
                 for c in 0..cols {
                     let x0 = c as f64 * cw;
-                    let top =
-                        area_average(p, x0, (2 * r) as f64 * ch, x0 + cw, (2 * r + 1) as f64 * ch);
-                    let bot = area_average(
+                    let top = area_ink(
+                        p,
+                        x0,
+                        (2 * r) as f64 * ch,
+                        x0 + cw,
+                        (2 * r + 1) as f64 * ch,
+                        bg,
+                    );
+                    let bot = area_ink(
                         p,
                         x0,
                         (2 * r + 1) as f64 * ch,
                         x0 + cw,
                         (2 * r + 2) as f64 * ch,
+                        bg,
                     );
                     out.push_str(&format!(
                         "\x1b[38;2;{};{};{}m\x1b[48;2;{};{};{}m▀",
