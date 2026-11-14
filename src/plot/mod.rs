@@ -28,6 +28,7 @@ pub mod geo;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu;
 pub mod html;
+pub mod interact;
 pub mod legend;
 pub mod math;
 pub mod output;

@@ -135,6 +135,10 @@ impl Backend {
 
     /// CPU threads to use for a `width × height` image.
     pub(crate) fn cpu_threads(self, width: u32, height: u32) -> usize {
+        if cfg!(target_family = "wasm") {
+            // No threads in the browser (wasm32-unknown-unknown).
+            return 1;
+        }
         let cores = || std::thread::available_parallelism().map_or(1, |n| n.get());
         match self {
             Backend::Cpu { threads: 0 } => cores(),

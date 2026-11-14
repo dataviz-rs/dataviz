@@ -77,64 +77,6 @@ fn open_window(title: &str, w: usize, h: usize) -> Result<Window, minifb::Error>
     Window::new(title, w, h, WindowOptions::default())
 }
 
-impl super::axes::Axes {
-    /// Zooms around a canvas position by `factor` (< 1 zooms in).
-    pub(crate) fn zoom_at(&mut self, lay: &Layout, px: f64, py: f64, factor: f64) {
-        if self.kind != AxesKind::Cartesian {
-            return;
-        }
-        let zoom = |map: &super::axis::AxisMap, at: f64| -> (f64, f64) {
-            let (p0, p1) = (map.p0, map.p1);
-            let a = at + (p0 - at) * factor;
-            let b = at + (p1 - at) * factor;
-            let (u, v) = (map.value(a), map.value(b));
-            (u.min(v), u.max(v))
-        };
-        let (x0, x1) = zoom(&lay.x, px);
-        let (y0, y1) = zoom(&lay.y, py);
-        self.x.limits(x0, x1);
-        self.y.limits(y0, y1);
-        if let Some(m) = &lay.y2 {
-            let (a, b) = zoom(m, py);
-            self.y2.limits(a, b);
-        }
-    }
-
-    /// Pans by a canvas offset.
-    pub(crate) fn pan(&mut self, lay: &Layout, dx: f64, dy: f64) {
-        if self.kind != AxesKind::Cartesian {
-            return;
-        }
-        let shift = |map: &super::axis::AxisMap, d: f64| -> (f64, f64) {
-            let (u, v) = (map.value(map.p0 - d), map.value(map.p1 - d));
-            (u.min(v), u.max(v))
-        };
-        let (x0, x1) = shift(&lay.x, dx);
-        let (y0, y1) = shift(&lay.y, dy);
-        self.x.limits(x0, x1);
-        self.y.limits(y0, y1);
-        if let Some(m) = &lay.y2 {
-            let (a, b) = shift(m, dy);
-            self.y2.limits(a, b);
-        }
-    }
-
-    /// Zooms to a canvas rectangle.
-    pub(crate) fn zoom_box(&mut self, lay: &Layout, a: (f64, f64), b: (f64, f64)) {
-        if self.kind != AxesKind::Cartesian || (a.0 - b.0).abs() < 4.0 || (a.1 - b.1).abs() < 4.0 {
-            return;
-        }
-        let (x0, x1) = (lay.x.value(a.0), lay.x.value(b.0));
-        let (y0, y1) = (lay.y.value(a.1), lay.y.value(b.1));
-        self.x.limits(x0.min(x1), x0.max(x1));
-        self.y.limits(y0.min(y1), y0.max(y1));
-        if let Some(m) = &lay.y2 {
-            let (u, v) = (m.value(a.1), m.value(b.1));
-            self.y2.limits(u.min(v), u.max(v));
-        }
-    }
-}
-
 impl Figure {
     fn limits(&mut self) -> Limits {
         self.all_axes()

@@ -1,6 +1,6 @@
 [package]
 name = "dataviz"
-version = "0.13.1"
+version = "0.14.0"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Samet Eraslan <absameteraslan@gmail.com>"]
@@ -17,7 +17,8 @@ ab_glyph = "0.2.32"
 gif = "0.14"
 # Text shaping and bidi (already used by resvg/usvg).
 harfrust = "0.15"
-image = "0.25.6"
+# Only the codecs used for output (no AVIF/EXR/TIFF/… encoders, no rayon).
+image = { version = "0.25.6", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
 minifb = { version = "0.29", optional = true }
 png = "0.18"
 resvg = "0.50"
@@ -37,3 +38,7 @@ gpu = ["dep:wgpu"]
 [[example]]
 name = "plot_interactive"
 required-features = ["window"]
+
+[dev-dependencies]
+# GIF decoding in the animation tests.
+image = { version = "0.25.6", default-features = false, features = ["png", "gif"] }

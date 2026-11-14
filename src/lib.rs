@@ -40,6 +40,6 @@ pub mod prelude {
 }
 
 // Compile and run the code examples of the README as doctests.
-#[cfg(doctest)]
+#[cfg(all(doctest, feature = "window"))]
 #[doc = include_str!("../README.md")]
 pub struct ReadmeDoctests;
