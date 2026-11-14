@@ -498,7 +498,9 @@ where
     }
 }
 
-/// Nearest of `points` (data coordinates) to a canvas position.
+/// Nearest of `points` (data coordinates) to a canvas position: the data
+/// point, its canvas position and the distance.
+#[allow(clippy::type_complexity)]
 pub(crate) fn nearest_point(
     points: impl Iterator<Item = (f64, f64)>,
     x: &AxisMap,

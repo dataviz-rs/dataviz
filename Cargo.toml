@@ -1,26 +1,28 @@
 [package]
 name = "dataviz"
-version = "0.1.11"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Samet Eraslan <absameteraslan@gmail.com>"]
-description = "A modular library for creating charts and graphs in Rust."
+description = "Pure-Rust plotting and data visualization: 40+ chart types (line, scatter, bar, histogram, box, violin, heatmap, contour, candlestick, pie, polar, radar, treemap, sankey, 3D, ...) to SVG, PNG, JPEG, WebP, PDF, interactive windows and the terminal."
 license = "MIT"
 repository = "https://github.com/dataviz-rs/dataviz"
 documentation = "https://docs.rs/dataviz"
-keywords = ["charts", "graphs", "visualization", "plot", "dataviz"]
-categories = ["visualization", "graphics"]
+keywords = ["plot", "chart", "visualization", "graph", "svg"]
+categories = ["visualization", "graphics", "science", "mathematics"]
 readme = "./README.md"
 
 [dependencies]
 ab_glyph = "0.2.32"
 image = "0.25.6"
 imageproc = { version = "0.27", default-features = false, features = ["text"] }
-minifb = "0.29"
+minifb = { version = "0.29", optional = true }
 resvg = "0.50"
 svg2pdf = { version = "0.13", optional = true }
 
 [features]
-default = []
+default = ["window"]
+# Interactive windows (`Figure::show`, `Winop`); disable for headless/WASM builds.
+window = ["dep:minifb"]
 # PDF output (`Figure::save("x.pdf")`).
 pdf = ["dep:svg2pdf"]

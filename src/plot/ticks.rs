@@ -65,7 +65,7 @@ pub(crate) fn nice_step(raw: f64) -> f64 {
 
 /// Multiples of `step` within `[min, max]`.
 fn multiples(min: f64, max: f64, step: f64) -> Vec<f64> {
-    if !(step > 0.0) || !min.is_finite() || !max.is_finite() {
+    if step.is_nan() || step <= 0.0 || !min.is_finite() || !max.is_finite() {
         return Vec::new();
     }
     let start = (min / step - 1e-9).ceil();
@@ -171,7 +171,7 @@ fn log_ticks(base: f64, lo: f64, hi: f64, target: usize) -> TickSet {
     let mut k = a - 1.0;
     while k <= b {
         let v = base.powf(k);
-        if k >= a && ((k - a) as usize) % every == 0 {
+        if k >= a && ((k - a) as usize).is_multiple_of(every) {
             major.push(v);
         } else if k >= a && v >= lo && v <= hi {
             minor.push(v);

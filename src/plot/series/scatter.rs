@@ -59,6 +59,35 @@ impl Scatter {
         }
     }
 
+    /// Replaces the data (per-point sizes/values/names are kept by index).
+    pub fn set_data(&mut self, x: impl super::IntoValues, y: impl super::IntoValues) -> &mut Self {
+        let (x, y) = (x.into_values(), y.into_values());
+        let n = x.len().min(y.len());
+        self.x = x[..n].to_vec();
+        self.y = y[..n].to_vec();
+        self
+    }
+    /// Appends a point.
+    pub fn push(&mut self, x: f64, y: f64) -> &mut Self {
+        self.x.push(x);
+        self.y.push(y);
+        self
+    }
+    /// Keeps only the last `n` points.
+    pub fn keep_last(&mut self, n: usize) -> &mut Self {
+        if self.x.len() > n {
+            let k = self.x.len() - n;
+            self.x.drain(..k);
+            self.y.drain(..k);
+            for v in [&mut self.sizes, &mut self.values].into_iter().flatten() {
+                if v.len() >= k {
+                    v.drain(..k);
+                }
+            }
+        }
+        self
+    }
+
     /// Legend label.
     pub fn label(&mut self, label: impl Into<String>) -> &mut Self {
         self.label = Some(label.into());

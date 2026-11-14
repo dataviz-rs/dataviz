@@ -1,5 +1,10 @@
 //! # DataViz Library
 //!
+//! **New in 0.2:** the full plotting API in [`plot`] (`use dataviz::prelude::*;`):
+//! 40+ chart types, SVG/PNG/JPEG/WebP/PDF output, interactive windows,
+//! streaming data and terminal output. The sections below describe the
+//! classic 0.1 API in [`figure`], which keeps working unchanged.
+//!
 //! **DataViz** is a versatile and modular Rust library for creating and managing a wide variety of charts and graphs.
 //! Designed with flexibility and extensibility in mind, DataViz provides a powerful API for data visualization,
 //! supporting different chart types, customization options, and interactive features.
@@ -174,6 +179,7 @@ pub mod figure {
         pub mod hoverpiechart;
         pub mod hoverquadrant1graph;
         pub mod hoverscatterchart;
+        #[cfg(feature = "window")]
         pub mod winop;
     }
 

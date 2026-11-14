@@ -10,86 +10,89 @@ shown in an interactive window, or drawn in the terminal.
 
 Legend: `[x]` done · `[~]` partial · `[ ]` open
 
+Status: all items implemented in 0.2.0 (see CHANGELOG); `examples/plot_gallery.rs`
+renders every chart type and `tests/plot.rs` covers them with edge-case data.
+
 ## 1. Foundation
-- [ ] Scene primitives: path (line/polygon/curves), rect, circle, text (anchor, rotation), image, groups with clip & opacity
-- [ ] Color: RGBA, hex/named parsing, alpha, lighten/darken, interpolation
-- [ ] Text measurement with real font metrics (same font for SVG and raster)
-- [ ] Backends: SVG string/file, raster (PNG, JPEG, WebP, raw RGBA) via resvg, DPI/scale factor
-- [ ] PDF output (optional `pdf` feature)
-- [ ] Figure: size, background, title, padding, subplot grid (rows × cols, spans), shared axes
-- [ ] `prelude` module, builder API, `Result`-returning save functions
+- [x] Scene primitives: path (line/polygon/curves), rect, circle, text (anchor, rotation), image, groups with clip & opacity
+- [x] Color: RGBA, hex/named parsing, alpha, lighten/darken, interpolation
+- [x] Text measurement with real font metrics (same font for SVG and raster)
+- [x] Backends: SVG string/file, raster (PNG, JPEG, WebP, raw RGBA) via resvg, DPI/scale factor
+- [x] PDF output (optional `pdf` feature)
+- [x] Figure: size, background, title, padding, subplot grid (rows × cols, spans), shared axes
+- [x] `prelude` module, builder API, `Result`-returning save functions
 
 ## 2. Axes, scales & ticks
-- [ ] Linear, logarithmic (any base), symmetric-log scales
-- [ ] Date/time axis (UTC timestamps, automatic second…year ticks, formats)
-- [ ] Categorical axis (string categories)
-- [ ] Automatic "nice" limits with margins; manual limits; inverted axes; equal aspect
-- [ ] Major & minor ticks, grid on/off per axis, custom tick positions/labels
-- [ ] Tick formatters: auto, fixed decimals, percent, SI prefixes (k, M, G), scientific, custom closure
-- [ ] Secondary (twin) y-axis
-- [ ] Axis labels, title, spines on/off, label overlap avoidance (thinning / rotation)
+- [x] Linear, logarithmic (any base), symmetric-log scales
+- [x] Date/time axis (UTC timestamps, automatic second…year ticks, formats)
+- [x] Categorical axis (string categories)
+- [x] Automatic "nice" limits with margins; manual limits; inverted axes; equal aspect
+- [x] Major & minor ticks, grid on/off per axis, custom tick positions/labels
+- [x] Tick formatters: auto, fixed decimals, percent, SI prefixes (k, M, G), scientific, custom closure
+- [x] Secondary (twin) y-axis
+- [x] Axis labels, title, spines on/off, label overlap avoidance (thinning / rotation)
 
 ## 3. Styling
-- [ ] Line width, dash patterns (solid, dashed, dotted, dash-dot, custom), caps/joins, opacity
-- [ ] Markers: circle, square, diamond, triangle up/down, plus, cross, star, hexagon; size, fill, edge
-- [ ] Color cycles / categorical palettes (tab10, Set2, Okabe–Ito colour-blind safe, …)
-- [ ] Colormaps: viridis, plasma, inferno, magma, cividis, turbo, gray, coolwarm, RdBu, …; reversed
-- [ ] Colorbar
-- [ ] Themes: default, dark, minimal, ggplot-like, seaborn-like, publication
-- [ ] Legend: position (corners, outside), columns, frame, markers/lines/patches
+- [x] Line width, dash patterns (solid, dashed, dotted, dash-dot, custom), caps/joins, opacity
+- [x] Markers: circle, square, diamond, triangle up/down, plus, cross, star, hexagon; size, fill, edge
+- [x] Color cycles / categorical palettes (tab10, Set2, Okabe–Ito colour-blind safe, …)
+- [x] Colormaps: viridis, plasma, inferno, magma, cividis, turbo, gray, coolwarm, RdBu, …; reversed
+- [x] Colorbar
+- [x] Themes: default, dark, minimal, ggplot-like, seaborn-like, publication
+- [x] Legend: position (corners, outside), columns, frame, markers/lines/patches
 
 ## 4. Chart types (cartesian)
-- [ ] Line (straight, step pre/mid/post, smooth monotone spline)
-- [ ] Scatter / bubble (per-point size and color, colormap)
-- [ ] Area / fill-between / stacked area / 100 % stacked
-- [ ] Bar: vertical & horizontal, grouped, stacked, percent, negative values, value labels
-- [ ] Histogram: bin rules (fixed, Sturges, Scott, Freedman–Diaconis), density, cumulative, step outline
-- [ ] 2D histogram & hexbin
-- [ ] Box plot (with outliers, notches optional) & violin plot (KDE)
-- [ ] Error bars (x/y, asymmetric) & error bands
-- [ ] Candlestick & OHLC (financial)
-- [ ] Heatmap (matrix + colormap + annotations) & image display
-- [ ] Contour lines & filled contours (marching squares)
-- [ ] Stem plot, step plot, lollipop
-- [ ] Waterfall chart
-- [ ] Function plot (`y = f(x)` sampled adaptively)
-- [ ] Quiver (vector field)
-- [ ] Regression / trend line, moving average, KDE density line, ECDF
-- [ ] Gantt chart (bars on a time axis)
-- [ ] Sparklines (axis-less mini charts)
+- [x] Line (straight, step pre/mid/post, smooth monotone spline)
+- [x] Scatter / bubble (per-point size and color, colormap)
+- [x] Area / fill-between / stacked area / 100 % stacked
+- [x] Bar: vertical & horizontal, grouped, stacked, percent, negative values, value labels
+- [x] Histogram: bin rules (fixed, Sturges, Scott, Freedman–Diaconis), density, cumulative, step outline
+- [x] 2D histogram & hexbin
+- [x] Box plot (with outliers, notches optional) & violin plot (KDE)
+- [x] Error bars (x/y, asymmetric) & error bands
+- [x] Candlestick & OHLC (financial)
+- [x] Heatmap (matrix + colormap + annotations) & image display
+- [x] Contour lines & filled contours (marching squares)
+- [x] Stem plot, step plot, lollipop
+- [x] Waterfall chart
+- [x] Function plot (`y = f(x)` sampled adaptively)
+- [x] Quiver (vector field)
+- [x] Regression / trend line, moving average, KDE density line, ECDF
+- [x] Gantt chart (bars on a time axis)
+- [x] Sparklines (axis-less mini charts)
 
 ## 5. Non-cartesian charts
-- [ ] Pie & donut (labels, percentages, exploded slices)
-- [ ] Polar plot (line/scatter in r-θ) & polar bar / rose
-- [ ] Radar / spider chart
-- [ ] Gauge
-- [ ] Treemap (squarified)
-- [ ] Sunburst
-- [ ] Sankey diagram
-- [ ] Funnel chart
-- [ ] Network graph (force-directed layout)
-- [ ] Parallel coordinates
-- [ ] Calendar heatmap
-- [ ] 3D: surface/wireframe & 3D scatter (projected)
+- [x] Pie & donut (labels, percentages, exploded slices)
+- [x] Polar plot (line/scatter in r-θ) & polar bar / rose
+- [x] Radar / spider chart
+- [x] Gauge
+- [x] Treemap (squarified)
+- [x] Sunburst
+- [x] Sankey diagram
+- [x] Funnel chart
+- [x] Network graph (force-directed layout)
+- [x] Parallel coordinates
+- [x] Calendar heatmap
+- [x] 3D: surface/wireframe & 3D scatter (projected)
 
 ## 6. Annotations
-- [ ] Text, arrows, horizontal/vertical lines, shaded spans, rectangles
-- [ ] Data labels on points/bars
+- [x] Text, arrows, horizontal/vertical lines, shaded spans, rectangles
+- [~] Data labels on bars (done) and points (via `Axes::text`)
 
 ## 7. Data & statistics helpers
-- [ ] Accept slices, iterators, `(x, y)` pairs, separate columns
-- [ ] CSV loading
-- [ ] Statistics: quantiles, KDE, linear/polynomial regression, moving average, ECDF
-- [ ] Large data: LTTB / min-max decimation for lines
+- [x] Accept slices, iterators, `(x, y)` pairs, separate columns
+- [x] CSV loading
+- [x] Statistics: quantiles, KDE, linear/polynomial regression, moving average, ECDF
+- [x] Large data: LTTB / min-max decimation for lines
 
 ## 8. Interactivity & output targets
-- [ ] Interactive window: pan, zoom (wheel & box), reset, hover tooltip, crosshair, save key
-- [ ] Real-time streaming (fixed-size rolling series)
-- [ ] SVG tooltips (`<title>`) for browsers
-- [ ] Terminal output (braille/ASCII)
-- [ ] Window support behind a default `window` feature (WASM / headless builds)
+- [x] Interactive window: pan, zoom (wheel & box), reset, hover tooltip, crosshair, save key
+- [x] Real-time streaming (fixed-size rolling series)
+- [x] SVG tooltips (`<title>`) for browsers
+- [x] Terminal output (braille/ASCII)
+- [x] Window support behind a default `window` feature (WASM / headless builds)
 
 ## 9. Quality
-- [ ] Tests for every chart type (SVG validity, raster checks, edge cases)
-- [ ] Gallery example rendering every chart type
-- [ ] README / docs / CHANGELOG
+- [x] Tests for every chart type (SVG validity, raster checks, edge cases)
+- [x] Gallery example rendering every chart type
+- [x] README / docs / CHANGELOG

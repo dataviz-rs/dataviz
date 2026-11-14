@@ -151,7 +151,7 @@ impl Series for Histogram {
             ctx.polyline(&pts, Stroke::new(self.color, 2.0));
             return;
         }
-        let edge = self.edge.unwrap_or_else(|| ctx.theme.plot_background);
+        let edge = self.edge.unwrap_or(ctx.theme.plot_background);
         for i in 0..h.len() {
             if h[i] <= 0.0 {
                 continue;
@@ -864,7 +864,9 @@ impl Axes {
         degree: usize,
     ) -> &mut Line {
         let (x, y) = (x.into_values(), y.into_values());
-        let c = stats::polyfit(&x, &y, degree).unwrap_or_default();
+        let c = stats::polyfit(&x, &y, degree)
+            .filter(|c| c.iter().all(|v| v.is_finite()))
+            .unwrap_or_default();
         let finite = x.iter().copied().filter(|v| v.is_finite());
         let (lo, hi) = finite.fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), v| {
             (a.min(v), b.max(v))
@@ -893,11 +895,12 @@ impl Axes {
                     _ => format!("{}x^{k}", short(*v)),
                 })
                 .collect();
-            format!(
-                "y = {} (R² = {:.3})",
-                terms.join(" + ").replace("+ -", "- "),
-                r2
-            )
+            let r2 = if r2.is_finite() {
+                format!(" (R² = {r2:.3})")
+            } else {
+                String::new()
+            };
+            format!("y = {}{r2}", terms.join(" + ").replace("+ -", "- "))
         };
         let l = self.line(xs, ys);
         l.label = Some(label);

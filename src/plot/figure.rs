@@ -63,6 +63,56 @@ impl Figure {
         }
     }
 
+    /// A small axis-less line chart (sparkline) of `values`, with the last
+    /// value and the extremes marked.
+    ///
+    /// ```
+    /// use dataviz::prelude::*;
+    /// let mut s = Figure::sparkline([3.0, 5.0, 2.0, 8.0, 6.0], 160, 40);
+    /// assert!(s.to_svg().contains("<circle"));
+    /// ```
+    pub fn sparkline(values: impl super::series::IntoValues, width: u32, height: u32) -> Self {
+        let mut fig = Figure::new(width, height);
+        let mut theme = Theme {
+            spines: super::theme::Spines::NONE,
+            grid_x: false,
+            grid_y: false,
+            padding: 3.0,
+            tick_length: 0.0,
+            ..Theme::default()
+        };
+        theme.line_width = 1.5;
+        fig.theme(theme);
+        let v = values.into_values();
+        let x: Vec<f64> = (0..v.len()).map(|i| i as f64).collect();
+        let ax = fig.axes();
+        ax.x_axis().hidden().margin(0.02);
+        ax.y_axis().hidden().margin(0.12);
+        ax.legend(super::LegendPosition::Hidden);
+        let color = ax.next_color();
+        ax.line(&x, &v).color(color);
+        let finite: Vec<(usize, f64)> = v
+            .iter()
+            .copied()
+            .enumerate()
+            .filter(|(_, y)| y.is_finite())
+            .collect();
+        if let (Some(min), Some(max), Some(last)) = (
+            finite.iter().min_by(|a, b| a.1.total_cmp(&b.1)),
+            finite.iter().max_by(|a, b| a.1.total_cmp(&b.1)),
+            finite.last(),
+        ) {
+            ax.scatter([min.0 as f64], [min.1])
+                .color(super::Color::RED)
+                .size(4.0);
+            ax.scatter([max.0 as f64], [max.1])
+                .color(super::Color::GREEN)
+                .size(4.0);
+            ax.scatter([last.0 as f64], [last.1]).color(color).size(5.0);
+        }
+        fig
+    }
+
     /// Uses a theme. Set it before adding data: colors are assigned from the
     /// theme palette when series are added.
     pub fn theme(&mut self, theme: Theme) -> &mut Self {
@@ -290,16 +340,6 @@ impl Figure {
     pub fn save(&mut self, path: impl AsRef<Path>) -> Result<(), Error> {
         let scene = self.to_scene();
         output::save(&scene, &self.fonts(), path.as_ref(), self.scale)
-    }
-
-    /// Layouts of all plots (in creation order) and the index of the plot
-    /// containing a canvas position.
-    pub(crate) fn hit_axes(&mut self, px: f64, py: f64) -> Option<(usize, Layout)> {
-        let (_, layouts) = self.scene_and_layouts();
-        layouts
-            .into_iter()
-            .enumerate()
-            .find(|(_, l)| l.plot.contains(px, py))
     }
 
     pub(crate) fn cell_axes(&mut self, i: usize) -> Option<&mut Axes> {
