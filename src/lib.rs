@@ -182,6 +182,19 @@ pub mod figure {
     pub(crate) mod render;
 }
 
+pub mod plot;
+
+/// Everything needed for the [`plot`] API: `use dataviz::prelude::*;`
+pub mod prelude {
+    pub use crate::plot::series::bar::{BarMode, LabelPosition};
+    pub use crate::plot::series::line::Step;
+    pub use crate::plot::time::{date, datetime, parse_datetime};
+    pub use crate::plot::{
+        Axes, AxesKind, Axis, Color, Colormap, Dash, Error, Figure, Format, LegendPosition, Marker,
+        Palette, Scale, Series, Theme, TickFormat, TickSpec,
+    };
+}
+
 // Compile and run the code examples of the README as doctests.
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]
