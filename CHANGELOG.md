@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.1
+
+### Added
+- **Linked zoom and pan** in windows: zooming or panning a plot moves the
+  plots that showed (about) the same x range with it.
+
+### Changed
+- Plots count as showing the same x range (linked cursor, linked zoom) when
+  their x scales are of the same kind and the ranges overlap by at least
+  90 %, so e.g. candlesticks and volume bars of the same times are linked
+  although their margins differ slightly.
+
 ## 0.5.0
 
 ### Added
