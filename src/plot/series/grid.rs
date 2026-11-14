@@ -346,7 +346,7 @@ impl Hexbin {
         let ny = (nx / 3f64.sqrt()).round().max(1.0);
         let sx = if x1 > x0 { (x1 - x0) / nx } else { 1.0 };
         let sy = if y1 > y0 { (y1 - y0) / ny } else { 1.0 };
-        let mut map: std::collections::HashMap<(i64, i64, bool), usize> = Default::default();
+        let mut map: std::collections::BTreeMap<(i64, i64, bool), usize> = Default::default();
         for (a, b) in self.x.iter().zip(&self.y) {
             if !a.is_finite() || !b.is_finite() {
                 continue;

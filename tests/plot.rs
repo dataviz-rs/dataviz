@@ -591,3 +591,16 @@ fn missing_font_falls_back() {
     fig.axes().line([0, 1], [0, 1]).label("x");
     fig.to_pixels().unwrap();
 }
+
+#[test]
+fn output_is_deterministic() {
+    let (_, x, y) = datasets().remove(0);
+    for (name, build) in builders() {
+        let render = || {
+            let mut fig = Figure::new(400, 300);
+            build(fig.axes(), &x, &y);
+            fig.to_svg()
+        };
+        assert_eq!(render(), render(), "{name}");
+    }
+}
