@@ -3,6 +3,17 @@
 //! Controls: mouse wheel zooms around the cursor, left-drag pans, right-drag
 //! zooms to a box, `R` resets the view, `S` saves a PNG next to the program,
 //! `H` toggles the hover tooltip, `Esc` closes the window.
+//!
+//! In [`Figure::show_live`] a plot the user zoomed or panned keeps that view
+//! while new data arrives; `R` returns to following the data. Auto scale
+//! (on by default, `A` toggles it) fits the y-axis to the data inside the
+//! chosen x range, so zooming and panning only move along x; with it off
+//! the y range is held as well.
+//!
+//! On Linux the window uses X11 (XWayland under Wayland) when available, so
+//! the desktop draws a title bar to move and resize it (GNOME's Wayland
+//! compositor draws none for such windows); set `DATAVIZ_WAYLAND=1` to use
+//! Wayland directly.
 
 use super::axes::{AxesKind, Layout};
 use super::color::Color;
@@ -12,14 +23,42 @@ use super::scene::{Anchor, Baseline, Node, Scene, Stroke, TextNode};
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::time::{Duration, Instant};
 
-type Limits = Vec<(
+/// Manual limits of one axes: x, y and secondary y (min, max).
+type AxesLimits = (
     Option<f64>,
     Option<f64>,
     Option<f64>,
     Option<f64>,
     Option<f64>,
     Option<f64>,
-)>;
+);
+type Limits = Vec<AxesLimits>;
+
+/// Opens a window, preferring X11 on Linux desktops that also run Wayland
+/// (see the module documentation).
+fn open_window(title: &str, w: usize, h: usize) -> Result<Window, minifb::Error> {
+    #[cfg(target_os = "linux")]
+    {
+        let both =
+            std::env::var_os("DISPLAY").is_some() && std::env::var_os("WAYLAND_DISPLAY").is_some();
+        if both && std::env::var_os("DATAVIZ_WAYLAND").is_none() {
+            // minifb tries Wayland first and falls back to X11 when it has no
+            // Wayland display: hide it while the window is created.
+            let wayland = std::env::var_os("WAYLAND_DISPLAY");
+            // SAFETY (edition 2024 semantics): environment changes are
+            // serialized by std; restored right after.
+            std::env::remove_var("WAYLAND_DISPLAY");
+            let window = Window::new(title, w, h, WindowOptions::default());
+            if let Some(v) = wayland {
+                std::env::set_var("WAYLAND_DISPLAY", v);
+            }
+            if window.is_ok() {
+                return window;
+            }
+        }
+    }
+    Window::new(title, w, h, WindowOptions::default())
+}
 
 impl super::axes::Axes {
     /// Zooms around a canvas position by `factor` (< 1 zooms in).
@@ -92,6 +131,28 @@ impl Figure {
         }
     }
 
+    /// Limits of axes `i`.
+    fn axes_limits(&mut self, i: usize) -> Option<AxesLimits> {
+        self.cell_axes(i)
+            .map(|a| (a.x.min, a.x.max, a.y.min, a.y.max, a.y2.min, a.y2.max))
+    }
+
+    /// Re-applies the views the user chose (after a data update). With
+    /// `auto` only x is held and y fits the visible data.
+    fn apply_views(&mut self, views: &[Option<AxesLimits>], auto: bool) {
+        for (i, v) in views.iter().enumerate() {
+            if let (Some(v), Some(a)) = (v, self.cell_axes(i)) {
+                if auto {
+                    (a.x.min, a.x.max) = (v.0, v.1);
+                    (a.y.min, a.y.max, a.y2.min, a.y2.max) = (None, None, None, None);
+                    a.fit_y = true;
+                } else {
+                    (a.x.min, a.x.max, a.y.min, a.y.max, a.y2.min, a.y2.max) = *v;
+                }
+            }
+        }
+    }
+
     fn frame(&mut self, px: &mut Pixels) -> Result<Vec<Layout>, Error> {
         let (scene, layouts) = self.scene_and_layouts();
         let mut pm = self.pixmap.take();
@@ -139,7 +200,7 @@ impl Figure {
     ) -> Result<(), Error> {
         let (w, h) = self.size();
         let (w, h) = (w as usize, h as usize);
-        let mut window = Window::new(title, w, h, WindowOptions::default())
+        let mut window = open_window(title, w, h)
             .map_err(|e| Error::Render(format!("cannot open window: {e}")))?;
         window.set_target_fps(60);
         let original = self.limits();
@@ -158,11 +219,17 @@ impl Figure {
         let period = Duration::from_secs_f64(1.0 / fps.max(1) as f64);
         let mut last_update = Instant::now();
         let mut message: Option<(String, Instant)> = None;
+        // Views the user zoomed or panned to, per plot (kept across updates).
+        let mut views: Vec<Option<AxesLimits>> = Vec::new();
+        let mut live = false;
+        let mut auto = true;
 
         while window.is_open() && !window.is_key_down(Key::Escape) {
             if last_update.elapsed() >= period {
                 last_update = Instant::now();
                 if update(self) {
+                    live = true;
+                    self.apply_views(&views, auto);
                     dirty = true;
                 }
             }
@@ -183,6 +250,8 @@ impl Figure {
                             a.zoom_at(&lay, m.0, m.1, f);
                             dirty = true;
                         }
+                        remember(&mut views, i, self.axes_limits(i));
+                        self.apply_views(&views, auto);
                     }
                 }
             }
@@ -197,6 +266,8 @@ impl Figure {
                                 a.pan(&lay, m.0 - x, m.1 - y);
                                 dirty = true;
                             }
+                            remember(&mut views, i, self.axes_limits(i));
+                            self.apply_views(&views, auto);
                             drag = Some((m.0, m.1, i));
                         }
                         _ => {}
@@ -215,13 +286,43 @@ impl Figure {
                         a.zoom_box(&lay, (x, y), m);
                         dirty = true;
                     }
+                    remember(&mut views, i, self.axes_limits(i));
+                    self.apply_views(&views, auto);
                     box_start = None;
                 }
                 (false, Some(_), None) => box_start = None,
                 _ => {}
             }
             if window.is_key_pressed(Key::R, KeyRepeat::No) {
+                views.clear();
                 self.restore(&original);
+                if live {
+                    // Let the data set the view again.
+                    update(self);
+                }
+                dirty = true;
+            }
+            if window.is_key_pressed(Key::A, KeyRepeat::No) {
+                auto = !auto;
+                if !auto {
+                    // Hold the y range that is visible now.
+                    for (i, v) in views.iter_mut().enumerate() {
+                        if let (Some(v), Some(l)) = (v.as_mut(), layouts.get(i)) {
+                            let (y0, y1) = (l.y.value(l.y.p0), l.y.value(l.y.p1));
+                            (v.2, v.3) = (Some(y0.min(y1)), Some(y0.max(y1)));
+                            if let Some(m) = &l.y2 {
+                                let (u, w) = (m.value(m.p0), m.value(m.p1));
+                                (v.4, v.5) = (Some(u.min(w)), Some(u.max(w)));
+                            }
+                        }
+                    }
+                }
+                self.apply_views(&views, auto);
+                message = Some((
+                    format!("Auto scale {}", if auto { "on" } else { "off" }),
+                    Instant::now(),
+                ));
+                last_mouse = (f64::NAN, f64::NAN);
                 dirty = true;
             }
             if window.is_key_pressed(Key::H, KeyRepeat::No) {
@@ -289,6 +390,19 @@ impl Figure {
                         }
                     }
                 }
+                if live && views.iter().any(Option::is_some) && message.is_none() {
+                    tooltip(
+                        &mut nodes,
+                        if auto {
+                            "View held while data arrives · auto scale on (A) · R: follow live data"
+                        } else {
+                            "View held while data arrives · auto scale off (A) · R: follow live data"
+                        },
+                        (10.0, h as f64 - 30.0),
+                        w as f64,
+                        h as f64,
+                    );
+                }
                 if let Some((text, at)) = &message {
                     if at.elapsed() < Duration::from_secs(2) {
                         tooltip(
@@ -319,6 +433,14 @@ impl Figure {
         }
         Ok(())
     }
+}
+
+/// Records the view of plot `i` chosen by the user.
+fn remember(views: &mut Vec<Option<AxesLimits>>, i: usize, limits: Option<AxesLimits>) {
+    if views.len() <= i {
+        views.resize(i + 1, None);
+    }
+    views[i] = limits;
 }
 
 fn sanitize(s: &str) -> String {
@@ -396,6 +518,55 @@ fn composite(base: &Pixels, over: &Pixels) -> Vec<u32> {
 
 #[cfg(test)]
 mod tests {
+    /// A view chosen by the user survives a data update that rebuilds or
+    /// re-limits the figure.
+    #[test]
+    fn auto_scale_holds_only_x() {
+        let mut fig = Figure::new(400, 300);
+        fig.axes().line([0.0, 1.0, 2.0], [0.0, 10.0, 1.0]);
+        fig.axes().x_limits(1.5, 2.0).y_limits(-5.0, 50.0);
+        let mut views = Vec::new();
+        remember(&mut views, 0, fig.axes_limits(0));
+        fig.apply_views(&views, true);
+        let a = fig.axes();
+        assert_eq!(
+            (a.x.min, a.x.max, a.y.min, a.y.max),
+            (Some(1.5), Some(2.0), None, None)
+        );
+        assert!(a.auto_scales_y());
+        // Held completely with auto scale off.
+        fig.apply_views(&views, false);
+        assert_eq!(fig.axes().y.max, Some(50.0));
+    }
+
+    #[test]
+    fn user_view_survives_updates() {
+        // The same code builds the figure on every update (as live
+        // dashboards do), so plot indices are stable.
+        let build = |n: f64| {
+            let mut fig = Figure::new(400, 300);
+            fig.grid(1, 2);
+            fig.at(0, 0).line([0.0, n], [0.0, n]);
+            fig.at(0, 1).line([0.0, n], [0.0, n]);
+            fig.at(0, 1).x_limits(0.0, n);
+            fig
+        };
+        let mut fig = build(1.0);
+        fig.at(0, 1).x_limits(0.2, 0.4).y_limits(0.1, 0.3);
+        let mut views = Vec::new();
+        remember(&mut views, 1, fig.axes_limits(1));
+        // New data: the figure is rebuilt with its own limits.
+        fig = build(2.0);
+        fig.apply_views(&views, false);
+        let a = fig.at(0, 1);
+        assert_eq!(
+            (a.x.min, a.x.max, a.y.min, a.y.max),
+            (Some(0.2), Some(0.4), Some(0.1), Some(0.3))
+        );
+        // The other plot keeps following the data.
+        assert_eq!(fig.at(0, 0).x.min, None);
+    }
+
     use super::*;
 
     fn fig() -> (Figure, Layout) {

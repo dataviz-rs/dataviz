@@ -64,6 +64,8 @@ pub struct Axes {
     pub(crate) equal_aspect: bool,
     pub(crate) polar: super::series::polar::PolarFrame,
     pub(crate) show_colorbar: bool,
+    /// y (and y2) fit the data inside the x range (`auto_scale_y`).
+    pub(crate) fit_y: bool,
 }
 
 /// Resolved layout of an axes (positions and mappings).
@@ -95,6 +97,7 @@ impl Axes {
             equal_aspect: false,
             polar: Default::default(),
             show_colorbar: true,
+            fit_y: false,
         }
     }
 
@@ -129,6 +132,27 @@ impl Axes {
     pub fn y_limits(&mut self, min: f64, max: f64) -> &mut Self {
         self.y.limits(min, max);
         self
+    }
+    /// Auto scale: the y-axes (without manual limits) fit only the data
+    /// whose x lies in the visible x range, e.g. after zooming in or with a
+    /// rolling time window (`x_limits`). Off by default (y fits all data).
+    ///
+    /// ```
+    /// use dataviz::prelude::*;
+    /// let mut fig = Figure::new(400, 300);
+    /// let ax = fig.axes();
+    /// ax.line([0.0, 1.0, 2.0, 3.0], [100.0, 1.0, 2.0, 3.0]);
+    /// ax.x_limits(1.0, 3.0).auto_scale_y(true);
+    /// let svg = fig.to_svg();   // y spans about 1..3, not 1..100
+    /// assert!(!svg.contains(">100<"));
+    /// ```
+    pub fn auto_scale_y(&mut self, on: bool) -> &mut Self {
+        self.fit_y = on;
+        self
+    }
+    /// Whether [`Axes::auto_scale_y`] is on.
+    pub fn auto_scales_y(&self) -> bool {
+        self.fit_y
     }
     /// x scale.
     pub fn x_scale(&mut self, scale: Scale) -> &mut Self {
@@ -585,6 +609,34 @@ impl Axes {
             _ => (xl, xh),
         };
         let x = Self::limits(&self.x, xl, xh);
+        // Auto scale: y from the data inside the visible x range.
+        let visible = |secondary: bool, e: Option<Extent>| -> Option<Extent> {
+            if !self.fit_y || self.kind != AxesKind::Cartesian {
+                return e;
+            }
+            let mut r: Option<(f64, f64)> = None;
+            for s in self.series.iter().filter(|s| s.secondary() == secondary) {
+                let part = match s.y_range_in(x.0, x.1) {
+                    Some(p) => p,
+                    None => s.extent().map(|e| (e.y_min, e.y_max)),
+                };
+                if let Some((a, b)) = part {
+                    r = Some(r.map_or((a, b), |(lo, hi)| (lo.min(a), hi.max(b))));
+                }
+            }
+            match (r, e) {
+                (Some((a, b)), Some(mut e)) => {
+                    // A sticky edge (bar baseline) stays sticky if visible.
+                    e.sticky_y_min &= a == e.y_min;
+                    e.sticky_y_max &= b == e.y_max;
+                    e.y_min = a;
+                    e.y_max = b;
+                    Some(e)
+                }
+                _ => e,
+            }
+        };
+        let (e, e2) = (visible(false, e), visible(true, e2));
         let y = Self::limits(
             &self.y,
             e.map(|e| (e.y_min, e.sticky_y_min)),

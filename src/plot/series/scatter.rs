@@ -201,6 +201,11 @@ impl Scatter {
 }
 
 impl Series for Scatter {
+    fn y_range_in(&self, x0: f64, x1: f64) -> Option<Option<(f64, f64)>> {
+        Some(super::y_range_where(&self.x, x0, x1, |i| {
+            (self.y[i], self.y[i])
+        }))
+    }
     fn extent(&self) -> Option<Extent> {
         Extent::of_points(self.x.iter().copied().zip(self.y.iter().copied()))
     }

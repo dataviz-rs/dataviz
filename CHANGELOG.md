@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.4.2
+
+### Added
+- **Auto scale**: `Axes::auto_scale_y(true)` fits the y-axes to the data
+  inside the visible x range (zoom, rolling windows); `Series::y_range_in`
+  (default: whole extent) is implemented by lines, areas, scatter,
+  candlesticks and bars. In `show_live` windows it is on by default: zooming
+  and panning move along x while y follows the visible data; `A` toggles it
+  (off = the y range is held too).
+- `plot::data::CsvLog`: records live data to CSV as it arrives (buffered,
+  flushed every second and on drop, appends to existing files; timestamps
+  readable by `Table::time_column`) and `plot::data::format_timestamp`.
+
+### Fixed
+- `Figure::show_live`: a plot the user zoomed or panned keeps that view
+  while new data arrives (also when the update rebuilds the figure); a hint
+  is shown, `R` returns to following the data.
+- Windows can be moved and resized on GNOME Wayland: on Linux the window
+  uses X11 (XWayland) when available, so the desktop draws a title bar
+  (`DATAVIZ_WAYLAND=1` keeps Wayland).
+
 ## 0.4.1
 
 ### Added

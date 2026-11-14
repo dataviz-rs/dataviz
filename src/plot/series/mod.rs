@@ -439,6 +439,13 @@ pub trait Series: Any {
     fn color_scale(&self) -> Option<ColorScale> {
         None
     }
+    /// y-range of the data whose x lies in `[x0, x1]`, for
+    /// [`Axes::auto_scale_y`](crate::plot::Axes::auto_scale_y). `None` (the
+    /// default) means the whole extent is used; `Some(None)` means no data
+    /// in that range.
+    fn y_range_in(&self, _x0: f64, _x1: f64) -> Option<Option<(f64, f64)>> {
+        None
+    }
     /// For downcasting to the concrete type.
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -486,6 +493,36 @@ where
 pub(crate) fn truncated(mut v: Vec<f64>, n: usize) -> Vec<f64> {
     v.truncate(n);
     v
+}
+
+/// y-range of the points `i` with `x[i]` in `[x0, x1]`, where `ys(i)`
+/// gives the low and high y of point `i` (helper for `Series::y_range_in`).
+pub(crate) fn y_range_where(
+    x: &[f64],
+    x0: f64,
+    x1: f64,
+    ys: impl Fn(usize) -> (f64, f64),
+) -> Option<(f64, f64)> {
+    let sorted = x.windows(2).all(|w| w[0] <= w[1]);
+    let (a, b) = if sorted {
+        (
+            x.partition_point(|v| *v < x0),
+            x.partition_point(|v| *v <= x1),
+        )
+    } else {
+        (0, x.len())
+    };
+    let mut r: Option<(f64, f64)> = None;
+    for (i, xv) in x.iter().enumerate().take(b).skip(a) {
+        if !(*xv >= x0 && *xv <= x1) {
+            continue;
+        }
+        let (lo, hi) = ys(i);
+        if lo.is_finite() && hi.is_finite() {
+            r = Some(r.map_or((lo, hi), |(a, b)| (a.min(lo), b.max(hi))));
+        }
+    }
+    r
 }
 
 /// Anything that yields labels.

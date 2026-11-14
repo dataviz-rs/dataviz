@@ -462,6 +462,13 @@ pub(crate) fn decimate(pts: Vec<(f64, f64)>, width_px: f64) -> Vec<(f64, f64)> {
 }
 
 impl Series for Line {
+    fn y_range_in(&self, x0: f64, x1: f64) -> Option<Option<(f64, f64)>> {
+        let r = super::y_range_where(&self.x, x0, x1, |i| (self.y[i], self.y[i]));
+        Some(match (r, self.fill) {
+            (Some((a, b)), Some(base)) => Some((a.min(base), b.max(base))),
+            (r, _) => r,
+        })
+    }
     fn extent(&self) -> Option<Extent> {
         let e = Extent::of_points(self.points())?;
         Some(match self.fill {
@@ -673,6 +680,11 @@ impl FillBetween {
 }
 
 impl Series for FillBetween {
+    fn y_range_in(&self, x0: f64, x1: f64) -> Option<Option<(f64, f64)>> {
+        Some(super::y_range_where(&self.x, x0, x1, |i| {
+            (self.y1[i].min(self.y2[i]), self.y1[i].max(self.y2[i]))
+        }))
+    }
     fn extent(&self) -> Option<Extent> {
         let a = Extent::of_points(self.x.iter().copied().zip(self.y1.iter().copied()));
         let b = Extent::of_points(self.x.iter().copied().zip(self.y2.iter().copied()));
