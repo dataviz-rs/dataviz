@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.7.0
+
+### Added
+- **Math notation** in every text (titles, axis labels, legends, tick
+  formats, annotations, tooltips): `$...$` holds a TeX subset (see
+  `plot::math`): super- and subscripts, `\frac`, `\sqrt`, accents
+  (`\bar \hat \vec \dot \tilde`, `\overline`), Greek letters, operators
+  and relations with TeX spacing, big operators (`\sum \int \prod`),
+  function names (`\sin \log \lim` …), `\mathrm \mathbf \mathit \text`,
+  `\mathbb \mathcal \mathfrak`, spacing commands; `\$` is a dollar sign.
+  It is laid out into ordinary text runs and lines, so CPU, GPU, SVG and
+  PDF output all show it; letters are italic (synthesized oblique).
+- `TextNode::italic`.
+
+### Changed
+- `FontSet` measures math text as laid out; window tooltips size their
+  boxes with real text widths.
+- The `plot_interactive` example requires the `window` feature.
+
 ## 0.6.0
 
 ### Added

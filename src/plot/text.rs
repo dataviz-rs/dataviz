@@ -47,8 +47,17 @@ impl FontSet {
         PxScale::from((size as f32) * self.units_to_em)
     }
 
-    /// Width of `text` at `size` pixels.
+    /// Width of `text` at `size` pixels (math in `$...$` is laid out, see
+    /// [`crate::plot::math`]).
     pub fn width(&self, text: &str, size: f64) -> f64 {
+        if super::math::has_math(text) {
+            return super::math::layout(self, text, size, false).width;
+        }
+        self.width_plain(text, size)
+    }
+
+    /// Width of `text` without math layout.
+    pub fn width_plain(&self, text: &str, size: f64) -> f64 {
         match &self.font {
             Some(font) => {
                 let sf = font.as_scaled(self.scale(size));
@@ -67,6 +76,42 @@ impl FontSet {
             // Average glyph width of a typical sans-serif font.
             None => text.chars().count() as f64 * size * 0.55,
         }
+    }
+
+    /// Ink extent of `text` at `size` pixels: (left, right, top, bottom)
+    /// relative to the origin on the baseline, y down (None without ink).
+    pub fn ink(&self, text: &str, size: f64) -> Option<(f64, f64, f64, f64)> {
+        let font = self.font.as_ref()?;
+        let sf = font.as_scaled(self.scale(size));
+        let mut pen = 0.0f32;
+        let mut prev = None;
+        let mut b: Option<(f32, f32, f32, f32)> = None;
+        for c in text.chars() {
+            let id = sf.glyph_id(c);
+            if let Some(p) = prev {
+                pen += sf.kern(p, id);
+            }
+            // Unrounded outline bounds (font units, y up).
+            if let Some(o) = font.outline(id) {
+                let r = o.bounds;
+                let (hx, vy) = (sf.h_scale_factor(), sf.v_scale_factor());
+                // ab_glyph stores the top in `min.y`; order explicitly.
+                let (y_lo, y_hi) = (r.min.y.min(r.max.y), r.min.y.max(r.max.y));
+                let q = (
+                    pen + r.min.x * hx,
+                    pen + r.max.x * hx,
+                    -y_hi * vy,
+                    -y_lo * vy,
+                );
+                b = Some(match b {
+                    None => q,
+                    Some(p) => (p.0.min(q.0), p.1.max(q.1), p.2.min(q.2), p.3.max(q.3)),
+                });
+            }
+            pen += sf.h_advance(id);
+            prev = Some(id);
+        }
+        b.map(|q| (q.0 as f64, q.1 as f64, q.2 as f64, q.3 as f64))
     }
 
     /// Height of a line of text at `size` pixels (ascent + descent).

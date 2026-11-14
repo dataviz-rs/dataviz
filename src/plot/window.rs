@@ -29,6 +29,7 @@ use super::figure::Figure;
 use super::output::{self, Error, Pixels};
 use super::scene::{Anchor, Baseline, Node, PathCmd, Scene, Stroke, TextNode};
 use super::series::Rect;
+use super::text::FontSet;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::time::{Duration, Instant};
 
@@ -428,6 +429,7 @@ impl Figure {
                 m != last_mouse || box_start.is_some() || message.is_some() || recording.is_some();
             if overlay_needed {
                 last_mouse = m;
+                let fonts = self.fonts();
                 let mut nodes = Vec::new();
                 if let (Some((x, y, _)), Some(m)) = (box_start, mouse) {
                     nodes.push(Node::Rect {
@@ -458,6 +460,7 @@ impl Figure {
                             {
                                 if hit.distance < 40.0 {
                                     tooltip(
+                                        &fonts,
                                         &mut nodes,
                                         &hit.label,
                                         (hit.px, hit.py),
@@ -471,6 +474,7 @@ impl Figure {
                 }
                 if live && views.iter().any(Option::is_some) && message.is_none() {
                     tooltip(
+                        &fonts,
                         &mut nodes,
                         if auto {
                             "View held while data arrives · auto scale on (A) · R: follow live data"
@@ -484,6 +488,7 @@ impl Figure {
                 }
                 if let Some(r) = &recording {
                     axis_box(
+                        &fonts,
                         &mut nodes,
                         &format!("● REC {:.0} s", r.start.elapsed().as_secs_f64()),
                         w as f64 - 8.0,
@@ -494,6 +499,7 @@ impl Figure {
                 if let Some((text, at)) = &message {
                     if at.elapsed() < Duration::from_secs(2) {
                         tooltip(
+                            &fonts,
                             &mut nodes,
                             text,
                             (10.0, h as f64 - 30.0),
@@ -513,7 +519,7 @@ impl Figure {
                     let mut scene = Scene::new(w as f64, h as f64);
                     scene.background = None;
                     scene.nodes = nodes;
-                    let fonts = self.fonts();
+                    super::math::expand(&mut scene.nodes, &fonts);
                     super::raster::draw_over(
                         &scene,
                         &fonts,
@@ -656,9 +662,9 @@ fn sanitize(s: &str) -> String {
 }
 
 /// Tooltip box with a marker at the data point.
-fn tooltip(nodes: &mut Vec<Node>, text: &str, at: (f64, f64), w: f64, h: f64) {
+fn tooltip(fonts: &FontSet, nodes: &mut Vec<Node>, text: &str, at: (f64, f64), w: f64, h: f64) {
     let size = 12.0;
-    let tw = text.chars().count() as f64 * size * 0.6 + 16.0;
+    let tw = fonts.width(text, size) + 16.0;
     let th = size + 12.0;
     let x = (at.0 + 12.0).min(w - tw - 4.0).max(4.0);
     let y = (at.1 - th - 10.0).max(4.0).min(h - th - 4.0);
@@ -688,6 +694,7 @@ fn tooltip(nodes: &mut Vec<Node>, text: &str, at: (f64, f64), w: f64, h: f64) {
         baseline: Baseline::Middle,
         rotate: 0.0,
         bold: false,
+        italic: false,
     }));
 }
 
@@ -730,9 +737,9 @@ const CROSS: Color = Color::rgba(90, 90, 90, 0.8);
 const LABEL_BG: Color = Color::rgba(50, 50, 55, 0.92);
 
 /// A value box on an axis edge.
-fn axis_box(nodes: &mut Vec<Node>, text: &str, x: f64, y: f64, anchor: Anchor) {
+fn axis_box(fonts: &FontSet, nodes: &mut Vec<Node>, text: &str, x: f64, y: f64, anchor: Anchor) {
     let size = 11.0;
-    let tw = text.chars().count() as f64 * size * 0.6 + 10.0;
+    let tw = fonts.width(text, size) + 10.0;
     let th = size + 8.0;
     let left = match anchor {
         Anchor::Start => x,
@@ -758,6 +765,7 @@ fn axis_box(nodes: &mut Vec<Node>, text: &str, x: f64, y: f64, anchor: Anchor) {
         baseline: Baseline::Middle,
         rotate: 0.0,
         bold: false,
+        italic: false,
     }));
 }
 
@@ -772,6 +780,7 @@ impl Figure {
         values: bool,
         nodes: &mut Vec<Node>,
     ) -> bool {
+        let fonts = self.fonts();
         let Some(a) = self.cell_axes(i) else {
             return false;
         };
@@ -793,19 +802,19 @@ impl Figure {
         let xv = l.x.value(m.0);
         let xs = a.cursor_label(l, false, xv);
         let ys = a.cursor_label(l, true, l.y.value(m.1));
-        axis_box(nodes, &xs, m.0, p.bottom() + 10.0, Anchor::Middle);
-        axis_box(nodes, &ys, p.x - 2.0, m.1, Anchor::End);
+        axis_box(&fonts, nodes, &xs, m.0, p.bottom() + 10.0, Anchor::Middle);
+        axis_box(&fonts, nodes, &ys, p.x - 2.0, m.1, Anchor::End);
         if let Some(y2) = &l.y2 {
             let v = y2.value(m.1);
             let s = super::series::short(v);
-            axis_box(nodes, &s, p.right() + 2.0, m.1, Anchor::Start);
+            axis_box(&fonts, nodes, &s, p.right() + 2.0, m.1, Anchor::Start);
         }
         if values {
             let hits = a.hits_at_x(l, m.0, 30.0);
             if !hits.is_empty() {
                 let text: Vec<&str> = hits.iter().map(|h| h.label.as_str()).collect();
                 let at = (m.0, (m.1 - 40.0).max(p.y + 4.0));
-                tooltip_lines(nodes, &text, at, p, &hits);
+                tooltip_lines(&fonts, nodes, &text, at, p, &hits);
             }
         }
         for (j, o) in layouts.iter().enumerate() {
@@ -826,7 +835,7 @@ impl Figure {
                 let hits = b.hits_at_x(o, px, 30.0);
                 if !hits.is_empty() {
                     let text: Vec<&str> = hits.iter().map(|h| h.label.as_str()).collect();
-                    tooltip_lines(nodes, &text, (px, o.plot.y + 4.0), o.plot, &hits);
+                    tooltip_lines(&fonts, nodes, &text, (px, o.plot.y + 4.0), o.plot, &hits);
                 }
             }
         }
@@ -837,6 +846,7 @@ impl Figure {
 /// A box with several lines of text next to `at`, kept inside `r`.
 /// `dots` are drawn at the data points the lines describe.
 fn tooltip_lines(
+    fonts: &FontSet,
     nodes: &mut Vec<Node>,
     lines: &[&str],
     at: (f64, f64),
@@ -845,7 +855,11 @@ fn tooltip_lines(
 ) {
     let size = 12.0;
     let line_h = size + 4.0;
-    let tw = lines.iter().map(|t| t.chars().count()).max().unwrap_or(0) as f64 * size * 0.6 + 16.0;
+    let tw = lines
+        .iter()
+        .map(|t| fonts.width(t, size))
+        .fold(0.0, f64::max)
+        + 16.0;
     let th = lines.len() as f64 * line_h + 8.0;
     let x = if at.0 + 12.0 + tw <= r.right() {
         at.0 + 12.0
@@ -884,6 +898,7 @@ fn tooltip_lines(
             baseline: Baseline::Middle,
             rotate: 0.0,
             bold: false,
+            italic: false,
         }));
     }
 }

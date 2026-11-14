@@ -269,7 +269,12 @@ fn glyph_path(font: &ab_glyph::FontArc, key: usize, id: GlyphId) -> Option<Arc<s
         if last.is_some() {
             pb.close();
         }
-        pb.finish()
+        let path = pb.finish()?;
+        if key & 1 == 1 {
+            // Synthesized oblique: about 12° slant.
+            return path.transform(Transform::from_row(1.0, 0.0, -0.21, 1.0, 0.0, 0.0));
+        }
+        Some(path)
     })
 }
 
@@ -628,6 +633,9 @@ pub(crate) fn layout_text(
         ));
     }
     let simple = t.rotate == 0.0 && base.kx == 0.0 && base.ky == 0.0;
+    // Italic glyphs are slanted outlines cached under a separate key (font
+    // keys are addresses, so the low bit is free).
+    let glyph_font_key = font_key | usize::from(t.italic);
     let mut pen = x0 as f32;
     let mut prev = None;
     for ch in t.text.chars() {
@@ -635,7 +643,7 @@ pub(crate) fn layout_text(
         if let Some(pv) = prev {
             pen += sf.kern(pv, id);
         }
-        if let Some(path) = glyph_path(font, font_key, id) {
+        if let Some(path) = glyph_path(font, glyph_font_key, id) {
             if simple {
                 // Cached coverage bitmaps at quarter-pixel positions.
                 let s = base.sx;
@@ -651,7 +659,7 @@ pub(crate) fn layout_text(
                 } else {
                     0.0
                 };
-                let key: GlyphKey = (font_key, id.0, (k * s).to_bits(), fx, fy, t.bold);
+                let key: GlyphKey = (glyph_font_key, id.0, (k * s).to_bits(), fx, fy, t.bold);
                 if let Some(g) = glyph_bitmap(&path, key, k * s, bold_px) {
                     let (x, y) = (ix as i32 + g.dx, iy as i32 + g.dy);
                     draw(GlyphDraw::Bitmap {

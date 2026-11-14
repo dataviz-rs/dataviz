@@ -176,6 +176,7 @@ pub(crate) fn draw(
                 baseline: Baseline::Middle,
                 rotate: 0.0,
                 bold: false,
+                italic: false,
             }));
             if faded {
                 let children = out.split_off(start);
@@ -325,6 +326,7 @@ pub(crate) fn draw_colorbar(out: &mut Vec<Node>, s: &ColorScale, r: Rect, theme:
             baseline: Baseline::Middle,
             rotate: 0.0,
             bold: false,
+            italic: false,
         }));
     }
     if let Some(label) = &s.label {
@@ -339,6 +341,7 @@ pub(crate) fn draw_colorbar(out: &mut Vec<Node>, s: &ColorScale, r: Rect, theme:
             baseline: Baseline::Middle,
             rotate: 90.0,
             bold: false,
+            italic: false,
         }));
     }
 }

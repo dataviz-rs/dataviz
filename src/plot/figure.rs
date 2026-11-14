@@ -327,6 +327,7 @@ impl Figure {
                 layouts.push(c.axes.render(r, &fig.theme, &fonts, &mut nodes));
                 scene.nodes.extend(nodes);
             }
+            super::math::expand(&mut scene.nodes, &fonts);
             (scene, layouts)
         })
     }

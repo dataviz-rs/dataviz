@@ -26,6 +26,7 @@ pub mod figure;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu;
 pub mod legend;
+pub mod math;
 pub mod output;
 pub(crate) mod raster;
 pub(crate) mod render;
