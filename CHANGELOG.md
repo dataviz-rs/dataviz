@@ -56,6 +56,33 @@
   covalent radii in linear time; ball-and-stick, sticks, space-filling and
   backbone styles; colors by element, chain or along the chain; water
   hidden), `Axes::embedding3d` (single-cell clusters on a 3D UMAP).
+- **Business and editorial charts** (`series::general`): `Axes::bullet`
+  (each row in % of its own range), `dumbbell`, `slope`, `bump`,
+  `waffle`, `marimekko`, `chord` (d3 layout), `streamgraph` (wiggle
+  baseline) and `horizon`.
+- **Model evaluation** (`series::evaluation`): `Axes::shap_summary`
+  (beeswarm, colors by feature-value rank), `calibration_curve` (Brier
+  score), `learning_curve`, `gain_curve`, `lift_curve`, `raincloud`,
+  `upset`; functions `calibration`, `gain`, `intersections`.
+- **Engineering** (`series::engineering`): `Axes::streamplot` (evenly
+  spaced streamlines, colors by speed, log scale over wide ranges),
+  `ternary`, `waterfall3d`, `control_chart` (σ from the moving range,
+  Western Electric rules 1 and 2), `pareto`, `quiver3d`, `bar3d` (category
+  axes in 3D); functions `streamlines`, `control_violations`.
+- **Trading** (`series::trading`): `Axes::liquidity_heatmap`,
+  `footprint` (`FootprintBar`; imbalances, point of control),
+  `market_profile` (TPO, POC, value area), `option_payoff` (`OptionLeg`;
+  at expiry and before it), `volatility_surface`; functions
+  `black_scholes`, `strategy_value`, `tpo`.
+- **Genomics** (`series::genome`): `Axes::circos` (data ring, links),
+  `hic` (triangle map, TADs), `coverage`, `phylo_tree` /
+  `phylo_tree_circular` (`parse_newick`), `ramachandran`, `oncoprint`
+  (`Alteration`), `mutation_lollipop`.
+- **Proteins and volumes**: `MolStyle::Cartoon` (helix ribbons, strand
+  arrows; `Molecule::secondary` from the PDB HELIX/SHEET records, else from
+  the Cα geometry), `Molecule::phi_psi`; `Axes::isosurface` /
+  `isosurface_fn` (marching tetrahedra, shared vertices, outward faces;
+  `isosurface_mesh`); `Scene3d::tube_line`, `arrow`.
 - `Annotate::background`: a box behind text annotations (readable over
   dense data).
 - `Figure::resize(width, height)` (figures embedded in resizable panels).

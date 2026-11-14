@@ -10,7 +10,7 @@
     <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
 </a>
 
-**Fast, pure-Rust plotting: 80+ chart types, interactive windows, live
+**Fast, pure-Rust plotting: 120+ chart types, interactive windows, live
 data, animations, maps, math and every language — with the least CPU and
 memory of the Rust plotting libraries.**
 
@@ -35,7 +35,7 @@ memory of the Rust plotting libraries.**
   matplotlib, and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
   Optional multi-core and GPU backends.
-- **Everything in one crate.** 80+ chart types — lines, bars, statistics,
+- **Everything in one crate.** 120+ chart types — lines, bars, statistics,
   heatmaps, contours, 3D, maps, sankey, networks — plus ready-made charts
   for **data scientists** (ROC/PR curves, confusion matrices, regression
   bands, density contours, dendrograms), **biologists and clinicians**
@@ -123,21 +123,21 @@ and click work in your own GUI or web page through
 
 | Category | Charts |
 |---|---|
-| Lines & areas | line, step, smooth spline, area, fill-between, stacked / 100 % area, function plot, sparkline |
+| Lines & areas | line, step, smooth spline, area, fill-between, stacked / 100 % area, streamgraph, horizon chart, function plot, sparkline |
 | Points | scatter, colormapped scatter, bubble |
-| Bars | vertical, horizontal, grouped, stacked, percent, overlay, value labels, waterfall, Gantt, lollipop |
-| Distributions | histogram (bin rules, density, cumulative, step), KDE, ECDF, box (notches), violin, strip, swarm, ridgeline, Q-Q, 2D histogram, hexbin |
+| Bars | vertical, horizontal, grouped, stacked, percent, overlay, value labels, waterfall, Gantt, lollipop, bullet, dumbbell, Pareto |
+| Distributions | histogram (bin rules, density, cumulative, step), KDE, ECDF, box (notches), violin, raincloud, strip, swarm, ridgeline, Q-Q, 2D histogram, hexbin |
 | Uncertainty & fits | error bars, error bands, polynomial regression with R², moving averages |
-| Machine learning | ROC curve (AUC), precision-recall curve, confusion matrix, regression with confidence band, LOESS, 2D density contours, dendrogram |
-| Biology & medicine | 3D DNA double helix, molecules from PDB/XYZ (ball-and-stick, sticks, space-filling, backbone), 3D cells and organoids, 3D UMAP, DNA/protein sequence logo, gene track, Manhattan plot, p-value Q-Q, volcano plot, MA plot, clustermap, single-cell embedding (UMAP/t-SNE), dose-response (IC50), Kaplan-Meier survival, forest plot |
-| Signals & control | FFT spectrum, spectrogram, Bode plot, Nyquist plot, Smith chart |
-| Finance & trading | candlestick, OHLC, Heikin-Ashi, Renko, Bollinger bands, Ichimoku cloud, VWAP, RSI, MACD, Stochastic, ATR, volume profile, order book depth, drawdown, trading-day axis |
+| Machine learning | ROC curve (AUC), precision-recall curve, confusion matrix, SHAP summary, calibration curve, learning curve, cumulative gain and lift, regression with confidence band, LOESS, 2D density contours, dendrogram, UpSet plot |
+| Biology & medicine | 3D DNA double helix, molecules from PDB/XYZ (ball-and-stick, sticks, space-filling, backbone, cartoon), Ramachandran plot, isosurfaces of volumes, 3D cells and organoids, 3D UMAP, Circos, Hi-C contact map, coverage track, phylogenetic trees (Newick; rectangular, circular), oncoprint, mutation lollipop, DNA/protein sequence logo, gene track, Manhattan plot, p-value Q-Q, volcano plot, MA plot, clustermap, single-cell embedding (UMAP/t-SNE), dose-response (IC50), Kaplan-Meier survival, forest plot |
+| Signals & control | FFT spectrum, spectrogram, 3D waterfall, Bode plot, Nyquist plot, Smith chart, streamlines, SPC control chart |
+| Finance & trading | candlestick, OHLC, Heikin-Ashi, Renko, footprint (order flow), market profile (TPO), liquidity heatmap, option payoff (Black–Scholes), implied volatility surface, Bollinger bands, Ichimoku cloud, VWAP, RSI, MACD, Stochastic, ATR, volume profile, order book depth, drawdown, trading-day axis |
 | Grids & fields | heatmap, correlation matrix, calendar heatmap, image, contour lines and fills, quiver |
-| 3D | surface, wireframe, scatter, line, spheres, meshes, ellipsoids, text; one shared scene per plot with depth sorting, lighting, perspective and free rotation around x, y and z |
+| 3D | surface, wireframe, scatter, line, spheres, meshes, ellipsoids, isosurfaces, vectors, bars, text; one shared scene per plot with depth sorting, lighting, perspective and free rotation around x, y and z |
 | Maps | built-in world map, choropleth by ISO code or name, points and great-circle routes, GeoJSON shapes; Robinson, Natural Earth, equirectangular, Mercator |
-| Parts of a whole | pie, donut, treemap, sunburst, funnel, gauge |
+| Parts of a whole | pie, donut, treemap, sunburst, waffle, marimekko (mosaic), funnel, gauge |
 | Polar | polar line/scatter, radar, rose / wind rose |
-| Relations & flows | sankey, network graph (force-directed), parallel coordinates |
+| Relations & flows | sankey, chord diagram, network graph (force-directed), parallel coordinates, slope chart, bump chart, ternary diagram |
 | Layouts | subplots with spans, shared axes, broken axes, secondary y-axis, facets (small multiples), pair plot, aligned panels |
 | Annotations | text, arrows, reference lines, shaded spans, rectangles |
 
@@ -150,6 +150,12 @@ ax.confusion_matrix(["cat", "dog", "bird"], &actual, &predicted, true);
 ax.regplot(&x, &y);                                     // fit, 95 % band and R²
 ax.density_contour(&x, &y);                             // 2D KDE, millions of points
 ax.dendrogram(&names, &features);                       // hierarchical clustering
+ax.shap_summary(&features, &shap, &values, 10);         // what drives the model
+ax.calibration_curve("model", &labels, &probs, 10);     // Brier score in the legend
+ax.learning_curve(&sizes, &train, &validation);
+ax.gain_curve("model", &labels, &scores);               // and lift_curve
+ax.raincloud([("A", &a), ("B", &b)]);
+ax.upset(&sets, 12);                                    // set intersections
 ```
 
 ### For biologists and clinicians
@@ -164,6 +170,15 @@ ax.embedding(&umap_x, &umap_y, &cell_types);            // single-cell clusters
 ax.dose_response(&concentration, &viability);           // 4PL fit and IC50
 ax.kaplan_meier([("control", t1, e1), ("treated", t2, e2)]); // log-rank p
 ax.forest_plot(&studies, &hr, &low, &high, 1.0);        // meta-analysis
+ax.circos(&chromosomes).track(&chr, &pos, &cn).links(&sv);
+ax.hic(matrix, start, bin).domains(&tads);              // contact map as a triangle
+ax.coverage(&pos, &depth).min_depth(20.0);
+ax.phylo_tree(newick);                                  // or phylo_tree_circular
+ax.oncoprint(&genes, samples, &alterations);
+ax.mutation_lollipop(393.0, &domains, &mutations);
+ax.molecule(Molecule::from_pdb(&pdb)).style(MolStyle::Cartoon);
+ax.ramachandran(&phi, &psi);                            // from molecule.phi_psi()
+ax.isosurface(&volume, [nx, ny, nz], bounds, level);    // microscopy, CT, densities
 ```
 
 ### 3D: rotate around x, y and z
@@ -199,6 +214,12 @@ let w = logspace(0.01, 100.0, 400);
 fig.bode("plant", &w, &freq_response(&[1.0], &[1.0, 0.4, 1.0], &w));
 ax.nyquist(&freq_response(&[1.0], &[1.0, 0.4, 1.0], &w));
 ax.smith(&impedances);                                  // normalized z on a Smith chart
+ax.streamplot(|x, y| (u(x, y), v(x, y)), (-3.0, 3.0), (-2.0, 2.0), 28);
+ax.ternary(&a, &b, &c).names("sand", "silt", "clay");
+ax.waterfall3d(&freq, &time, spectra);
+ax.control_chart(&measurements);                        // ±3σ, Western Electric rules
+ax.pareto(&causes, &counts);
+ax.quiver3d(points, vectors);
 ```
 
 ### For traders
@@ -212,6 +233,25 @@ profile.volume_profile(&close, &volume, 24);            // POC and value area
 osc.stochastic(&x, &high, &low, &close, 14, 3);
 book.depth_chart(&bids, &asks);
 dd.drawdown(&x, &equity);                               // max drawdown in the legend
+heat.liquidity_heatmap((t0, t1), (p0, p1), &depth);     // order book over time
+of.footprint(bars, 0.25);                               // bid × ask per level
+tpo.market_profile(&ranges, 1.0);                       // POC and value area
+opt.option_payoff(&legs, (80.0, 120.0), 30.0, 0.22, 0.03);
+vol.volatility_surface(&strikes, &maturities, &iv);
+```
+
+### Business and editorial
+
+```rust ignore
+ax.bullet(&kpis, &values, &targets, &ranges);
+ax.dumbbell(&names, &before, &after);
+ax.slope(&names, &before, &after, "2020", "2025");
+ax.bump(&teams, &seasons, &ranks);
+ax.waffle(&parts, &shares);
+ax.marimekko(&columns, &rows, &values);
+ax.chord(&groups, &flows);
+ax.streamgraph(&x, &layers);
+ax.horizon(&x, &rows);
 ```
 
 ### Statistics and finance
