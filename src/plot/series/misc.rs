@@ -630,6 +630,7 @@ impl Series for Annotate {
                     baseline: Baseline::Middle,
                     rotate: 0.0,
                     bold: self.bold,
+                    italic: false,
                 }));
             }
             Annotation::Arrow(a, b, c, d, t) => {
@@ -654,6 +655,7 @@ impl Series for Annotate {
                         baseline: Baseline::Middle,
                         rotate: 0.0,
                         bold: self.bold,
+                        italic: false,
                     }));
                 }
             }

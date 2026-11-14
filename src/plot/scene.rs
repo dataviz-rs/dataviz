@@ -133,6 +133,8 @@ pub struct TextNode {
     pub rotate: f64,
     /// Bold weight.
     pub bold: bool,
+    /// Slanted (synthesized oblique; used for math variables).
+    pub italic: bool,
 }
 
 /// An RGBA raster image (row-major, 4 bytes per pixel).
@@ -683,7 +685,12 @@ impl SvgWriter<'_> {
         } else {
             String::new()
         };
-        let weight = if t.bold { r#" font-weight="bold""# } else { "" };
+        let weight = match (t.bold, t.italic) {
+            (false, false) => "",
+            (true, false) => r#" font-weight="bold""#,
+            (false, true) => r#" font-style="italic""#,
+            (true, true) => r#" font-weight="bold" font-style="italic""#,
+        };
         let _ = writeln!(
             self.out,
             r#"<text x="{}" y="{}" font-size="{}"{anchor}{weight}{}{rotate}>{}</text>"#,
@@ -771,6 +778,7 @@ mod tests {
             baseline: Baseline::Alphabetic,
             rotate: -90.0,
             bold: true,
+            italic: false,
         }));
         s.push(Node::Group {
             children: vec![Node::Circle {

@@ -31,6 +31,7 @@ fn text_node(
         baseline: Baseline::Middle,
         rotate: 0.0,
         bold,
+        italic: false,
     })
 }
 
@@ -497,6 +498,7 @@ impl Series for Treemap {
                         baseline: Baseline::Middle,
                         rotate: 0.0,
                         bold: true,
+                        italic: false,
                     }));
                 }
             } else if ctx.text_width(&label, size) < r.w - 6.0 && r.h > size * 2.6 {
@@ -666,6 +668,7 @@ impl Series for Sunburst {
                     baseline: Baseline::Middle,
                     rotate: rot,
                     bold: false,
+                    italic: false,
                 }));
             } else if arc_len > tw + 4.0 && ring > size * 1.2 {
                 ctx.push(text_node(

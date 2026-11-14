@@ -1419,6 +1419,7 @@ pub(crate) fn text(
         baseline,
         rotate: 0.0,
         bold,
+        italic: false,
     })
 }
 

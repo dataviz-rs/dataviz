@@ -338,6 +338,7 @@ impl Context<'_> {
             baseline,
             rotate: 0.0,
             bold: false,
+            italic: false,
         }));
     }
 

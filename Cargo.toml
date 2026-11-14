@@ -1,6 +1,6 @@
 [package]
 name = "dataviz"
-version = "0.6.0"
+version = "0.7.0"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Samet Eraslan <absameteraslan@gmail.com>"]
@@ -30,3 +30,7 @@ window = ["dep:minifb"]
 pdf = ["dep:svg2pdf"]
 # GPU rasterization (`Backend::Gpu`) via wgpu (Vulkan, Metal, DirectX 12, OpenGL).
 gpu = ["dep:wgpu"]
+
+[[example]]
+name = "plot_interactive"
+required-features = ["window"]
