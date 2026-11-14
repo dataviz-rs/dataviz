@@ -792,7 +792,6 @@ fn flatten(path: &sk::Path, tolerance: f32) -> Vec<Vec<(f32, f32)>> {
 struct Builder<'a> {
     gpu: &'a Gpu,
     fonts: &'a FontSet,
-    font_key: usize,
     base: Transform,
     atlas: &'a mut Atlas,
     frame: Frame,
@@ -994,8 +993,8 @@ impl Builder<'_> {
             }
             Node::Text(t) => {
                 let color = premul(t.color, alpha);
-                let (fonts, font_key, base) = (self.fonts, self.font_key, self.base);
-                raster::layout_text(fonts, font_key, base, t, |g| match g {
+                let (fonts, base) = (self.fonts, self.base);
+                raster::layout_text(fonts, base, t, |g| match g {
                     GlyphDraw::Bitmap { key, bitmap, x, y } => {
                         let at = match self.atlas.map.get(&key) {
                             Some(at) => *at,
@@ -1032,6 +1031,9 @@ impl Builder<'_> {
                             self.frame
                                 .push_glyph(dst, [ax as f32, ay as f32], color, clip);
                         }
+                    }
+                    GlyphDraw::Image { image, x, y, w, h } => {
+                        self.image(x, y, w, h, &image, true, clip, alpha);
                     }
                     GlyphDraw::Outline { path, ts, bold } => {
                         if let Some(p) = (*path).clone().transform(ts) {
@@ -1408,7 +1410,6 @@ fn render_inner(
     }
     let mut state = gpu.state.lock().unwrap_or_else(|e| e.into_inner());
     let state = &mut *state;
-    let font_key = fonts.font.as_ref().map_or(0, |f| f as *const _ as usize);
     let clip = [0.0, 0.0, w as f32, h as f32];
 
     // Geometry; rebuilt once if the glyph atlas overflowed meanwhile.
@@ -1418,7 +1419,6 @@ fn render_inner(
         let mut b = Builder {
             gpu,
             fonts,
-            font_key,
             base: Transform::from_scale(scale as f32, scale as f32),
             atlas: &mut state.atlas,
             frame: Frame::default(),

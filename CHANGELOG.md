@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.8.0
+
+### Added
+- **Font fallback**: characters the theme font lacks (CJK, Thai, Indic,
+  symbols, …) are drawn with a system font that has them. The system fonts
+  are scanned once, the first time such a character appears (about 25 ms),
+  and fonts named after the character's script are tried first.
+- **Right-to-left and complex scripts**: Arabic and Hebrew are put in visual
+  order (Unicode bidi) and, like Indic scripts, Thai and combining marks,
+  shaped with HarfRust (joined Arabic letters, conjuncts, mark placement).
+  Other text keeps the fast path without shaping.
+- **Color emoji** from bitmap emoji fonts (e.g. Noto Color Emoji) on CPU and
+  GPU; emoji characters and characters followed by U+FE0F prefer them.
+
+### Changed
+- New direct dependencies `harfrust` and `unicode-bidi` (already used through
+  resvg/usvg). Latin text renders as fast as before.
+
 ## 0.7.0
 
 ### Added

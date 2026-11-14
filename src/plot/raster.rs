@@ -13,7 +13,7 @@ use super::scene::{
     Anchor, Baseline, LineCap, LineJoin, Node, PathCmd, RasterImage, Scene, Stroke, TextNode,
 };
 use super::text::FontSet;
-use ab_glyph::{Font, GlyphId, OutlineCurve, ScaleFont};
+use ab_glyph::{Font, GlyphId, OutlineCurve};
 use resvg::tiny_skia::{
     self as sk, FillRule, Mask, Paint, PathBuilder, Pixmap, PixmapMut, PixmapPaint, Transform,
 };
@@ -588,18 +588,63 @@ pub(crate) enum GlyphDraw {
         ts: Transform,
         bold: Option<f32>,
     },
+    /// Color glyph image (emoji) at scene position and size.
+    Image {
+        image: Arc<RasterImage>,
+        x: f64,
+        y: f64,
+        w: f64,
+        h: f64,
+    },
+}
+
+/// A decoded color glyph image: pixels, left edge and bottom edge (y up)
+/// relative to the glyph origin and size, in pixels per em of the strike.
+struct ColorGlyph {
+    image: Arc<RasterImage>,
+    dx: f32,
+    dy: f32,
+    w: f32,
+    h: f32,
+    ppem: f32,
+}
+
+static COLOR_GLYPHS: SharedCache<(usize, u16), ColorGlyph> = LazyLock::new(Default::default);
+
+/// The color image of a glyph (CBDT/sbix emoji fonts), decoded once.
+fn color_glyph(face: &'static super::text::Face, id: GlyphId) -> Option<Arc<ColorGlyph>> {
+    cached(&COLOR_GLYPHS, (face.key(), id.0), 2_000, || {
+        let img = face.font.glyph_raster_image2(id, 128)?;
+        if !matches!(img.format, ab_glyph::GlyphImageFormat::Png) {
+            return None;
+        }
+        let rgba = image::load_from_memory_with_format(img.data, image::ImageFormat::Png)
+            .ok()?
+            .to_rgba8();
+        let (w, h) = rgba.dimensions();
+        Some(ColorGlyph {
+            image: Arc::new(RasterImage {
+                width: w,
+                height: h,
+                rgba: rgba.into_raw(),
+            }),
+            dx: img.origin.x,
+            dy: img.origin.y,
+            w: w as f32,
+            h: h as f32,
+            ppem: img.pixels_per_em.max(1) as f32,
+        })
+    })
 }
 
 /// Lays out `t` with the base transform `base` (scale + translation) and
 /// calls `draw` for each glyph. Shared by the CPU and GPU backends.
 pub(crate) fn layout_text(
     fonts: &FontSet,
-    font_key: usize,
     base: Transform,
     t: &TextNode,
     mut draw: impl FnMut(GlyphDraw),
 ) {
-    let Some(font) = &fonts.font else { return };
     if t.text.is_empty()
         || t.size <= 0.0
         || !t.x.is_finite()
@@ -622,8 +667,6 @@ pub(crate) fn layout_text(
         Baseline::Bottom => -t.size * 0.24,
     };
     let baseline = t.y + dy;
-    let sf = font.as_scaled(fonts.scale(t.size));
-    let k = sf.h_scale_factor();
     let mut ts = base;
     if t.rotate != 0.0 {
         ts = ts.pre_concat(Transform::from_rotate_at(
@@ -633,51 +676,62 @@ pub(crate) fn layout_text(
         ));
     }
     let simple = t.rotate == 0.0 && base.kx == 0.0 && base.ky == 0.0;
-    // Italic glyphs are slanted outlines cached under a separate key (font
-    // keys are addresses, so the low bit is free).
-    let glyph_font_key = font_key | usize::from(t.italic);
-    let mut pen = x0 as f32;
-    let mut prev = None;
-    for ch in t.text.chars() {
-        let id = font.glyph_id(ch);
-        if let Some(pv) = prev {
-            pen += sf.kern(pv, id);
-        }
-        if let Some(path) = glyph_path(font, glyph_font_key, id) {
-            if simple {
-                // Cached coverage bitmaps at quarter-pixel positions.
-                let s = base.sx;
-                let gx = pen * s + base.tx;
-                let gy = baseline as f32 * s + base.ty;
-                let (ix, iy) = (gx.floor(), gy.floor());
-                let (fx, fy) = (
-                    ((gx - ix) * 4.0).floor() as u8,
-                    ((gy - iy) * 4.0).floor() as u8,
-                );
-                let bold_px = if t.bold {
-                    t.size as f32 * 0.07 * s
-                } else {
-                    0.0
-                };
-                let key: GlyphKey = (glyph_font_key, id.0, (k * s).to_bits(), fx, fy, t.bold);
-                if let Some(g) = glyph_bitmap(&path, key, k * s, bold_px) {
-                    let (x, y) = (ix as i32 + g.dx, iy as i32 + g.dy);
-                    draw(GlyphDraw::Bitmap {
-                        key,
-                        bitmap: g,
-                        x,
-                        y,
+    let s = base.sx;
+    let bold_px = if t.bold {
+        t.size as f32 * 0.07 * s
+    } else {
+        0.0
+    };
+    fonts.glyphs(&t.text, t.size, |face, id, gx, gy| {
+        // Italic glyphs are slanted outlines cached under a separate key
+        // (face keys are addresses, so the low bit is free).
+        let key = face.key() | usize::from(t.italic);
+        let Some(path) = glyph_path(&face.font, key, id) else {
+            // Color glyphs (emoji) have an image instead of an outline.
+            if t.rotate == 0.0 {
+                if let Some(c) = color_glyph(face, id) {
+                    let k = t.size as f32 / c.ppem;
+                    draw(GlyphDraw::Image {
+                        image: c.image.clone(),
+                        x: (x0 as f32 + gx + c.dx * k) as f64,
+                        // `dy` is the bottom edge relative to the
+                        // baseline (y up).
+                        y: (baseline as f32 + gy - (c.h + c.dy) * k) as f64,
+                        w: (c.w * k) as f64,
+                        h: (c.h * k) as f64,
                     });
                 }
-            } else {
-                let gt = ts.pre_concat(Transform::from_row(k, 0.0, 0.0, k, pen, baseline as f32));
-                let bold = t.bold.then(|| (t.size as f32 * 0.07) / k);
-                draw(GlyphDraw::Outline { path, ts: gt, bold });
             }
+            return;
+        };
+        let k = face.px_per_unit(t.size);
+        let pen = x0 as f32 + gx;
+        let y = baseline as f32 + gy;
+        if simple {
+            // Cached coverage bitmaps at quarter-pixel positions.
+            let px = pen * s + base.tx;
+            let py = y * s + base.ty;
+            let (ix, iy) = (px.floor(), py.floor());
+            let (fx, fy) = (
+                ((px - ix) * 4.0).floor() as u8,
+                ((py - iy) * 4.0).floor() as u8,
+            );
+            let gk: GlyphKey = (key, id.0, (k * s).to_bits(), fx, fy, t.bold);
+            if let Some(g) = glyph_bitmap(&path, gk, k * s, bold_px) {
+                let (x, y) = (ix as i32 + g.dx, iy as i32 + g.dy);
+                draw(GlyphDraw::Bitmap {
+                    key: gk,
+                    bitmap: g,
+                    x,
+                    y,
+                });
+            }
+        } else {
+            let gt = ts.pre_concat(Transform::from_row(k, 0.0, 0.0, k, pen, y));
+            let bold = t.bold.then(|| (t.size as f32 * 0.07) / k);
+            draw(GlyphDraw::Outline { path, ts: gt, bold });
         }
-        pen += sf.h_advance(id);
-        prev = Some(id);
-    }
+    });
 }
 
 /// Axis-aligned 2-point segments of a path (grid lines, ticks, frames).
@@ -1274,7 +1328,6 @@ fn fill_stroke_path(
 
 struct Ctx<'a> {
     fonts: &'a FontSet,
-    font_key: usize,
     base: Transform,
     /// Circle sprites: (r, fill, stroke) → pixmap and its centre offset.
     sprites: Vec<(SpriteKey, Pixmap, f32)>,
@@ -1437,7 +1490,6 @@ pub(crate) fn instance_sprite(
     let (fx, fy) = ((qx as f32 + 0.5) / 4.0, (qy as f32 + 0.5) / 4.0);
     let mut ctx = Ctx::new(
         fonts,
-        0,
         Transform::from_row(scale, 0.0, 0.0, scale, x0 + fx, y0 + fy),
         w,
         h,
@@ -1465,10 +1517,9 @@ fn circle_key(r: f64, fill: Option<Color>, stroke: &Option<Stroke>) -> Option<Ci
 }
 
 impl<'a> Ctx<'a> {
-    fn new(fonts: &'a FontSet, font_key: usize, base: Transform, w: u32, h: u32) -> Self {
+    fn new(fonts: &'a FontSet, base: Transform, w: u32, h: u32) -> Self {
         Ctx {
             fonts,
-            font_key,
             base,
             sprites: Vec::new(),
             last_sprite: 0,
@@ -1956,7 +2007,7 @@ impl<'a> Ctx<'a> {
 
     fn text(&self, pm: &mut PixmapMut<'_>, t: &TextNode, mask: Option<&Mask>) {
         let p = paint(t.color);
-        layout_text(self.fonts, self.font_key, self.base, t, |g| match g {
+        layout_text(self.fonts, self.base, t, |g| match g {
             GlyphDraw::Bitmap {
                 bitmap: g, x, y, ..
             } => blit_coverage(pm, &g.cov, g.w, g.h, x, y, t.color, self.clip),
@@ -1969,6 +2020,9 @@ impl<'a> Ctx<'a> {
                     };
                     pm.stroke_path(&path, &p, &st, ts, mask);
                 }
+            }
+            GlyphDraw::Image { image, x, y, w, h } => {
+                self.image(pm, x, y, w, h, &image, true, mask);
             }
         });
     }
@@ -2081,7 +2135,6 @@ fn draw_bytes(
     };
     let mut counts = HashMap::default();
     count_circles(&scene.nodes, &mut counts);
-    let font_key = fonts.font.as_ref().map_or(0, |f| f as *const _ as usize);
     let background = scene.background.map_or(sk::Color::TRANSPARENT, color);
     let bands = threads.clamp(1, (h as usize / 64).max(1));
     let rows = (h as usize).div_ceil(bands);
@@ -2094,7 +2147,7 @@ fn draw_bytes(
             band.fill(background);
         }
         let base = Transform::from_row(scale as f32, 0.0, 0.0, scale as f32, 0.0, -(y0 as f32));
-        let mut ctx = Ctx::new(fonts, font_key, base, w, bh);
+        let mut ctx = Ctx::new(fonts, base, w, bh);
         if clear {
             ctx.pristine = scene.background.filter(|c| c.a >= 1.0);
         }
