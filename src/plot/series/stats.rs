@@ -743,7 +743,7 @@ impl Axes {
         })
     }
 
-    fn groups<L: ToString, V: IntoValues>(
+    pub(crate) fn groups<L: ToString, V: IntoValues>(
         &mut self,
         groups: impl IntoIterator<Item = (L, V)>,
         horizontal: bool,

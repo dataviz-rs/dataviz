@@ -236,6 +236,9 @@ pub fn kde(values: &[f64], bandwidth: Option<f64>, points: usize) -> (Vec<f64>, 
     let xs: Vec<f64> = (0..n)
         .map(|i| lo + (hi - lo) * i as f64 / (n - 1) as f64)
         .collect();
+    if s.len() > 4096 {
+        return (xs.clone(), kde_binned(&s, h, lo, hi, &xs, norm));
+    }
     let ys = xs
         .iter()
         .map(|x| {
@@ -250,6 +253,46 @@ pub fn kde(values: &[f64], bandwidth: Option<f64>, points: usize) -> (Vec<f64>, 
         })
         .collect();
     (xs, ys)
+}
+
+/// KDE of many values: linear binning onto a fine grid (spacing ≤ h/8),
+/// convolution with the truncated Gaussian, then linear interpolation at
+/// `xs`. O(n + grid · kernel) instead of O(n · points); the error is far
+/// below what can be seen.
+fn kde_binned(s: &[f64], h: f64, lo: f64, hi: f64, xs: &[f64], norm: f64) -> Vec<f64> {
+    let m = (((hi - lo) / (h / 8.0)).ceil() as usize + 1).clamp(256, 16_384);
+    let dx = (hi - lo) / (m - 1) as f64;
+    let mut w = vec![0.0f64; m];
+    for &v in s {
+        let t = (v - lo) / dx;
+        let i = (t.floor() as usize).min(m - 2);
+        let f = t - i as f64;
+        w[i] += 1.0 - f;
+        w[i + 1] += f;
+    }
+    let half = ((5.0 * h / dx).ceil() as usize).min(m);
+    let kernel: Vec<f64> = (0..=half)
+        .map(|k| (-0.5 * (k as f64 * dx / h).powi(2)).exp())
+        .collect();
+    let mut grid = vec![0.0f64; m];
+    for (i, &wi) in w.iter().enumerate() {
+        if wi == 0.0 {
+            continue;
+        }
+        let a = i.saturating_sub(half);
+        let b = (i + half).min(m - 1);
+        for (j, g) in grid[a..=b].iter_mut().enumerate() {
+            *g += wi * kernel[(a + j).abs_diff(i)];
+        }
+    }
+    xs.iter()
+        .map(|x| {
+            let t = ((x - lo) / dx).clamp(0.0, (m - 1) as f64);
+            let i = (t.floor() as usize).min(m - 2);
+            let f = t - i as f64;
+            (grid[i] * (1.0 - f) + grid[i + 1] * f) * norm
+        })
+        .collect()
 }
 
 /// How histogram bins are chosen.
@@ -661,6 +704,39 @@ pub fn lttb(x: &[f64], y: &[f64], threshold: usize) -> (Vec<f64>, Vec<f64>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn binned_kde_matches_exact() {
+        let mut r = 12345u64;
+        let mut next = || {
+            r ^= r << 13;
+            r ^= r >> 7;
+            r ^= r << 17;
+            (r >> 11) as f64 / (1u64 << 53) as f64
+        };
+        let v: Vec<f64> = (0..20_000)
+            .map(|i| {
+                if i % 3 == 0 {
+                    next() * 2.0
+                } else {
+                    5.0 + next() + next() + next()
+                }
+            })
+            .collect();
+        let (xs, fast) = kde(&v, None, 200);
+        let s = sorted(&v);
+        let h = silverman_bandwidth(&s);
+        let norm = 1.0 / (s.len() as f64 * h * (2.0 * std::f64::consts::PI).sqrt());
+        let peak = fast.iter().copied().fold(0.0, f64::max);
+        for (x, y) in xs.iter().zip(&fast) {
+            let exact: f64 = s
+                .iter()
+                .map(|v| (-0.5 * ((x - v) / h).powi(2)).exp())
+                .sum::<f64>()
+                * norm;
+            assert!((exact - y).abs() < peak * 2e-3, "{x}: {exact} vs {y}");
+        }
+    }
 
     #[test]
     fn basics() {

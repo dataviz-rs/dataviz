@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.9.0
+
+### Added
+- `Axes::strip` (jittered points per category), `Axes::swarm` and
+  `Axes::swarm_horizontal` (beeswarm: points side by side without
+  overlap), returning `Strip` (`size`, `spread`, `colors`, `opacity`,
+  `marker`, `edge`).
+- `Axes::ridgeline`: density curves per group on overlapping rows
+  (`Ridgeline::overlap`, `colors`, `opacity`, `edge`).
+- `Axes::qq`: Q-Q plot against the normal distribution with a reference
+  line through the quartiles; `series::distribution::normal_quantile`.
+- `Figure::facet_wrap(groups, cols, draw)`: small multiples with shared
+  ranges and tick labels on the outer plots.
+- `Figure::pair_plot(columns)`: scatter matrix with histograms on the
+  diagonal.
+- `Axis::tick_labels(on)`: hides tick labels but keeps their space, so the
+  plots of a grid line up.
+
+### Changed
+- KDE (violin, ridgeline, `Axes::kde`) of more than 4096 values uses linear
+  binning and a truncated kernel: O(n) instead of O(n × points).
+- Category axes extend to data reaching beyond the first or last category.
+
 ## 0.8.0
 
 ### Added

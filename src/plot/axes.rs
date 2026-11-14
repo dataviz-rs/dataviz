@@ -567,9 +567,22 @@ impl Axes {
     ) -> (f64, f64) {
         let scale = &axis.scale;
         if *scale == Scale::Category {
+            // Half a category around the first and last, or further when
+            // the data reaches beyond (ridgelines).
             let n = axis.categories.len().max(1) as f64;
-            let lo = axis.min.unwrap_or(-0.5);
-            let hi = axis.max.unwrap_or(n - 0.5);
+            let ext_lo = lo.map_or(
+                -0.5,
+                |(v, _)| if v.is_finite() { v.min(-0.5) } else { -0.5 },
+            );
+            let ext_hi = hi.map_or(n - 0.5, |(v, _)| {
+                if v.is_finite() {
+                    v.max(n - 0.5)
+                } else {
+                    n - 0.5
+                }
+            });
+            let lo = axis.min.unwrap_or(ext_lo);
+            let hi = axis.max.unwrap_or(ext_hi);
             return order(lo, hi);
         }
         let (mut a, sa) = lo.unwrap_or((f64::NAN, false));
@@ -1135,6 +1148,9 @@ impl Axes {
                 if tl != 0.0 {
                     seg(x, p.bottom(), x, p.bottom() + tl, &axis, out);
                 }
+                if !self.x.tick_labels {
+                    continue;
+                }
                 let w = fonts.width(&label, ts);
                 if decor.x_rotation == 0.0 {
                     if x - w / 2.0 < last_end + 4.0 {
@@ -1199,6 +1215,10 @@ impl Axes {
                 }
                 last = y;
                 maxw = maxw.max(fonts.width(&label, ts));
+                // Hidden labels keep their space (the axis label stays put).
+                if !axis_cfg.tick_labels {
+                    continue;
+                }
                 let anchor = if right { Anchor::Start } else { Anchor::End };
                 out.push(text(
                     x + dir * gap,
