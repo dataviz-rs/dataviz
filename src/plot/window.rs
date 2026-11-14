@@ -7,7 +7,8 @@
 //!
 //! The crosshair follows the mouse with the cursor's x and y values on the
 //! axes; plots showing the same x range (e.g. [`Figure::share_x`]) get a
-//! linked cursor at the same x with the values of their series there.
+//! linked cursor at the same x with the values of their series there, and
+//! are zoomed and panned together.
 //!
 //! In [`Figure::show_live`] a plot the user zoomed or panned keeps that view
 //! while new data arrives; `R` returns to following the data. Auto scale
@@ -266,6 +267,7 @@ impl Figure {
                             dirty = true;
                         }
                         remember(&mut views, i, self.axes_limits(i));
+                        self.link_x(&layouts, i, &mut views);
                         self.apply_views(&views, auto);
                     }
                 }
@@ -300,6 +302,7 @@ impl Figure {
                                 dirty = true;
                             }
                             remember(&mut views, i, self.axes_limits(i));
+                            self.link_x(&layouts, i, &mut views);
                             self.apply_views(&views, auto);
                             drag = Some((m.0, m.1, i));
                         }
@@ -320,6 +323,7 @@ impl Figure {
                         dirty = true;
                     }
                     remember(&mut views, i, self.axes_limits(i));
+                    self.link_x(&layouts, i, &mut views);
                     self.apply_views(&views, auto);
                     box_start = None;
                 }
@@ -493,6 +497,31 @@ impl Figure {
     }
 }
 
+impl Figure {
+    /// Gives the plots that showed the same x range as plot `i` its new x
+    /// limits (linked zoom and pan).
+    fn link_x(&mut self, layouts: &[Layout], i: usize, views: &mut Vec<Option<AxesLimits>>) {
+        let Some(v) = self.axes_limits(i) else { return };
+        for j in 0..layouts.len() {
+            if j == i || !same_x(&layouts[i], &layouts[j]) {
+                continue;
+            }
+            if let Some(a) = self.cell_axes(j) {
+                if a.kind != AxesKind::Cartesian {
+                    continue;
+                }
+                (a.x.min, a.x.max) = (v.0, v.1);
+                if views.get(j).is_none_or(Option::is_none) {
+                    // y of a plot that was following the data keeps doing so.
+                    (a.y.min, a.y.max, a.y2.min, a.y2.max) = (None, None, None, None);
+                }
+                let l = self.axes_limits(j);
+                remember(views, j, l);
+            }
+        }
+    }
+}
+
 /// Records the view of plot `i` chosen by the user.
 fn remember(views: &mut Vec<Option<AxesLimits>>, i: usize, limits: Option<AxesLimits>) {
     if views.len() <= i {
@@ -572,10 +601,22 @@ fn as_bytes_mut(v: &mut [u32]) -> &mut [u8] {
     unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr().cast::<u8>(), v.len() * 4) }
 }
 
-/// Whether two plots show the same x range (linked cursor).
+/// Whether two plots show (about) the same x range: the same kind of scale
+/// and ranges overlapping by at least 90 % of their union. Such plots get a
+/// linked cursor and are zoomed and panned together.
 fn same_x(a: &Layout, b: &Layout) -> bool {
-    let tol = (a.x.max - a.x.min).abs() * 1e-9;
-    (a.x.min - b.x.min).abs() <= tol && (a.x.max - b.x.max).abs() <= tol
+    use super::scale::Scale;
+    let kind = |s: &Scale| match s {
+        Scale::Time => 0,
+        Scale::Log(_) | Scale::SymLog(_) => 1,
+        _ => 2,
+    };
+    if kind(&a.x.scale) != kind(&b.x.scale) {
+        return false;
+    }
+    let overlap = a.x.max.min(b.x.max) - a.x.min.max(b.x.min);
+    let union = a.x.max.max(b.x.max) - a.x.min.min(b.x.min);
+    union > 0.0 && overlap >= 0.9 * union
 }
 
 const CROSS: Color = Color::rgba(90, 90, 90, 0.8);
@@ -882,6 +923,37 @@ mod tests {
     }
 
     #[test]
+    fn linked_zoom_moves_plots_with_the_same_x() {
+        let mut f = Figure::new(600, 600);
+        f.grid(3, 1);
+        let t: Vec<f64> = (0..50).map(|i| 1.7e9 + 60.0 * i as f64 + 30.0).collect();
+        let v: Vec<f64> = (0..50).map(|i| 100.0 + i as f64).collect();
+        f.at(0, 0).candlestick(&t, &v, &v, &v, &v).width(45.0);
+        f.at(1, 0).bar_xy(&t, &v).width(45.0);
+        f.at(2, 0).line(vec![0.0, 1.0], vec![0.0, 1.0]);
+        let (_, l) = f.scene_and_layouts();
+        assert!(
+            same_x(&l[0], &l[1]),
+            "{:?} {:?}",
+            (l[0].x.min, l[0].x.max),
+            (l[1].x.min, l[1].x.max)
+        );
+        assert!(!same_x(&l[0], &l[2]));
+        let mut views = Vec::new();
+        let p = l[0].plot;
+        f.cell_axes(0)
+            .unwrap()
+            .zoom_at(&l[0], p.x + p.w / 2.0, p.y + p.h / 2.0, 0.5);
+        remember(&mut views, 0, f.axes_limits(0));
+        f.link_x(&l, 0, &mut views);
+        f.apply_views(&views, true);
+        let (_, l2) = f.scene_and_layouts();
+        assert!(same_x(&l2[0], &l2[1]));
+        assert!(l2[0].x.max - l2[0].x.min < (l[0].x.max - l[0].x.min) * 0.6);
+        assert_eq!((l2[2].x.min, l2[2].x.max), (l[2].x.min, l[2].x.max));
+    }
+
+    #[test]
     fn linked_cursor_finds_values_at_x() {
         let mut f = Figure::new(400, 400);
         f.grid(2, 1).share_x(true);
@@ -890,7 +962,7 @@ mod tests {
             .label("a");
         f.at(1, 0).bar(vec![0.0, 1.0, 2.0], vec![4.0, 5.0, 6.0]);
         let (_, l) = f.scene_and_layouts();
-        assert!(same_x(&l[0], &l[1]));
+        assert!(same_x(&l[0], &l[1]), "{:?} {:?}", l[0].x, l[1].x);
         let px = l[1].x.px(1.0);
         let hits = f.cell_axes(1).unwrap().hits_at_x(&l[1], px, 30.0);
         assert_eq!(hits.len(), 1);
