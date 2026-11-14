@@ -15,6 +15,12 @@ SECTIONS = [
         ("plot-egui", "egui.png", "Inside an egui app"),
         ("plot-backends", "backends.png", "CPU, multi-core and GPU backends"),
     ]),
+    ("For data scientists, engineers and traders", [
+        ("plot-data-science", "data_science.png", "Data science: ROC, confusion matrix, regression"),
+        ("plot-engineering", "engineering.png", "Engineering: spectrum, spectrogram, Nyquist, Smith"),
+        ("plot-engineering", "bode.png", "Bode plot"),
+        ("plot-trading", "trading.png", "Trading: Ichimoku, VWAP, volume profile, depth"),
+    ]),
     ("Lines, points and bars", [
         ("plot-line", "line.png", "Line styles"),
         ("plot-markers-steps-smooth", "markers_steps_smooth.png", "Markers, steps and smoothing"),

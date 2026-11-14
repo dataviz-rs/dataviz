@@ -16,8 +16,10 @@ pub mod frameless;
 pub mod grid;
 pub mod line;
 pub mod misc;
+pub mod ml;
 pub mod polar;
 pub mod scatter;
+pub mod signal;
 pub mod stats;
 pub mod three_d;
 
@@ -468,6 +470,8 @@ pub trait Series: Any {
             "Strip" => "strip",
             "Ridgeline" => "ridgeline",
             "Annotate" => "annotation",
+            "SmithGrid" => "smith",
+            "Dendrogram" => "dendrogram",
             _ => "data",
         }
     }

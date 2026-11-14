@@ -10,7 +10,7 @@
     <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
 </a>
 
-**Fast, pure-Rust plotting: 50+ chart types, interactive windows, live
+**Fast, pure-Rust plotting: 70+ chart types, interactive windows, live
 data, animations, maps, math and every language — with the least CPU and
 memory of the Rust plotting libraries.**
 
@@ -35,9 +35,13 @@ memory of the Rust plotting libraries.**
   matplotlib, and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
   Optional multi-core and GPU backends.
-- **Everything in one crate.** 50+ chart types — lines, bars, statistics,
-  finance with indicators, heatmaps, contours, 3D, maps, sankey, networks —
-  with themes, subplots, shared and broken axes, legends and colorbars.
+- **Everything in one crate.** 70+ chart types — lines, bars, statistics,
+  heatmaps, contours, 3D, maps, sankey, networks — plus ready-made charts
+  for **data scientists** (ROC/PR curves, confusion matrices, regression
+  bands, density contours, dendrograms), **engineers** (FFT spectra,
+  spectrograms, Bode, Nyquist, Smith charts) and **traders** (candlesticks,
+  Ichimoku, VWAP, RSI, MACD, volume profile, order book depth, drawdown,
+  Renko), with themes, subplots, shared and broken axes.
 - **Interactive and live.** `fig.show()` opens a window with zoom, pan, a
   crosshair with axis values, hover readouts, legend toggling, a range
   slider, measurement and selection; `fig.show_live()` streams data with
@@ -120,7 +124,9 @@ and click work in your own GUI or web page through
 | Bars | vertical, horizontal, grouped, stacked, percent, overlay, value labels, waterfall, Gantt, lollipop |
 | Distributions | histogram (bin rules, density, cumulative, step), KDE, ECDF, box (notches), violin, strip, swarm, ridgeline, Q-Q, 2D histogram, hexbin |
 | Uncertainty & fits | error bars, error bands, polynomial regression with R², moving averages |
-| Finance | candlestick, OHLC, Heikin-Ashi, Bollinger bands, RSI, MACD |
+| Machine learning | ROC curve (AUC), precision-recall curve, confusion matrix, regression with confidence band, LOESS, 2D density contours, dendrogram |
+| Signals & control | FFT spectrum, spectrogram, Bode plot, Nyquist plot, Smith chart |
+| Finance & trading | candlestick, OHLC, Heikin-Ashi, Renko, Bollinger bands, Ichimoku cloud, VWAP, RSI, MACD, Stochastic, ATR, volume profile, order book depth, drawdown, trading-day axis |
 | Grids & fields | heatmap, correlation matrix, calendar heatmap, image, contour lines and fills, quiver, 3D surface/wireframe |
 | Maps | built-in world map, choropleth by ISO code or name, points and great-circle routes, GeoJSON shapes; Robinson, Natural Earth, equirectangular, Mercator |
 | Parts of a whole | pie, donut, treemap, sunburst, funnel, gauge |
@@ -128,6 +134,42 @@ and click work in your own GUI or web page through
 | Relations & flows | sankey, network graph (force-directed), parallel coordinates |
 | Layouts | subplots with spans, shared axes, broken axes, secondary y-axis, facets (small multiples), pair plot, aligned panels |
 | Annotations | text, arrows, reference lines, shaded spans, rectangles |
+
+### For data scientists
+
+```rust ignore
+ax.roc_curve("gradient boosting", &labels, &scores);    // legend shows the AUC
+ax.pr_curve("gradient boosting", &labels, &scores);     // and the average precision
+ax.confusion_matrix(["cat", "dog", "bird"], &actual, &predicted, true);
+ax.regplot(&x, &y);                                     // fit, 95 % band and R²
+ax.density_contour(&x, &y);                             // 2D KDE, millions of points
+ax.dendrogram(&names, &features);                       // hierarchical clustering
+```
+
+### For engineers
+
+```rust ignore
+use dataviz::plot::series::signal::{freq_response, logspace};
+ax.spectrum(&signal, 8000.0);                           // FFT amplitude spectrum
+ax.spectrogram(&signal, 8000.0, 512, 64);               // STFT power in dB
+let w = logspace(0.01, 100.0, 400);
+fig.bode("plant", &w, &freq_response(&[1.0], &[1.0, 0.4, 1.0], &w));
+ax.nyquist(&freq_response(&[1.0], &[1.0, 0.4, 1.0], &w));
+ax.smith(&impedances);                                  // normalized z on a Smith chart
+```
+
+### For traders
+
+```rust ignore
+let x = ax.trading_axis(&times, "%d %b");               // no weekend gaps
+ax.candlestick(&x, &open, &high, &low, &close);
+ax.ichimoku(&x, &high, &low, &close);
+ax.vwap(&x, &high, &low, &close, &volume);
+profile.volume_profile(&close, &volume, 24);            // POC and value area
+osc.stochastic(&x, &high, &low, &close, 14, 3);
+book.depth_chart(&bids, &asks);
+dd.drawdown(&x, &equity);                               // max drawdown in the legend
+```
 
 ### Statistics and finance
 

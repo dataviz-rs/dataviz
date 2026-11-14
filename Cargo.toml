@@ -8,7 +8,6 @@ description = "Fast pure-Rust plotting and charts: 50+ chart types, interactive 
 license = "MIT"
 repository = "https://github.com/dataviz-rs/dataviz"
 documentation = "https://docs.rs/dataviz"
-homepage = "https://github.com/dataviz-rs/dataviz"
 keywords = ["plotting", "chart", "visualization", "plot", "graph"]
 categories = ["visualization", "graphics", "science", "gui", "wasm"]
 readme = "./README.md"

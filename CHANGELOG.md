@@ -3,6 +3,25 @@
 ## 0.16.0
 
 ### Added
+- **Data science** (`series::ml`): `Axes::roc_curve` (AUC in the legend,
+  chance diagonal), `Axes::pr_curve` (average precision, baseline),
+  `Axes::confusion_matrix` (counts or row fractions, annotated),
+  `Axes::regplot` (least-squares line with a 95 % confidence band and R²),
+  `Axes::loess`, `Axes::density_contour` (2D KDE of any number of points,
+  binned) and `Axes::dendrogram` (average-linkage clustering); functions
+  `ml::roc`, `precision_recall`, `confusion`, `loess`.
+- **Engineering** (`series::signal`): `Axes::spectrum` (FFT amplitude
+  spectrum, Hann window), `Axes::spectrogram` (STFT in dB),
+  `Figure::bode` (magnitude and unwrapped phase on a log frequency axis;
+  several systems), `Axes::nyquist`, `Axes::smith_chart` and `Axes::smith`;
+  functions `signal::fft`, `spectrum`, `spectrogram_db`, `freq_response`,
+  `logspace`, `gamma`.
+- **Trading**: `Axes::volume_profile` (point of control and value area),
+  `Axes::depth_chart` (order book), `Axes::ichimoku` (cloud),
+  `Axes::vwap`, `Axes::stochastic`, `Axes::atr`, `Axes::drawdown`,
+  `Axes::renko` and `Axes::trading_axis` (bars one after another, skipping
+  weekends and nights, with date labels); `stats::vwap`, `stochastic`,
+  `atr`, `ichimoku`, `drawdown`, `renko`.
 - `Figure::resize(width, height)` (figures embedded in resizable panels).
 
 ### Changed

@@ -748,6 +748,196 @@ pub fn macd(y: &[f64], fast: usize, slow: usize, signal: usize) -> (Vec<f64>, Ve
     (line, sig, hist)
 }
 
+/// Volume-weighted average price, cumulative from the first bar, with the
+/// typical price (high + low + close) / 3.
+pub fn vwap(high: &[f64], low: &[f64], close: &[f64], volume: &[f64]) -> Vec<f64> {
+    let n = high.len().min(low.len()).min(close.len()).min(volume.len());
+    let (mut pv, mut v) = (0.0, 0.0);
+    (0..n)
+        .map(|i| {
+            if volume[i].is_finite() && volume[i] > 0.0 {
+                pv += (high[i] + low[i] + close[i]) / 3.0 * volume[i];
+                v += volume[i];
+            }
+            if v > 0.0 {
+                pv / v
+            } else {
+                f64::NAN
+            }
+        })
+        .collect()
+}
+
+/// Highest and lowest value of each window of `n` ending at each index
+/// (NaN until the window is full); monotonic deques, O(len).
+fn rolling_extremes(high: &[f64], low: &[f64], n: usize) -> (Vec<f64>, Vec<f64>) {
+    use std::collections::VecDeque;
+    let n = n.max(1);
+    let len = high.len().min(low.len());
+    let (mut hi, mut lo) = (vec![f64::NAN; len], vec![f64::NAN; len]);
+    let (mut dh, mut dl): (VecDeque<usize>, VecDeque<usize>) = (VecDeque::new(), VecDeque::new());
+    for i in 0..len {
+        while dh.back().is_some_and(|&j| high[j] <= high[i]) {
+            dh.pop_back();
+        }
+        dh.push_back(i);
+        while dl.back().is_some_and(|&j| low[j] >= low[i]) {
+            dl.pop_back();
+        }
+        dl.push_back(i);
+        if dh[0] + n <= i {
+            dh.pop_front();
+        }
+        if dl[0] + n <= i {
+            dl.pop_front();
+        }
+        if i + 1 >= n {
+            hi[i] = high[dh[0]];
+            lo[i] = low[dl[0]];
+        }
+    }
+    (hi, lo)
+}
+
+/// Stochastic oscillator: (%K over `k` periods, %D = SMA(`d`) of %K), 0–100.
+pub fn stochastic(
+    high: &[f64],
+    low: &[f64],
+    close: &[f64],
+    k: usize,
+    d: usize,
+) -> (Vec<f64>, Vec<f64>) {
+    let (hh, ll) = rolling_extremes(high, low, k);
+    let pk: Vec<f64> = close
+        .iter()
+        .zip(hh.iter().zip(&ll))
+        .map(|(c, (h, l))| {
+            if !h.is_finite() || !l.is_finite() {
+                f64::NAN
+            } else if h > l {
+                (c - l) / (h - l) * 100.0
+            } else {
+                50.0
+            }
+        })
+        .collect();
+    let pd = sma(&pk, d);
+    (pk, pd)
+}
+
+/// Average true range with Wilder's smoothing over `n` periods.
+pub fn atr(high: &[f64], low: &[f64], close: &[f64], n: usize) -> Vec<f64> {
+    let len = high.len().min(low.len()).min(close.len());
+    let n = n.max(1);
+    let tr: Vec<f64> = (0..len)
+        .map(|i| {
+            let hl = high[i] - low[i];
+            if i == 0 {
+                hl
+            } else {
+                hl.max((high[i] - close[i - 1]).abs())
+                    .max((low[i] - close[i - 1]).abs())
+            }
+        })
+        .collect();
+    let mut out = vec![f64::NAN; len];
+    if len < n {
+        return out;
+    }
+    let mut a = tr[..n].iter().sum::<f64>() / n as f64;
+    out[n - 1] = a;
+    for i in n..len {
+        a = (a * (n - 1) as f64 + tr[i]) / n as f64;
+        out[i] = a;
+    }
+    out
+}
+
+/// Ichimoku lines (9, 26, 52): (conversion, base, leading span A, leading
+/// span B, lagging span), the leading spans shifted 26 periods ahead and
+/// the lagging span 26 back, all aligned to `len + 26` periods.
+#[allow(clippy::type_complexity)]
+pub fn ichimoku(high: &[f64], low: &[f64], close: &[f64]) -> [Vec<f64>; 5] {
+    let len = high.len().min(low.len()).min(close.len());
+    let mid = |n: usize| -> Vec<f64> {
+        let (h, l) = rolling_extremes(high, low, n);
+        h.iter().zip(&l).map(|(a, b)| (a + b) / 2.0).collect()
+    };
+    let (tenkan, kijun, b52) = (mid(9), mid(26), mid(52));
+    let total = len + 26;
+    let mut span_a = vec![f64::NAN; total];
+    let mut span_b = vec![f64::NAN; total];
+    let mut lag = vec![f64::NAN; total];
+    for i in 0..len {
+        span_a[i + 26] = (tenkan[i] + kijun[i]) / 2.0;
+        span_b[i + 26] = b52[i];
+        if i >= 26 {
+            lag[i - 26] = close[i];
+        }
+    }
+    let pad = |mut v: Vec<f64>| {
+        v.resize(total, f64::NAN);
+        v
+    };
+    [pad(tenkan), pad(kijun), span_a, span_b, lag]
+}
+
+/// Drawdown of an equity curve: the fall from the running peak, as a
+/// fraction (0 to −1).
+pub fn drawdown(equity: &[f64]) -> Vec<f64> {
+    let mut peak = f64::NEG_INFINITY;
+    equity
+        .iter()
+        .map(|&e| {
+            peak = peak.max(e);
+            if peak > 0.0 {
+                e / peak - 1.0
+            } else {
+                0.0
+            }
+        })
+        .collect()
+}
+
+/// Renko bricks of size `brick` from closing prices: (open, close) of each
+/// brick; a reversal needs two bricks.
+pub fn renko(close: &[f64], brick: f64) -> Vec<(f64, f64)> {
+    let mut out = Vec::new();
+    let Some(&first) = close.iter().find(|v| v.is_finite()) else {
+        return out;
+    };
+    if brick <= 0.0 {
+        return out;
+    }
+    let mut last = (first / brick).floor() * brick;
+    let mut dir = 0i8;
+    for &c in close.iter().filter(|v| v.is_finite()) {
+        loop {
+            if dir >= 0 && c >= last + brick {
+                out.push((last, last + brick));
+                last += brick;
+                dir = 1;
+            } else if dir <= 0 && c <= last - brick {
+                out.push((last, last - brick));
+                last -= brick;
+                dir = -1;
+            } else if dir > 0 && c <= last - 2.0 * brick {
+                // Reversal down: the new brick starts below the last one.
+                out.push((last - brick, last - 2.0 * brick));
+                last -= 2.0 * brick;
+                dir = -1;
+            } else if dir < 0 && c >= last + 2.0 * brick {
+                out.push((last + brick, last + 2.0 * brick));
+                last += 2.0 * brick;
+                dir = 1;
+            } else {
+                break;
+            }
+        }
+    }
+    out
+}
+
 /// Heikin-Ashi candles from OHLC data: (open, high, low, close).
 #[allow(clippy::type_complexity)]
 pub fn heikin_ashi(
@@ -882,6 +1072,31 @@ mod tests {
         assert_eq!((o[0], c[0]), (1.5, 1.5));
         assert_eq!((o[1], c[1]), (1.5, 2.5));
         assert!(hh[1] >= 4.0 && ll[1] <= 1.0);
+    }
+
+    #[test]
+    fn trading_indicators() {
+        let h = [10.0, 11.0, 12.0, 11.0, 13.0];
+        let l = [9.0, 9.5, 10.0, 10.0, 11.0];
+        let c = [9.5, 10.5, 11.5, 10.5, 12.5];
+        let v = [100.0, 200.0, 100.0, 100.0, 0.0];
+        let w = vwap(&h, &l, &c, &v);
+        let tp0 = (10.0 + 9.0 + 9.5) / 3.0;
+        assert!((w[0] - tp0).abs() < 1e-12 && (w[4] - w[3]).abs() < 1e-12);
+        let (k, _) = stochastic(&h, &l, &c, 3, 2);
+        assert!(k[1].is_nan() && (k[2] - (11.5 - 9.0) / (12.0 - 9.0) * 100.0).abs() < 1e-9);
+        let a = atr(&h, &l, &c, 2);
+        assert!(a[0].is_nan() && (a[1] - (1.0 + 1.5) / 2.0).abs() < 1e-12);
+        let dd = drawdown(&[100.0, 120.0, 90.0, 130.0]);
+        assert_eq!(dd, vec![0.0, 0.0, -0.25, 0.0]);
+        let r = renko(&[100.0, 103.0, 99.0, 96.5], 1.0);
+        assert_eq!(r.len(), 3 + 5, "{r:?}");
+        assert_eq!(r[2], (102.0, 103.0));
+        assert_eq!(r[3], (102.0, 101.0));
+        let ich = ichimoku(&[1.0; 60], &[0.0; 60], &[0.5; 60]);
+        assert_eq!(ich[2].len(), 86);
+        assert_eq!(ich[2][60], 0.5);
+        assert_eq!(ich[4][0], 0.5);
     }
 
     #[test]

@@ -25,6 +25,8 @@ pub struct Contour {
     pub(crate) width: f64,
     pub(crate) labels: bool,
     pub(crate) colorbar: Option<String>,
+    /// Values below the first level stay unfilled (density plots).
+    pub(crate) clear_below: bool,
 }
 
 impl Contour {
@@ -252,6 +254,9 @@ impl Series for Contour {
                     return None;
                 }
                 let i = self.levels.partition_point(|l| *l <= v);
+                if i == 0 && self.clear_below {
+                    return None;
+                }
                 let (lo, hi) = match i {
                     0 => (self.levels[0], self.levels[0]),
                     i if i >= self.levels.len() => (self.levels[i - 1], self.levels[i - 1]),
@@ -408,6 +413,7 @@ impl Axes {
             width: 1.2,
             labels: false,
             colorbar: None,
+            clear_below: false,
         };
         c.level_count(10);
         self.add(c)
@@ -468,6 +474,7 @@ mod tests {
             width: 1.0,
             labels: false,
             colorbar: None,
+            clear_below: false,
         };
         let segs = c.segments(0.25);
         assert!(segs.len() > 20);

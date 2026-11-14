@@ -313,3 +313,327 @@ impl Axes {
         l
     }
 }
+
+/// Rising / falling colors of the trading charts.
+const UP: Color = Color::rgb(38, 166, 154);
+const DOWN: Color = Color::rgb(239, 83, 80);
+
+impl Axes {
+    /// Volume profile: traded volume per price level as horizontal bars
+    /// (price on y), the point of control (largest volume) highlighted and
+    /// the value area (70 % of the volume around it) darker. Put it in a
+    /// narrow plot next to the price chart with shared y.
+    pub fn volume_profile(
+        &mut self,
+        price: impl IntoValues,
+        volume: impl IntoValues,
+        bins: usize,
+    ) -> &mut super::bar::Bars {
+        let (p, v) = (price.into_values(), volume.into_values());
+        let (lo, hi) = p
+            .iter()
+            .filter(|x| x.is_finite())
+            .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), x| {
+                (a.min(*x), b.max(*x))
+            });
+        let bins = bins.max(1);
+        let mut vol = vec![0.0; bins];
+        if lo.is_finite() && hi > lo {
+            for (pi, vi) in p.iter().zip(&v) {
+                if pi.is_finite() && vi.is_finite() {
+                    let k = (((pi - lo) / (hi - lo)) * bins as f64)
+                        .floor()
+                        .clamp(0.0, bins as f64 - 1.0) as usize;
+                    vol[k] += vi;
+                }
+            }
+        }
+        let step = if hi > lo {
+            (hi - lo) / bins as f64
+        } else {
+            1.0
+        };
+        let centres: Vec<f64> = (0..bins).map(|k| lo + step * (k as f64 + 0.5)).collect();
+        // Value area: grow from the point of control towards the larger side.
+        let poc = (0..bins)
+            .max_by(|a, b| vol[*a].total_cmp(&vol[*b]))
+            .unwrap_or(0);
+        let total: f64 = vol.iter().sum();
+        let (mut a, mut b, mut acc) = (poc, poc, vol[poc]);
+        while acc < 0.7 * total && (a > 0 || b + 1 < bins) {
+            let down = if a > 0 { vol[a - 1] } else { -1.0 };
+            let up = if b + 1 < bins { vol[b + 1] } else { -1.0 };
+            if up >= down {
+                b += 1;
+                acc += up;
+            } else {
+                a -= 1;
+                acc += down;
+            }
+        }
+        let base = Color::rgb(66, 135, 245);
+        let colors: Vec<Color> = (0..bins)
+            .map(|k| {
+                if k == poc {
+                    Color::rgb(255, 152, 0)
+                } else if k >= a && k <= b {
+                    base.with_alpha(0.75)
+                } else {
+                    base.with_alpha(0.3)
+                }
+            })
+            .collect();
+        self.x.label.get_or_insert_with(|| "volume".into());
+        let mut bars = super::bar::Bars::new(centres, vol, base);
+        bars.horizontal = true;
+        bars.width = step * 0.9;
+        bars.colors = Some(colors);
+        bars.label = Some(format!("POC {}", short(lo + step * (poc as f64 + 0.5))));
+        self.add(bars)
+    }
+
+    /// Order book depth: cumulative bid size (green, left) and ask size (red,
+    /// right) against price, as filled steps meeting at the spread.
+    pub fn depth_chart(&mut self, bids: &[(f64, f64)], asks: &[(f64, f64)]) -> &mut Self {
+        let mut b: Vec<(f64, f64)> = bids
+            .iter()
+            .copied()
+            .filter(|(p, s)| p.is_finite() && s.is_finite())
+            .collect();
+        let mut a: Vec<(f64, f64)> = asks
+            .iter()
+            .copied()
+            .filter(|(p, s)| p.is_finite() && s.is_finite())
+            .collect();
+        b.sort_by(|x, y| y.0.total_cmp(&x.0));
+        a.sort_by(|x, y| x.0.total_cmp(&y.0));
+        let cum = |side: &[(f64, f64)]| -> (Vec<f64>, Vec<f64>) {
+            let mut t = 0.0;
+            side.iter()
+                .map(|(p, s)| {
+                    t += s;
+                    (*p, t)
+                })
+                .unzip()
+        };
+        let (bx, by) = cum(&b);
+        let (ax_, ay) = cum(&a);
+        for (x, y, c, name) in [(bx, by, UP, "bids"), (ax_, ay, DOWN, "asks")] {
+            if x.is_empty() {
+                continue;
+            }
+            let l = self.line(x, y);
+            l.color(c)
+                .width(1.5)
+                .step(super::line::Step::Post)
+                .label(name);
+            l.fill = Some(0.0);
+            l.fill_opacity = 0.25;
+            l.decimate = false;
+        }
+        self.x.label.get_or_insert_with(|| "price".into());
+        self.y.label.get_or_insert_with(|| "cumulative size".into());
+        self
+    }
+
+    /// Ichimoku cloud: conversion (9) and base (26) lines, the cloud between
+    /// leading spans A and B shifted 26 periods ahead (green when A is above
+    /// B, red otherwise) and the lagging span. `x` must be evenly spaced.
+    pub fn ichimoku(
+        &mut self,
+        x: impl IntoValues,
+        high: impl IntoValues,
+        low: impl IntoValues,
+        close: impl IntoValues,
+    ) -> &mut Self {
+        let x = x.into_values();
+        let [tenkan, kijun, a, b, lag] = crate::plot::stats::ichimoku(
+            &high.into_values(),
+            &low.into_values(),
+            &close.into_values(),
+        );
+        let dx = if x.len() >= 2 {
+            x[x.len() - 1] - x[x.len() - 2]
+        } else {
+            1.0
+        };
+        let mut xs = x.clone();
+        while xs.len() < a.len() {
+            let last = *xs.last().unwrap_or(&0.0);
+            xs.push(last + dx);
+        }
+        // The cloud in runs of one color, joined at the crossings.
+        let mut start = 0;
+        while start < xs.len() {
+            if !(a[start].is_finite() && b[start].is_finite()) {
+                start += 1;
+                continue;
+            }
+            let up = a[start] >= b[start];
+            let mut end = start;
+            while end + 1 < xs.len()
+                && a[end + 1].is_finite()
+                && b[end + 1].is_finite()
+                && (a[end + 1] >= b[end + 1]) == up
+            {
+                end += 1;
+            }
+            let stop = (end + 2).min(xs.len());
+            let (lo, hi): (Vec<f64>, Vec<f64>) = (start..stop)
+                .map(|i| (a[i].min(b[i]), a[i].max(b[i])))
+                .filter(|(l, h)| l.is_finite() && h.is_finite())
+                .unzip();
+            let n = lo.len();
+            self.fill_between(&xs[start..start + n], lo, hi)
+                .color(if up { UP } else { DOWN })
+                .opacity(0.18);
+            start = end + 1;
+        }
+        let lines: [(&[f64], Color, &str); 5] = [
+            (&tenkan, Color::rgb(41, 98, 255), "conversion (9)"),
+            (&kijun, Color::rgb(183, 28, 28), "base (26)"),
+            (&a, UP.with_alpha(0.8), "span A"),
+            (&b, DOWN.with_alpha(0.8), "span B"),
+            (&lag, Color::rgb(130, 130, 130), "lagging"),
+        ];
+        for (y, c, name) in lines {
+            let l = self.line(&xs, y);
+            l.color(c).width(1.1).label(name);
+            l.decimate = false;
+        }
+        self
+    }
+
+    /// Volume-weighted average price line.
+    pub fn vwap(
+        &mut self,
+        x: impl IntoValues,
+        high: impl IntoValues,
+        low: impl IntoValues,
+        close: impl IntoValues,
+        volume: impl IntoValues,
+    ) -> &mut super::line::Line {
+        let v = crate::plot::stats::vwap(
+            &high.into_values(),
+            &low.into_values(),
+            &close.into_values(),
+            &volume.into_values(),
+        );
+        let l = self.line(x, v);
+        l.color(Color::rgb(255, 152, 0)).width(1.6).label("VWAP");
+        l
+    }
+
+    /// Stochastic oscillator %K and %D with the 20/80 levels (y 0–100).
+    pub fn stochastic(
+        &mut self,
+        x: impl IntoValues,
+        high: impl IntoValues,
+        low: impl IntoValues,
+        close: impl IntoValues,
+        k: usize,
+        d: usize,
+    ) -> &mut super::line::Line {
+        let x = x.into_values();
+        let (pk, pd) = crate::plot::stats::stochastic(
+            &high.into_values(),
+            &low.into_values(),
+            &close.into_values(),
+            k,
+            d,
+        );
+        let band = Color::rgb(126, 87, 194);
+        self.hspan(20.0, 80.0).color(band).opacity(0.06);
+        self.hline(80.0).color(band.with_alpha(0.5));
+        self.hline(20.0).color(band.with_alpha(0.5));
+        self.y_limits(0.0, 100.0);
+        self.line(&x, pd)
+            .color(Color::rgb(255, 109, 0))
+            .width(1.2)
+            .label(format!("%D ({d})"));
+        let l = self.line(&x, pk);
+        l.color(Color::rgb(41, 98, 255))
+            .width(1.2)
+            .label(format!("%K ({k})"));
+        l
+    }
+
+    /// Average true range over `n` periods (volatility).
+    pub fn atr(
+        &mut self,
+        x: impl IntoValues,
+        high: impl IntoValues,
+        low: impl IntoValues,
+        close: impl IntoValues,
+        n: usize,
+    ) -> &mut super::line::Line {
+        let a = crate::plot::stats::atr(
+            &high.into_values(),
+            &low.into_values(),
+            &close.into_values(),
+            n,
+        );
+        let l = self.line(x, a);
+        l.color(Color::rgb(126, 87, 194))
+            .width(1.4)
+            .label(format!("ATR ({n})"));
+        l
+    }
+
+    /// Drawdown of an equity curve in percent (red area below 0), with the
+    /// maximum drawdown in the label.
+    pub fn drawdown(
+        &mut self,
+        x: impl IntoValues,
+        equity: impl IntoValues,
+    ) -> &mut super::line::FillBetween {
+        let x = x.into_values();
+        let dd: Vec<f64> = crate::plot::stats::drawdown(&equity.into_values())
+            .iter()
+            .map(|v| v * 100.0)
+            .collect();
+        let max = dd.iter().copied().fold(0.0, f64::min);
+        self.y.label.get_or_insert_with(|| "drawdown [%]".into());
+        let zeros = vec![0.0; dd.len()];
+        let f = self.fill_between(&x, dd, zeros);
+        f.color(DOWN)
+            .opacity(0.35)
+            .label(format!("max drawdown {max:.1} %"));
+        f
+    }
+
+    /// Renko chart: bricks of size `brick` from closing prices, drawn in
+    /// order (time is not to scale on x).
+    pub fn renko(&mut self, close: impl IntoValues, brick: f64) -> &mut Candles {
+        let bricks = crate::plot::stats::renko(&close.into_values(), brick);
+        let x: Vec<f64> = (0..bricks.len()).map(|i| i as f64).collect();
+        let (o, c): (Vec<f64>, Vec<f64>) = bricks.iter().copied().unzip();
+        let hi: Vec<f64> = bricks.iter().map(|(a, b)| a.max(*b)).collect();
+        let lo: Vec<f64> = bricks.iter().map(|(a, b)| a.min(*b)).collect();
+        self.x.label.get_or_insert_with(|| "brick".into());
+        let k = self.candlestick(x, o, hi, lo, c);
+        k.colors(UP, DOWN).width(0.95);
+        k
+    }
+
+    /// A trading-day axis: bars are placed one after another, skipping
+    /// weekends, holidays and nights, and the x-axis shows `times` (seconds
+    /// since 1970) formatted with `format` (e.g. `"%d %b"`). Returns the x
+    /// positions to plot the data at.
+    pub fn trading_axis(&mut self, times: &[f64], format: &str) -> Vec<f64> {
+        let labels: Vec<String> = times
+            .iter()
+            .map(|t| crate::plot::time::format_time(*t, format))
+            .collect();
+        // Few labels: one every k bars so that they do not crowd.
+        let k = (times.len() / 8).max(1);
+        let ticks: Vec<(f64, String)> = labels
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| i % k == 0)
+            .map(|(i, l)| (i as f64, l.clone()))
+            .collect();
+        self.x.ticks = crate::plot::TickSpec::Labeled(ticks);
+        (0..times.len()).map(|i| i as f64).collect()
+    }
+}
