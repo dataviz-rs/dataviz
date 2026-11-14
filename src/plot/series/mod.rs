@@ -561,6 +561,30 @@ pub(crate) fn nearest_point(
         .min_by(|a, b| a.2.total_cmp(&b.2))
 }
 
+/// Indices of the x-sorted values `xs` within `r` pixels of canvas `px`,
+/// plus one more on each side (the nearest points outside), so that a hit
+/// test looks at a few points instead of all. `None` when `xs` is not
+/// sorted (then every point has to be checked).
+pub(crate) fn x_window(
+    xs: &[f64],
+    shift: f64,
+    x: &AxisMap,
+    px: f64,
+    r: f64,
+) -> Option<std::ops::Range<usize>> {
+    if !xs.is_sorted_by(|a, b| a <= b) {
+        return None;
+    }
+    let (a, b) = (x.value(px - r) - shift, x.value(px + r) - shift);
+    let (lo, hi) = if a <= b { (a, b) } else { (b, a) };
+    if !lo.is_finite() || !hi.is_finite() {
+        return Some(0..xs.len());
+    }
+    let start = xs.partition_point(|v| *v < lo).saturating_sub(1);
+    let end = (xs.partition_point(|v| *v <= hi) + 1).min(xs.len());
+    Some(start..end.max(start))
+}
+
 /// Short number for tooltips and labels.
 pub(crate) fn short(v: f64) -> String {
     if !v.is_finite() {

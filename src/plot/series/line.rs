@@ -593,7 +593,13 @@ impl Series for Line {
     }
 
     fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
-        let ((dx, dy), (cx, cy), d) = nearest_point(self.points(), x, y, px, py)?;
+        let n = self.x.len().min(self.y.len());
+        let r = super::x_window(&self.x[..n], 0.0, x, px, 40.0).unwrap_or(0..n);
+        let pts = self.x[r.clone()]
+            .iter()
+            .copied()
+            .zip(self.y[r].iter().copied());
+        let ((dx, dy), (cx, cy), d) = nearest_point(pts, x, y, px, py)?;
         let name = self
             .label
             .as_deref()
@@ -751,7 +757,12 @@ impl Series for FillBetween {
     }
 
     fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
-        let pts = self.x.iter().copied().zip(self.y1.iter().copied());
+        let n = self.x.len().min(self.y1.len());
+        let r = super::x_window(&self.x[..n], 0.0, x, px, 40.0).unwrap_or(0..n);
+        let pts = self.x[r.clone()]
+            .iter()
+            .copied()
+            .zip(self.y1[r].iter().copied());
         let ((dx, dy), (cx, cy), d) = nearest_point(pts, x, y, px, py)?;
         let name = self
             .label

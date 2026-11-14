@@ -129,7 +129,9 @@ impl Series for Candles {
     }
 
     fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
-        (0..self.len())
+        let n = self.len();
+        super::x_window(&self.x[..n], 0.0, x, px, 40.0)
+            .unwrap_or(0..n)
             .filter(|i| self.x[*i].is_finite() && self.close[*i].is_finite())
             .map(|i| {
                 let (cx, cy) = (x.px(self.x[i]), y.px(self.close[i]));
