@@ -157,9 +157,16 @@ fn issue1_dense_dashed_and_dotted_lines_have_gaps() {
             solid.add_point((x, x.sin() + 0.001));
         }
         graph.add_dataset(ds);
-        let dashed = count_pixels(&png_of(&mut graph), BLUE);
+        // Count inside the plot area only (the legend square has the same colour).
+        let in_plot = |c: &PixelCanvas, color| {
+            (81..520u32)
+                .flat_map(|y| (81..820u32).map(move |x| (x, y)))
+                .filter(|&(x, y)| c.get_pixel(x, y) == Some(color))
+                .count()
+        };
+        let dashed = in_plot(&png_of(&mut graph), BLUE);
         graph.datasets[0] = solid;
-        let full = count_pixels(&png_of(&mut graph), RED);
+        let full = in_plot(&png_of(&mut graph), RED);
         let ratio = dashed as f64 / full as f64;
         assert!(ratio < max_ratio && ratio > 0.1, "{line_type:?}: {ratio}");
     }

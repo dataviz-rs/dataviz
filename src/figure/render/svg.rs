@@ -62,10 +62,17 @@ pub(crate) fn grid(svg: &mut SvgCanvas, cfg: &FigureConfig) {
 pub(crate) fn begin(svg: &mut SvgCanvas, spec: &AxesSpec) -> Mapper {
     background(svg, spec.config);
     grid(svg, spec.config);
-    Mapper::new(frame(svg), spec.bounds)
+    let m = Mapper::new(frame(svg), spec.bounds);
+    // Axis lines go below the data so data on an axis stays visible.
+    let f = m.frame;
+    let axis = rgb(spec.config.color_axis);
+    let (ax_y, ax_x) = (m.x_axis_y(), m.y_axis_x());
+    svg.draw_line(f.left, ax_y, f.right, ax_y, &axis, 2.0);
+    svg.draw_line(ax_x, f.top, ax_x, f.bottom, &axis, 2.0);
+    m
 }
 
-/// Axes, ticks, axis labels, title and legend, drawn on top of the data.
+/// Ticks, axis labels, title and legend, drawn on top of the data.
 pub(crate) fn finish(svg: &mut SvgCanvas, spec: &AxesSpec, m: &Mapper) {
     let cfg = spec.config;
     let f = m.frame;
@@ -73,9 +80,6 @@ pub(crate) fn finish(svg: &mut SvgCanvas, spec: &AxesSpec, m: &Mapper) {
     let fs = cfg.font_size_axis as f64;
     let ax_y = m.x_axis_y();
     let ax_x = m.y_axis_x();
-
-    svg.draw_line(f.left, ax_y, f.right, ax_y, &axis, 2.0);
-    svg.draw_line(ax_x, f.top, ax_x, f.bottom, &axis, 2.0);
 
     let mut marks = String::new();
     let mut labels = String::new();

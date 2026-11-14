@@ -50,7 +50,7 @@ PNG and SVG output share the same layout and honour every `FigureConfig` setting
 Add the following dependencies to your `Cargo.toml` file:
 ```toml
 [dependencies]
-dataviz = "0.1.10"
+dataviz = "0.1.11"
 ```
 
 Requires Rust 1.89 or newer.

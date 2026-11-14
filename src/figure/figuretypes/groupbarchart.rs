@@ -171,7 +171,18 @@ impl GroupBarChart {
     }
 
     /// Bounds used for drawing and hit-testing.
+    /// Bounds used for drawing and hit-testing; the value axis is widened to
+    /// round tick values.
     pub(crate) fn bounds_for(&self, orientation: &Orientation) -> Bounds {
+        let n = Some(self.config.num_axis_ticks);
+        let b = self.raw_bounds_for(orientation);
+        match orientation {
+            Orientation::Vertical => b.nice(None, n),
+            Orientation::Horizontal => b.nice(n, None),
+        }
+    }
+
+    fn raw_bounds_for(&self, orientation: &Orientation) -> Bounds {
         let slots = self.categories().len().max(1) as f64;
         let values = self
             .datasets

@@ -115,7 +115,15 @@ impl Quadrant1Graph {
 
     /// Bounds used for drawing and hit-testing: `0..max` on both axes,
     /// computed from the data.
+    /// Bounds used for drawing and hit-testing, widened to round tick values.
     pub(crate) fn bounds(&self) -> Bounds {
+        self.raw_bounds().nice(
+            Some(self.config.num_axis_ticks),
+            Some(self.config.num_axis_ticks),
+        )
+    }
+
+    fn raw_bounds(&self) -> Bounds {
         let data = Bounds::from_points(self.datasets.iter().flat_map(|d| d.points.iter().copied()))
             .unwrap_or_default();
         Bounds {
