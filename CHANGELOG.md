@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.12.0
+
+### Added
+- **Range slider**: `Axes::range_slider(true)` draws all data in small below
+  the plot with the shown x range highlighted (also in static output); in a
+  window it is dragged to pan, at its edges to zoom, and a click moves the
+  view there.
+- Windows:
+  - Shift+drag **measures** between two points: Δx (durations on time
+    axes), Δy and the change in percent;
+  - Ctrl+drag **selects a box**, read with `Figure::selection()` (e.g. in
+    the `show_live` update; `Selection::contains`);
+  - Shift+S saves SVG (and PDF with the `pdf` feature), Ctrl+C copies the
+    plots to the clipboard as PNG (wl-copy/xclip on Linux, the system
+    clipboard on macOS and Windows).
+
 ## 0.11.0
 
 ### Added
