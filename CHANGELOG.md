@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.13.1
+
+### Added
+- HTML output: linked cursor across plots showing the same x range (as in
+  windows).
+
 ## 0.13.0
 
 ### Added
