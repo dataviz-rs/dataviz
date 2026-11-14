@@ -48,6 +48,7 @@ fn main() -> Result<(), Error> {
 | Layouts | subplots with spans, shared and broken axes, facets (small multiples), pair plot (scatter matrix) |
 | Parts of a whole | pie, donut, treemap, sunburst, funnel, gauge |
 | Polar | polar line/scatter, radar (spider), rose / wind rose |
+| Maps | world map, choropleth (ISO codes or names), points and great-circle routes on a map, GeoJSON shapes; Robinson, Natural Earth, equirectangular and Mercator projections |
 | Relations & flows | sankey, network graph (force-directed), parallel coordinates |
 | Annotations | text, arrows, reference lines, shaded spans, rectangles, SVG tooltips |
 
