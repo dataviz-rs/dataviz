@@ -201,7 +201,17 @@ impl Figure {
             if let Some(t) = &ax.title {
                 p.push_str(&format!("{t}, "));
             }
-            p.push_str(&format!("{} chart", kinds.join(" and ")));
+            let kind = format!("{} chart", kinds.join(" and "));
+            if p.is_empty() {
+                // A sentence starts with a capital letter.
+                let mut c = kind.chars();
+                if let Some(f) = c.next() {
+                    p.push_str(&f.to_uppercase().collect::<String>());
+                    p.push_str(c.as_str());
+                }
+            } else {
+                p.push_str(&kind);
+            }
             if ax.kind == super::AxesKind::Cartesian && ax.projection.is_none() {
                 let axis = |label: &Option<String>, along_y: bool, map: &super::axis::AxisMap| {
                     let name =

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.15.1
+
+### Fixed
+- `Figure::alt_text`: sentences start with a capital letter.
+
 ## 0.15.0
 
 ### Added
