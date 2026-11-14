@@ -1,5 +1,37 @@
 # Changelog
 
+## Unreleased
+
+Performance: faster rendering with less CPU and memory, no new dependencies.
+
+### Added
+- `Figure::render_into(&mut Pixels)` and `Figure::render_0rgb(&mut Vec<u32>)`
+  render into reused buffers (real-time redraws without allocations);
+  `Pixels::write_0rgb`.
+
+### Changed
+- **Direct rasterizer**: PNG/JPEG/WebP/BMP/RGBA output and windows draw the
+  scene straight into pixels instead of serializing SVG and parsing it with
+  resvg. Analytic clipping, cached glyph bitmaps, marker sprites at
+  quarter-pixel offsets, own anti-aliased rectangle, polygon (signed-area)
+  and polyline (distance coverage) fillers.
+- **Embedded font**: DejaVu Sans is built in (Bitstream Vera license,
+  `assets/`); no system font scan at start-up (cold start 35 ms → 4 ms) and
+  identical output on every machine. `Theme::font` still loads any TTF/OTF.
+- Dense lines are drawn as per-pixel-column envelopes (100 k points:
+  25 ms → 2 ms for the line).
+- Histograms: binning without sorting (O(n) quartiles), direct bin index for
+  equal-width bins, results cached between renders.
+- SVG numbers are written without allocations (scatter 100 k SVG 3× faster).
+- Window redraws reuse the frame buffer.
+
+Real-time benchmark (800×600, full redraw per frame, p50): 1 k points
+7.2 → 1.6 ms, 10 k 14.4 → 1.5 ms, 100 k 30.3 → 2.3 ms; peak RSS
+15.6–21.6 MB → 8–15 MB.
+
+### Fixed
+- `--no-default-features` builds without dead-code warnings.
+
 ## 0.2.0
 
 A complete plotting library in the new `dataviz::plot` module (with

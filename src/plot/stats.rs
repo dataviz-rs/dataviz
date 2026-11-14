@@ -29,6 +29,23 @@ pub fn std_dev(values: &[f64]) -> f64 {
     (v.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (v.len() - 1) as f64).sqrt()
 }
 
+/// Like [`quantile_sorted`] for unsorted finite data, in O(n) (reorders `v`).
+fn quantile_select(v: &mut [f64], q: f64) -> f64 {
+    let n = v.len();
+    if n < 2 {
+        return v.first().copied().unwrap_or(f64::NAN);
+    }
+    let pos = q.clamp(0.0, 1.0) * (n - 1) as f64;
+    let i = pos.floor() as usize;
+    let f = pos - i as f64;
+    let (_, a, right) = v.select_nth_unstable_by(i, f64::total_cmp);
+    let a = *a;
+    match right.iter().copied().min_by(f64::total_cmp) {
+        Some(b) if i + 1 < n => a * (1.0 - f) + b * f,
+        _ => a,
+    }
+}
+
 /// Quantile `q` (0..1) of sorted data with linear interpolation.
 pub fn quantile_sorted(sorted: &[f64], q: f64) -> f64 {
     match sorted.len() {
@@ -178,15 +195,18 @@ pub enum Bins {
 
 /// Bin edges for data according to a rule.
 pub fn bin_edges(values: &[f64], bins: &Bins) -> Vec<f64> {
-    let s = sorted(values);
-    if s.is_empty() {
+    // One pass for count/min/max; quartiles (FD/Auto) by selection, no sort.
+    let (cnt, lo, hi) = values.iter().filter(|x| x.is_finite()).fold(
+        (0usize, f64::INFINITY, f64::NEG_INFINITY),
+        |(c, a, b), &v| (c + 1, a.min(v), b.max(v)),
+    );
+    if cnt == 0 {
         return match bins {
             Bins::Edges(e) => e.clone(),
             _ => vec![0.0, 1.0],
         };
     }
-    let (lo, hi) = (s[0], s[s.len() - 1]);
-    let n = s.len() as f64;
+    let n = cnt as f64;
     let count = |c: usize| -> Vec<f64> {
         let c = c.clamp(1, 10_000);
         if hi == lo {
@@ -223,9 +243,10 @@ pub fn bin_edges(values: &[f64], bins: &Bins) -> Vec<f64> {
         }
         Bins::Edges(e) => e.clone(),
         Bins::Sturges => count(sturges()),
-        Bins::Scott => width(3.49 * std_dev(&s) * n.powf(-1.0 / 3.0)),
+        Bins::Scott => width(3.49 * std_dev(values) * n.powf(-1.0 / 3.0)),
         Bins::FreedmanDiaconis | Bins::Auto => {
-            let iqr = quantile_sorted(&s, 0.75) - quantile_sorted(&s, 0.25);
+            let mut s: Vec<f64> = values.iter().copied().filter(|x| x.is_finite()).collect();
+            let iqr = quantile_select(&mut s, 0.75) - quantile_select(&mut s, 0.25);
             if iqr > 0.0 {
                 let fd = width(2.0 * iqr * n.powf(-1.0 / 3.0));
                 if *bins == Bins::Auto && fd.len() - 1 < sturges() {
@@ -247,6 +268,33 @@ pub fn histogram(values: &[f64], edges: &[f64]) -> Vec<f64> {
     let mut counts = vec![0.0; nb];
     if nb == 0 {
         return counts;
+    }
+    // Equal-width bins: direct index, corrected against the edges so the
+    // result matches the binary search exactly.
+    let (e0, en) = (edges[0], edges[nb]);
+    let step = (en - e0) / nb as f64;
+    let uniform = step > 0.0
+        && step.is_finite()
+        && edges
+            .windows(2)
+            .all(|w| ((w[1] - w[0]) - step).abs() <= step * 1e-9);
+    if uniform {
+        let mut n = vec![0u32; nb];
+        let inv = 1.0 / step;
+        for v in values.iter().copied() {
+            if !(v >= e0 && v <= en) {
+                continue;
+            }
+            let mut i = (((v - e0) * inv) as usize).min(nb - 1);
+            while i > 0 && v < edges[i] {
+                i -= 1;
+            }
+            while i + 1 < nb && v >= edges[i + 1] {
+                i += 1;
+            }
+            n[i] += 1;
+        }
+        return n.into_iter().map(f64::from).collect();
     }
     for v in values.iter().copied().filter(|v| v.is_finite()) {
         if v < edges[0] || v > edges[nb] {
@@ -512,5 +560,60 @@ mod tests {
         assert_eq!(lx.len(), 100);
         assert_eq!((lx[0], lx[99]), (0.0, 999.0));
         assert!(ly.iter().cloned().fold(f64::MIN, f64::max) > 0.99);
+    }
+}
+
+#[cfg(test)]
+mod fast_paths {
+    use super::*;
+
+    fn reference(values: &[f64], edges: &[f64]) -> Vec<f64> {
+        let nb = edges.len() - 1;
+        let mut c = vec![0.0; nb];
+        for &v in values.iter().filter(|v| v.is_finite()) {
+            if v >= edges[0] && v <= edges[nb] {
+                c[edges
+                    .partition_point(|e| *e <= v)
+                    .saturating_sub(1)
+                    .min(nb - 1)] += 1.0;
+            }
+        }
+        c
+    }
+
+    #[test]
+    fn uniform_histogram_matches_search() {
+        let mut x = 0x2545F4914F6CDD1Du64;
+        let mut vals: Vec<f64> = (0..20_000)
+            .map(|_| {
+                x ^= x << 13;
+                x ^= x >> 7;
+                x ^= x << 17;
+                (x % 100_000) as f64 / 997.0 - 30.0
+            })
+            .collect();
+        vals.extend([f64::NAN, f64::INFINITY, -1e9, 1e9]);
+        for bins in [
+            Bins::Count(7),
+            Bins::Count(50),
+            Bins::Width(0.3),
+            Bins::Auto,
+            Bins::Scott,
+        ] {
+            let e = bin_edges(&vals, &bins);
+            // Exact edge values must land in the same bin as with the search.
+            let mut v = vals.clone();
+            v.extend(e.iter().copied());
+            assert_eq!(histogram(&v, &e), reference(&v, &e), "{bins:?}");
+        }
+    }
+
+    #[test]
+    fn select_quantile_matches_sorted() {
+        let v: Vec<f64> = (0..101).map(|i| ((i * 37) % 101) as f64 * 0.5).collect();
+        let s = sorted(&v);
+        for q in [0.0, 0.25, 0.33, 0.5, 0.75, 1.0] {
+            assert_eq!(quantile_select(&mut v.clone(), q), quantile_sorted(&s, q));
+        }
     }
 }

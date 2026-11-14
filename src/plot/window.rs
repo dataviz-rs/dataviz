@@ -92,10 +92,16 @@ impl Figure {
         }
     }
 
-    fn frame(&mut self) -> Result<(Pixels, Vec<Layout>), Error> {
+    fn frame(&mut self, px: &mut Pixels) -> Result<Vec<Layout>, Error> {
         let (scene, layouts) = self.scene_and_layouts();
-        let px = output::rasterize(&scene, &self.fonts(), 1.0)?;
-        Ok((px, layouts))
+        let mut pm = self.pixmap.take();
+        let r = super::raster::render_pixmap(&scene, &self.fonts(), 1.0, &mut pm);
+        if let (Some(()), Some(p)) = (r, pm.as_ref()) {
+            super::raster::to_pixels(p, px);
+        }
+        self.pixmap = pm;
+        r.map(|_| layouts)
+            .ok_or_else(|| Error::Render("empty image".into()))
     }
 
     /// Opens an interactive window showing the figure; returns when it is
@@ -133,7 +139,12 @@ impl Figure {
             .map_err(|e| Error::Render(format!("cannot open window: {e}")))?;
         window.set_target_fps(60);
         let original = self.limits();
-        let (mut base, mut layouts) = self.frame()?;
+        let mut base = Pixels {
+            width: 0,
+            height: 0,
+            rgba: Vec::new(),
+        };
+        let mut layouts = self.frame(&mut base)?;
         let mut buffer = base.to_0rgb();
         let mut dirty = false;
         let mut drag: Option<(f64, f64, usize)> = None;
@@ -229,8 +240,8 @@ impl Figure {
             }
 
             if dirty {
-                (base, layouts) = self.frame()?;
-                buffer = base.to_0rgb();
+                layouts = self.frame(&mut base)?;
+                base.write_0rgb(&mut buffer);
                 dirty = false;
                 last_mouse = (f64::NAN, f64::NAN);
             }
@@ -287,16 +298,16 @@ impl Figure {
                         message = None;
                     }
                 }
-                buffer = if nodes.is_empty() {
-                    base.to_0rgb()
+                if nodes.is_empty() {
+                    base.write_0rgb(&mut buffer);
                 } else {
                     let mut scene = Scene::new(w as f64, h as f64);
                     scene.background = None;
                     scene.font_family = self.fonts().family.clone();
                     scene.nodes = nodes;
                     let over = output::rasterize(&scene, &self.fonts(), 1.0)?;
-                    composite(&base, &over)
-                };
+                    buffer = composite(&base, &over);
+                }
             }
             window
                 .update_with_buffer(&buffer, w, h)

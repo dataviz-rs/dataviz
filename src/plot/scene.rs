@@ -290,16 +290,59 @@ fn font_list(family: &str) -> String {
 }
 
 /// Compact number formatting (2 decimals, no trailing zeros).
-pub(crate) fn num(v: f64) -> String {
-    if !v.is_finite() {
-        return "0".into();
-    }
-    let s = format!("{v:.2}");
-    let s = s.trim_end_matches('0').trim_end_matches('.');
-    if s == "-0" {
-        "0".into()
-    } else {
-        s.into()
+pub(crate) fn num(v: f64) -> Num {
+    Num(v)
+}
+
+/// A coordinate written with at most two decimals, trailing zeros trimmed
+/// (`1`, `1.5`, `1.26`), without allocating.
+#[derive(Clone, Copy)]
+pub(crate) struct Num(f64);
+
+impl std::fmt::Display for Num {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let v = self.0;
+        if !v.is_finite() {
+            return f.write_str("0");
+        }
+        if v.abs() >= 1e15 {
+            // Out of the integer fast path's range.
+            let s = format!("{v:.2}");
+            return f.write_str(s.trim_end_matches('0').trim_end_matches('.'));
+        }
+        let c = (v * 100.0).round() as i64;
+        if c == 0 {
+            return f.write_str("0");
+        }
+        let (neg, c) = (c < 0, c.unsigned_abs());
+        let (int, frac) = (c / 100, c % 100);
+        let mut buf = [0u8; 24];
+        let mut i = buf.len();
+        if frac != 0 {
+            let (d1, d2) = (frac / 10, frac % 10);
+            if d2 != 0 {
+                i -= 1;
+                buf[i] = b'0' + d2 as u8;
+            }
+            i -= 1;
+            buf[i] = b'0' + d1 as u8;
+            i -= 1;
+            buf[i] = b'.';
+        }
+        let mut n = int;
+        loop {
+            i -= 1;
+            buf[i] = b'0' + (n % 10) as u8;
+            n /= 10;
+            if n == 0 {
+                break;
+            }
+        }
+        if neg {
+            i -= 1;
+            buf[i] = b'-';
+        }
+        f.write_str(std::str::from_utf8(&buf[i..]).unwrap_or("0"))
     }
 }
 
@@ -346,7 +389,7 @@ fn stroke_attr(stroke: &Option<Stroke>) -> String {
     let mut a = paint("stroke", s.color);
     let _ = write!(a, r#" stroke-width="{}""#, num(s.width));
     if !s.dash.is_empty() {
-        let d: Vec<String> = s.dash.iter().map(|v| num(*v)).collect();
+        let d: Vec<String> = s.dash.iter().map(|v| num(*v).to_string()).collect();
         let _ = write!(a, r#" stroke-dasharray="{}""#, d.join(","));
     }
     match s.cap {
@@ -610,10 +653,16 @@ mod tests {
 
     #[test]
     fn number_format() {
-        assert_eq!(num(1.0), "1");
-        assert_eq!(num(1.256), "1.26");
-        assert_eq!(num(-0.001), "0");
-        assert_eq!(num(f64::NAN), "0");
+        let n = |v: f64| num(v).to_string();
+        assert_eq!(n(1.0), "1");
+        assert_eq!(n(1.256), "1.26");
+        assert_eq!(n(-0.001), "0");
+        assert_eq!(n(f64::NAN), "0");
+        assert_eq!(n(-12.5), "-12.5");
+        assert_eq!(n(0.07), "0.07");
+        assert_eq!(n(-0.3), "-0.3");
+        assert_eq!(n(1200.0), "1200");
+        assert_eq!(n(1e16), "10000000000000000");
     }
 
     #[test]
