@@ -93,7 +93,12 @@ impl CartesianGraph {
 
     /// Bounds used for drawing and hit-testing: the stored range, symmetric
     /// around zero, `-1..1` when there is no data.
+    /// Bounds used for drawing and hit-testing, widened to round tick values.
     pub(crate) fn bounds(&self) -> Bounds {
+        self.raw_bounds().nice_symmetric(self.config.num_axis_ticks)
+    }
+
+    fn raw_bounds(&self) -> Bounds {
         let mut b = Bounds {
             x_min: self.x_min,
             x_max: self.x_max,

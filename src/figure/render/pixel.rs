@@ -212,7 +212,16 @@ pub(crate) fn marker(
 pub(crate) fn begin(canvas: &mut PixelCanvas, spec: &AxesSpec) -> Mapper {
     background(canvas, spec.config);
     grid(canvas, spec.config);
-    Mapper::new(frame(canvas), spec.bounds)
+    let m = Mapper::new(frame(canvas), spec.bounds);
+    // Frame and axis lines go below the data, so data lying on the edge of
+    // the plot (e.g. at the maximum) or on an axis stays visible.
+    let f = m.frame;
+    let axis = spec.config.color_axis;
+    stroke_rect(canvas, f.left, f.top, f.right, f.bottom, axis);
+    let (ax_y, ax_x) = (m.x_axis_y().round(), m.y_axis_x().round());
+    line(canvas, (f.left, ax_y), (f.right, ax_y), axis);
+    line(canvas, (ax_x, f.top), (ax_x, f.bottom), axis);
+    m
 }
 
 /// Clears the canvas and paints the plot area with `color_background`.
@@ -252,11 +261,8 @@ pub(crate) fn finish(canvas: &mut PixelCanvas, spec: &AxesSpec, m: &Mapper) {
     let f = m.frame;
     let axis = cfg.color_axis;
 
-    stroke_rect(canvas, f.left, f.top, f.right, f.bottom, axis);
     let ax_y = m.x_axis_y().round();
     let ax_x = m.y_axis_x().round();
-    line(canvas, (f.left, ax_y), (f.right, ax_y), axis);
-    line(canvas, (ax_x, f.top), (ax_x, f.bottom), axis);
 
     let fs = cfg.font_size_axis;
     let font = fonts.label.as_ref();

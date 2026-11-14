@@ -177,7 +177,15 @@ impl AreaChart {
 
     /// Bounds used for drawing and hit-testing: the data range, extended to
     /// include the origin.
+    /// Bounds used for drawing and hit-testing, widened to round tick values.
     pub(crate) fn bounds(&self) -> Bounds {
+        self.raw_bounds().nice(
+            Some(self.config.num_axis_ticks),
+            Some(self.config.num_axis_ticks),
+        )
+    }
+
+    fn raw_bounds(&self) -> Bounds {
         Bounds::from_points(self.datasets.iter().flat_map(|d| d.points.iter().copied()))
             .unwrap_or_default()
             .with_origin()

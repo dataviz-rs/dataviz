@@ -85,6 +85,86 @@ impl Bounds {
     }
 }
 
+impl Bounds {
+    /// Widens the axes with linear ticks (`Some(divisions)`) to "round"
+    /// limits that keep exactly `divisions` intervals, so tick labels are
+    /// round numbers (`0, 50, 100` instead of `0, 27.375, 54.75`).
+    pub fn nice(self, x_divisions: Option<usize>, y_divisions: Option<usize>) -> Self {
+        let b = self.sanitized();
+        let (x_min, x_max) = match x_divisions {
+            Some(n) => nice_axis(b.x_min, b.x_max, n),
+            None => (b.x_min, b.x_max),
+        };
+        let (y_min, y_max) = match y_divisions {
+            Some(n) => nice_axis(b.y_min, b.y_max, n),
+            None => (b.y_min, b.y_max),
+        };
+        Self {
+            x_min,
+            x_max,
+            y_min,
+            y_max,
+        }
+    }
+
+    /// Like [`Bounds::nice`] for ranges symmetric around zero: the result
+    /// stays symmetric.
+    pub fn nice_symmetric(self, divisions: usize) -> Self {
+        let b = self.sanitized();
+        let n = divisions.max(1) as f64;
+        let half = |m: f64| {
+            let step = nice_step(2.0 * m / n);
+            if step.is_finite() && step > 0.0 {
+                step * n / 2.0
+            } else {
+                m
+            }
+        };
+        let mx = half(b.x_min.abs().max(b.x_max.abs()));
+        let my = half(b.y_min.abs().max(b.y_max.abs()));
+        Self {
+            x_min: -mx,
+            x_max: mx,
+            y_min: -my,
+            y_max: my,
+        }
+    }
+}
+
+/// Smallest "round" step (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 × 10^k) ≥ `raw`.
+pub(crate) fn nice_step(raw: f64) -> f64 {
+    if !raw.is_finite() || raw <= 0.0 {
+        return raw;
+    }
+    let magnitude = 10f64.powf(raw.log10().floor());
+    for f in [1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 6.0, 8.0, 10.0] {
+        let step = f * magnitude;
+        if step >= raw * (1.0 - 1e-12) {
+            return step;
+        }
+    }
+    10.0 * magnitude
+}
+
+/// Round limits containing `min..max` with exactly `divisions` intervals.
+fn nice_axis(min: f64, max: f64, divisions: usize) -> (f64, f64) {
+    let n = divisions.max(1) as f64;
+    let mut step = nice_step((max - min) / n);
+    for _ in 0..8 {
+        if !step.is_finite() || step <= 0.0 {
+            break;
+        }
+        let lo = (min / step + 1e-9).floor() * step;
+        let hi = lo + step * n;
+        if hi >= max - step * 1e-9 && lo.is_finite() && hi.is_finite() {
+            // Avoid printing `-0`.
+            return (if lo == 0.0 { 0.0 } else { lo }, hi);
+        }
+        step = nice_step(step * (1.0 + 1e-9));
+    }
+    (min, max)
+}
+
 fn sanitize_axis(min: f64, max: f64) -> (f64, f64) {
     let (min, max) = match (min.is_finite(), max.is_finite()) {
         (true, true) => (min.min(max), min.max(max)),
@@ -147,6 +227,39 @@ mod tests {
         .sanitized();
         assert_eq!((b.x_min, b.x_max), (0.0, 1.0));
         assert_eq!((b.y_min, b.y_max), (1.0, 3.0));
+    }
+
+    #[test]
+    fn nice_bounds_keep_division_count() {
+        let b = Bounds {
+            x_min: 0.0,
+            x_max: 219.0,
+            y_min: -5.92,
+            y_max: 19.19,
+        }
+        .nice(Some(8), Some(8));
+        assert_eq!((b.x_min, b.x_max), (0.0, 240.0)); // step 30
+        assert_eq!((b.y_min, b.y_max), (-8.0, 24.0)); // step 4
+        let b = Bounds {
+            x_min: 0.0,
+            x_max: 3000.0,
+            y_min: 0.0,
+            y_max: 3.0,
+        }
+        .nice(Some(5), None);
+        assert_eq!((b.x_min, b.x_max), (0.0, 3000.0));
+        assert_eq!((b.y_min, b.y_max), (0.0, 3.0));
+        let b = Bounds {
+            x_min: -std::f64::consts::PI,
+            x_max: std::f64::consts::PI,
+            y_min: -1.0,
+            y_max: 1.0,
+        }
+        .nice_symmetric(8);
+        assert_eq!((b.x_min, b.x_max), (-3.2, 3.2)); // step 0.8
+        assert_eq!((b.y_min, b.y_max), (-1.0, 1.0)); // step 0.25
+        assert_eq!(nice_step(0.875), 1.0);
+        assert_eq!(nice_step(27.375), 30.0);
     }
 
     #[test]

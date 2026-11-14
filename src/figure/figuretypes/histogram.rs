@@ -177,7 +177,15 @@ impl Histogram {
     }
 
     /// Bounds used for drawing and hit-testing.
+    /// Bounds used for drawing and hit-testing, widened to round tick values.
     pub(crate) fn bounds(&self) -> Bounds {
+        self.raw_bounds().nice(
+            Some(self.config.num_axis_ticks),
+            Some(self.config.num_axis_ticks),
+        )
+    }
+
+    fn raw_bounds(&self) -> Bounds {
         let (start, width) = self.display_bins();
         let y_max = self.bin_counts.iter().copied().fold(0.0, f64::max);
         Bounds {

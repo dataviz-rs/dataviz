@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.1.11
+
+### Fixed
+- Data lying on the edge of the plot (e.g. a constant series, or the
+  maximum value) or on an axis was hidden under the frame/axis lines in PNG
+  output. Frame and axis lines are now drawn below the data in both
+  renderers.
+
+### Changed
+- Value axes use round tick values: the axis limits are widened to a round
+  step (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8 × 10ⁿ) while keeping exactly
+  `num_axis_ticks` intervals, e.g. `0, 30, …, 240` instead of
+  `0, 27.375, …, 219`. Cartesian graphs stay symmetric around zero. Hover
+  uses the same limits.
+
 ## 0.1.10
 
 Backward compatible with 0.1.9: `cargo semver-checks` passes, and every
