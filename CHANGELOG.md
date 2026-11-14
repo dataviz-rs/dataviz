@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0
+
+### Added
+- **Crosshair** in windows (`C` toggles, on by default): dashed lines at the
+  mouse with its x and y values on the axes (time axes as date/time,
+  categories by name), and the values of every series at that x with a dot
+  on each point.
+- **Linked cursor**: plots showing the same x range (`Figure::share_x`, or
+  equal limits) show a cursor line and their series' values at the same x.
+- **Legend toggle**: clicking a legend row hides or shows its series (the
+  row is dimmed; hidden series are not drawn and do not count for the
+  limits). `Axes::set_visible(index, on)` and `Axes::is_visible(index)` do
+  the same from code.
+
+### Changed
+- Hover hit tests on x-sorted lines, areas, candlesticks and bars use a
+  binary search around the cursor: 1M-point lines go from ~10 ms to
+  0.3 ms (crosshair) / 1.5 ms (nearest point) per mouse move.
+- Window overlays are drawn directly over a copy of the frame instead of
+  rasterizing a full transparent layer and blending it (~0.4 ms at 900×600).
+- `Layout` has a crate-private field (legend hit areas).
+
 ## 0.4.2
 
 ### Added

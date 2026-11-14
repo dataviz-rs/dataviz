@@ -110,9 +110,35 @@ fn column_widths(item_w: &[f64], cols: usize) -> Vec<f64> {
     w
 }
 
+/// Canvas rectangle of every legend row (entry index) for a legend drawn
+/// at (x, y).
+pub(crate) fn item_rects(l: &LegendLayout, x: f64, y: f64) -> Vec<(Rect, usize)> {
+    let mut v = Vec::new();
+    for (r, row) in l.rows.iter().enumerate() {
+        let top = y + PAD - 2.0 + l.row_h * r as f64;
+        for (k, &(i, off)) in row.iter().enumerate() {
+            let right = row
+                .get(k + 1)
+                .map_or(x + l.w - PAD / 2.0, |n| x + n.1 - 8.0);
+            v.push((
+                Rect {
+                    x: x + off - PAD / 2.0,
+                    y: top,
+                    w: right - (x + off - PAD / 2.0),
+                    h: l.row_h,
+                },
+                i,
+            ));
+        }
+    }
+    v
+}
+
+/// Draws a legend; rows with `dim[i]` (hidden series) are faded.
 pub(crate) fn draw(
     out: &mut Vec<Node>,
     entries: &[LegendEntry],
+    dim: &[bool],
     l: &LegendLayout,
     x: f64,
     y: f64,
@@ -136,7 +162,10 @@ pub(crate) fn draw(
         for &(i, off) in row {
             let e = &entries[i];
             let sx = x + off;
+            let faded = dim.get(i).copied().unwrap_or(false);
+            let start = out.len();
             symbol(out, &e.symbol, sx, cy, l.sym_w, size, theme);
+
             out.push(Node::Text(TextNode {
                 x: sx + l.sym_w + GAP,
                 y: cy,
@@ -148,6 +177,15 @@ pub(crate) fn draw(
                 rotate: 0.0,
                 bold: false,
             }));
+            if faded {
+                let children = out.split_off(start);
+                out.push(Node::Group {
+                    children,
+                    clip: None,
+                    opacity: 0.3,
+                    tooltip: None,
+                });
+            }
         }
     }
 }

@@ -66,6 +66,8 @@ pub struct Axes {
     pub(crate) show_colorbar: bool,
     /// y (and y2) fit the data inside the x range (`auto_scale_y`).
     pub(crate) fit_y: bool,
+    /// Series hidden by [`Axes::set_visible`] (index = series index).
+    pub(crate) hidden: Vec<bool>,
 }
 
 /// Resolved layout of an axes (positions and mappings).
@@ -79,6 +81,8 @@ pub struct Layout {
     pub y: AxisMap,
     /// Secondary y mapping (when used).
     pub y2: Option<AxisMap>,
+    /// Legend rows: canvas rectangle and series index (for clicks).
+    pub(crate) legend_items: Vec<(Rect, usize)>,
 }
 
 impl Axes {
@@ -98,6 +102,7 @@ impl Axes {
             polar: Default::default(),
             show_colorbar: true,
             fit_y: false,
+            hidden: Vec::new(),
         }
     }
 
@@ -258,6 +263,31 @@ impl Axes {
     /// Number of series.
     pub fn series_count(&self) -> usize {
         self.series.len()
+    }
+
+    /// Shows or hides the `index`-th series. A hidden series is not drawn,
+    /// does not count for the automatic limits, and its legend row is
+    /// dimmed (clicking a legend row in a window toggles this).
+    pub fn set_visible(&mut self, index: usize, visible: bool) -> &mut Self {
+        if self.hidden.len() <= index {
+            self.hidden.resize(index + 1, false);
+        }
+        self.hidden[index] = !visible;
+        self
+    }
+
+    /// Whether the `index`-th series is drawn (see [`Axes::set_visible`]).
+    pub fn is_visible(&self, index: usize) -> bool {
+        !self.hidden.get(index).copied().unwrap_or(false)
+    }
+
+    /// The series that are drawn.
+    pub(crate) fn shown(&self) -> impl Iterator<Item = &dyn Series> {
+        self.series
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| self.is_visible(*i))
+            .map(|(_, s)| s.as_ref())
     }
 
     // ----- basic chart types ---------------------------------------------
@@ -499,12 +529,11 @@ impl Axes {
     // ----- layout & drawing ------------------------------------------------
 
     fn uses_y2(&self) -> bool {
-        self.series.iter().any(|s| s.secondary())
+        self.shown().any(|s| s.secondary())
     }
 
     fn extent(&self, secondary: bool) -> Option<Extent> {
-        self.series
-            .iter()
+        self.shown()
             .filter(|s| s.secondary() == secondary)
             .filter_map(|s| s.extent())
             .reduce(|a, b| a.union(b))
@@ -514,11 +543,20 @@ impl Axes {
         if !self.show_colorbar {
             return None;
         }
-        self.series.iter().find_map(|s| s.color_scale())
+        self.shown().find_map(|s| s.color_scale())
     }
 
-    pub(crate) fn legend_entries(&self) -> Vec<LegendEntry> {
-        self.series.iter().flat_map(|s| s.legend()).collect()
+    /// Legend rows with the index of the series each belongs to.
+    pub(crate) fn legend_entries(&self) -> (Vec<LegendEntry>, Vec<usize>) {
+        let mut entries = Vec::new();
+        let mut owners = Vec::new();
+        for (i, s) in self.series.iter().enumerate() {
+            for e in s.legend() {
+                entries.push(e);
+                owners.push(i);
+            }
+        }
+        (entries, owners)
     }
 
     /// Automatic limits of one axis.
@@ -615,7 +653,7 @@ impl Axes {
                 return e;
             }
             let mut r: Option<(f64, f64)> = None;
-            for s in self.series.iter().filter(|s| s.secondary() == secondary) {
+            for s in self.shown().filter(|s| s.secondary() == secondary) {
                 let part = match s.y_range_in(x.0, x.1) {
                     Some(p) => p,
                     None => s.extent().map(|e| (e.y_min, e.y_max)),
@@ -717,7 +755,7 @@ impl Axes {
             r.h -= h;
         }
 
-        let entries = self.legend_entries();
+        let (entries, owners) = self.legend_entries();
         let legend_on = !entries.is_empty() && self.legend != LegendPosition::Hidden;
         if legend_on {
             let horizontal = matches!(
@@ -739,7 +777,7 @@ impl Axes {
                 }
                 _ => {}
             }
-            decor.legend = Some((entries, l));
+            decor.legend = Some((entries, owners, l));
         }
 
         let cs = self.color_scale();
@@ -757,6 +795,7 @@ impl Axes {
                     x,
                     y,
                     y2: None,
+                    legend_items: Vec::new(),
                 },
                 decor,
             );
@@ -769,6 +808,7 @@ impl Axes {
                 y: AxisMap::new(Scale::Linear, y.0, y.1, plot.bottom(), plot.y),
                 y2: None,
                 plot,
+                legend_items: Vec::new(),
             };
             return (lay, decor);
         }
@@ -881,6 +921,7 @@ impl Axes {
                 AxisMap::new(self.y2.scale.clone(), l.0, l.1, a, b)
             }),
             plot,
+            legend_items: Vec::new(),
         };
         (lay, decor)
     }
@@ -893,7 +934,7 @@ impl Axes {
         fonts: &FontSet,
         out: &mut Vec<Node>,
     ) -> Layout {
-        let (lay, decor) = self.layout(cell, theme, fonts);
+        let (mut lay, decor) = self.layout(cell, theme, fonts);
         let p = lay.plot;
 
         if self.kind == AxesKind::Cartesian {
@@ -913,7 +954,7 @@ impl Axes {
 
         // Series, clipped to the plot area.
         let mut data = Vec::new();
-        for s in &self.series {
+        for s in self.shown() {
             let y = if s.secondary() {
                 lay.y2.as_ref().unwrap_or(&lay.y)
             } else {
@@ -968,7 +1009,7 @@ impl Axes {
             };
             legend::draw_colorbar(out, cs, r, theme);
         }
-        if let Some((entries, l)) = &decor.legend {
+        if let Some((entries, owners, l)) = &decor.legend {
             let m = 8.0;
             let (x, y) = match self.legend {
                 LegendPosition::OutsideRight => (
@@ -985,7 +1026,12 @@ impl Axes {
                 LegendPosition::LowerCenter => (p.x + (p.w - l.w) / 2.0, p.bottom() - l.h - m),
                 _ => best_corner(p, l.w, l.h, m, &anchors),
             };
-            legend::draw(out, entries, l, x, y, theme);
+            let dim: Vec<bool> = owners.iter().map(|&i| !self.is_visible(i)).collect();
+            legend::draw(out, entries, &dim, l, x, y, theme);
+            lay.legend_items = legend::item_rects(l, x, y)
+                .into_iter()
+                .map(|(r, e)| (r, owners[e]))
+                .collect();
         }
         lay
     }
@@ -1240,8 +1286,7 @@ impl Axes {
     /// Nearest data point to a canvas position (for hover).
     #[cfg(feature = "window")]
     pub(crate) fn hit(&self, lay: &Layout, px: f64, py: f64) -> Option<super::series::Hit> {
-        self.series
-            .iter()
+        self.shown()
             .filter_map(|s| {
                 let y = if s.secondary() {
                     lay.y2.as_ref().unwrap_or(&lay.y)
@@ -1254,11 +1299,93 @@ impl Axes {
     }
 }
 
+#[cfg(feature = "window")]
+impl Axes {
+    /// The data points under a vertical line at canvas `px` (one per
+    /// series, nearest in x and within `tolerance` pixels), for the linked
+    /// cursor of plots sharing an x range.
+    pub(crate) fn hits_at_x(
+        &self,
+        lay: &Layout,
+        px: f64,
+        tolerance: f64,
+    ) -> Vec<super::series::Hit> {
+        // x stretched around `px` so that the x distance decides which point
+        // is nearest; y keeps its mapping so the hit lands on the data.
+        const K: f64 = 1e6;
+        let m = &lay.x;
+        let x = AxisMap::new(
+            m.scale.clone(),
+            m.min,
+            m.max,
+            px + (m.p0 - px) * K,
+            px + (m.p1 - px) * K,
+        );
+        self.shown()
+            .filter_map(|s| {
+                let y = if s.secondary() {
+                    lay.y2.as_ref().unwrap_or(&lay.y)
+                } else {
+                    &lay.y
+                };
+                let mut h = s.hit(&x, y, lay.plot, px, lay.plot.y + lay.plot.h / 2.0)?;
+                h.px = px + (h.px - px) / K;
+                h.distance = (h.px - px).abs();
+                Some(h)
+            })
+            .filter(|h| h.distance <= tolerance && h.py.is_finite())
+            .collect()
+    }
+
+    /// Text of a cursor position on the x (`y = false`) or y axis.
+    pub(crate) fn cursor_label(&self, lay: &Layout, along_y: bool, v: f64) -> String {
+        let (axis, map) = if along_y {
+            (&self.y, &lay.y)
+        } else {
+            (&self.x, &lay.x)
+        };
+        if !v.is_finite() {
+            return String::new();
+        }
+        if !axis.categories.is_empty() {
+            let i = v.round();
+            if i >= 0.0 && (i as usize) < axis.categories.len() {
+                return axis.categories[i as usize].clone();
+            }
+        }
+        let span = (map.max - map.min).abs();
+        match (&axis.format, &axis.scale) {
+            (ticks::TickFormat::Auto, Scale::Time) => {
+                let f = if span < 120.0 {
+                    "%H:%M:%S"
+                } else if span < 2.0 * 86400.0 {
+                    "%d %b %H:%M:%S"
+                } else {
+                    "%Y-%m-%d %H:%M"
+                };
+                super::time::format_time(v, f)
+            }
+            (ticks::TickFormat::Auto, Scale::Linear) => {
+                // About three significant digits more than the visible span.
+                let d = (3.0 - span.log10().floor()).clamp(0.0, 12.0) as usize;
+                let a = v.abs();
+                if a != 0.0 && (a >= 1e9 || a < 1e-6) {
+                    super::series::short(v)
+                } else {
+                    format!("{v:.d$}")
+                }
+            }
+            (ticks::TickFormat::Auto, _) => super::series::short(v),
+            (f, scale) => super::ticks::format_value(v, f, scale, span / 1000.0, span, None),
+        }
+    }
+}
+
 /// Decorations computed during layout.
 #[derive(Default)]
 pub(crate) struct Decor {
     title: Option<(String, f64, f64)>,
-    legend: Option<(Vec<LegendEntry>, legend::LegendLayout)>,
+    legend: Option<(Vec<LegendEntry>, Vec<usize>, legend::LegendLayout)>,
     colorbar: Option<(ColorScale, f64)>,
     x_rotation: f64,
 }

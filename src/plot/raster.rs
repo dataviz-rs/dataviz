@@ -2045,6 +2045,27 @@ pub(crate) fn render_bytes(
     h: u32,
     threads: usize,
 ) {
+    draw_bytes(scene, fonts, scale, data, w, h, threads, true);
+}
+
+/// Draws the scene's nodes over the premultiplied RGBA pixels already in
+/// `data` (no background fill), e.g. window overlays.
+#[cfg(feature = "window")]
+pub(crate) fn draw_over(scene: &Scene, fonts: &FontSet, data: &mut [u8], w: u32, h: u32) {
+    draw_bytes(scene, fonts, 1.0, data, w, h, 1, false);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn draw_bytes(
+    scene: &Scene,
+    fonts: &FontSet,
+    scale: f64,
+    data: &mut [u8],
+    w: u32,
+    h: u32,
+    threads: usize,
+    clear: bool,
+) {
     let scale = if scale.is_finite() && scale > 0.0 {
         scale
     } else {
@@ -2061,10 +2082,14 @@ pub(crate) fn render_bytes(
         let Some(mut band) = PixmapMut::from_bytes(data, w, bh) else {
             return;
         };
-        band.fill(background);
+        if clear {
+            band.fill(background);
+        }
         let base = Transform::from_row(scale as f32, 0.0, 0.0, scale as f32, 0.0, -(y0 as f32));
         let mut ctx = Ctx::new(fonts, font_key, base, w, bh);
-        ctx.pristine = scene.background.filter(|c| c.a >= 1.0);
+        if clear {
+            ctx.pristine = scene.background.filter(|c| c.a >= 1.0);
+        }
         ctx.draw(&mut band, &scene.nodes, &counts);
     };
     let chunk = rows * w as usize * 4;

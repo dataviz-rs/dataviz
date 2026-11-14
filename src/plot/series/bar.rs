@@ -130,7 +130,15 @@ impl Bars {
 
     /// (start, end, base, top) per bar along (position axis, value axis).
     fn geometry(&self) -> impl Iterator<Item = (usize, f64, f64, f64, f64)> + '_ {
-        (0..self.pos.len()).filter_map(move |i| {
+        self.geometry_in(0..self.pos.len())
+    }
+
+    /// [`Bars::geometry`] of the bars with indices in `r`.
+    fn geometry_in(
+        &self,
+        r: std::ops::Range<usize>,
+    ) -> impl Iterator<Item = (usize, f64, f64, f64, f64)> + '_ {
+        r.filter_map(move |i| {
             let (p, h, b) = (self.pos[i], self.heights[i], self.bottoms[i]);
             if !p.is_finite() || !h.is_finite() || !b.is_finite() {
                 return None;
@@ -281,7 +289,15 @@ impl Series for Bars {
 
     fn hit(&self, x: &AxisMap, y: &AxisMap, _rect: Rect, px: f64, py: f64) -> Option<Hit> {
         let mut best: Option<Hit> = None;
-        for (i, a, b, lo, hi) in self.geometry() {
+        let n = self.pos.len();
+        let near = if self.horizontal {
+            None
+        } else {
+            let r = 40.0 + (x.px(self.width) - x.px(0.0)).abs();
+            super::x_window(&self.pos, self.offset, x, px, r)
+        }
+        .unwrap_or(0..n);
+        for (i, a, b, lo, hi) in self.geometry_in(near) {
             let (x0, y0, x1, y1) = if self.horizontal {
                 (x.px(lo), y.px(a), x.px(hi), y.px(b))
             } else {

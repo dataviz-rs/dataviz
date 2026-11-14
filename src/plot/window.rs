@@ -1,8 +1,13 @@
 //! Interactive window for figures (requires the `window` feature).
 //!
 //! Controls: mouse wheel zooms around the cursor, left-drag pans, right-drag
-//! zooms to a box, `R` resets the view, `S` saves a PNG next to the program,
-//! `H` toggles the hover tooltip, `Esc` closes the window.
+//! zooms to a box, clicking a legend row hides or shows its series, `R`
+//! resets the view, `S` saves a PNG next to the program, `H` toggles the
+//! hover tooltip, `C` the crosshair, `Esc` closes the window.
+//!
+//! The crosshair follows the mouse with the cursor's x and y values on the
+//! axes; plots showing the same x range (e.g. [`Figure::share_x`]) get a
+//! linked cursor at the same x with the values of their series there.
 //!
 //! In [`Figure::show_live`] a plot the user zoomed or panned keeps that view
 //! while new data arrives; `R` returns to following the data. Auto scale
@@ -19,7 +24,8 @@ use super::axes::{AxesKind, Layout};
 use super::color::Color;
 use super::figure::Figure;
 use super::output::{self, Error, Pixels};
-use super::scene::{Anchor, Baseline, Node, Scene, Stroke, TextNode};
+use super::scene::{Anchor, Baseline, Node, PathCmd, Scene, Stroke, TextNode};
+use super::series::Rect;
 use minifb::{Key, KeyRepeat, MouseButton, MouseMode, Window, WindowOptions};
 use std::time::{Duration, Instant};
 
@@ -210,11 +216,20 @@ impl Figure {
             rgba: Vec::new(),
         };
         let mut layouts = self.frame(&mut base)?;
-        let mut buffer = base.to_0rgb();
-        let mut dirty = false;
+        // The frame as 0RGB, the same as opaque RGBA (for overlays), and
+        // what the window shows.
+        let mut plain: Vec<u32> = Vec::new();
+        let mut under: Vec<u32> = Vec::new();
+        let mut buffer: Vec<u32> = Vec::new();
+        let mut dirty = true;
         let mut drag: Option<(f64, f64, usize)> = None;
         let mut box_start: Option<(f64, f64, usize)> = None;
         let mut hover = true;
+        let mut cross = true;
+        // Left button state of the previous frame (press detection) and
+        // whether the current press clicked a legend row.
+        let mut was_down = false;
+        let mut clicked = false;
         let mut last_mouse = (f64::NAN, f64::NAN);
         let period = Duration::from_secs_f64(1.0 / fps.max(1) as f64);
         let mut last_update = Instant::now();
@@ -255,8 +270,26 @@ impl Figure {
                     }
                 }
             }
+            // Click on a legend row: hide or show the series.
+            let down = window.get_mouse_down(MouseButton::Left);
+            if down && !was_down {
+                if let Some(m) = mouse {
+                    if let Some((i, k)) = legend_at(&layouts, m) {
+                        if let Some(a) = self.cell_axes(i) {
+                            let on = !a.is_visible(k);
+                            a.set_visible(k, on);
+                            clicked = true;
+                            dirty = true;
+                        }
+                    }
+                }
+            }
+            if !down {
+                clicked = false;
+            }
+            was_down = down;
             // Left-drag pan.
-            if window.get_mouse_down(MouseButton::Left) {
+            if down && !clicked {
                 if let Some(m) = mouse {
                     match drag {
                         None => drag = in_axes(m, &layouts).map(|i| (m.0, m.1, i)),
@@ -329,6 +362,10 @@ impl Figure {
                 hover = !hover;
                 last_mouse = (f64::NAN, f64::NAN);
             }
+            if window.is_key_pressed(Key::C, KeyRepeat::No) {
+                cross = !cross;
+                last_mouse = (f64::NAN, f64::NAN);
+            }
             if window.is_key_pressed(Key::S, KeyRepeat::No) {
                 let name = format!("{}.png", sanitize(title));
                 message = Some((
@@ -346,7 +383,12 @@ impl Figure {
 
             if dirty {
                 layouts = self.frame(&mut base)?;
-                base.write_0rgb(&mut buffer);
+                base.write_0rgb(&mut plain);
+                under.clear();
+                under.extend(plain.iter().map(|&p| {
+                    // 0RGB → opaque RGBA bytes (overlays draw over these).
+                    u32::from_ne_bytes([(p >> 16) as u8, (p >> 8) as u8, p as u8, 255])
+                }));
                 dirty = false;
                 last_mouse = (f64::NAN, f64::NAN);
             }
@@ -367,7 +409,14 @@ impl Figure {
                         fill: Some(Color::rgba(30, 120, 220, 0.15)),
                         stroke: Some(Stroke::new(Color::rgb(30, 120, 220), 1.0)),
                     });
-                } else if hover && drag.is_none() {
+                }
+                let mut crossed = false;
+                if let (true, None, None, Some(m)) = (cross, drag, box_start, mouse) {
+                    if let (Some(i), None) = (in_axes(m, &layouts), legend_at(&layouts, m)) {
+                        crossed = self.crosshair(&layouts, i, m, hover, &mut nodes);
+                    }
+                }
+                if hover && !crossed && drag.is_none() && box_start.is_none() {
                     if let Some(m) = mouse {
                         if let Some(i) = in_axes(m, &layouts).or_else(|| {
                             layouts
@@ -416,15 +465,24 @@ impl Figure {
                         message = None;
                     }
                 }
+                buffer.clear();
                 if nodes.is_empty() {
-                    base.write_0rgb(&mut buffer);
+                    buffer.extend_from_slice(&plain);
                 } else {
+                    // Draw the overlay straight over a copy of the frame.
+                    buffer.extend_from_slice(&under);
                     let mut scene = Scene::new(w as f64, h as f64);
                     scene.background = None;
-                    scene.font_family = self.fonts().family.clone();
                     scene.nodes = nodes;
-                    let over = output::rasterize(&scene, &self.fonts(), 1.0)?;
-                    buffer = composite(&base, &over);
+                    let fonts = self.fonts();
+                    super::raster::draw_over(
+                        &scene,
+                        &fonts,
+                        as_bytes_mut(&mut buffer),
+                        w as u32,
+                        h as u32,
+                    );
+                    super::raster::premul_to_0rgb_in_place(&mut buffer, 1);
                 }
             }
             window
@@ -497,23 +555,189 @@ fn tooltip(nodes: &mut Vec<Node>, text: &str, at: (f64, f64), w: f64, h: f64) {
     }));
 }
 
-/// `over` (straight alpha) over `base`, as 0RGB.
-fn composite(base: &Pixels, over: &Pixels) -> Vec<u32> {
-    base.rgba
-        .as_chunks::<4>()
-        .0
-        .iter()
-        .zip(over.rgba.as_chunks::<4>().0)
-        .map(|(b, o)| {
-            let a = o[3] as u32;
-            let ba = b[3] as u32;
-            let c = |bv: u8, ov: u8| {
-                let bv = (bv as u32 * ba + 255 * (255 - ba)) / 255;
-                (ov as u32 * a + bv * (255 - a)) / 255
-            };
-            c(b[0], o[0]) << 16 | c(b[1], o[1]) << 8 | c(b[2], o[2])
-        })
-        .collect()
+/// The legend row under `m`: (plot, series index).
+fn legend_at(layouts: &[Layout], m: (f64, f64)) -> Option<(usize, usize)> {
+    layouts.iter().enumerate().find_map(|(i, l)| {
+        l.legend_items
+            .iter()
+            .find(|(r, _)| r.contains(m.0, m.1))
+            .map(|&(_, k)| (i, k))
+    })
+}
+
+/// The pixels as bytes (RGBA in memory order).
+fn as_bytes_mut(v: &mut [u32]) -> &mut [u8] {
+    // SAFETY: u8 has no alignment or validity requirements and the length
+    // covers exactly the same memory.
+    unsafe { std::slice::from_raw_parts_mut(v.as_mut_ptr().cast::<u8>(), v.len() * 4) }
+}
+
+/// Whether two plots show the same x range (linked cursor).
+fn same_x(a: &Layout, b: &Layout) -> bool {
+    let tol = (a.x.max - a.x.min).abs() * 1e-9;
+    (a.x.min - b.x.min).abs() <= tol && (a.x.max - b.x.max).abs() <= tol
+}
+
+const CROSS: Color = Color::rgba(90, 90, 90, 0.8);
+const LABEL_BG: Color = Color::rgba(50, 50, 55, 0.92);
+
+/// A value box on an axis edge.
+fn axis_box(nodes: &mut Vec<Node>, text: &str, x: f64, y: f64, anchor: Anchor) {
+    let size = 11.0;
+    let tw = text.chars().count() as f64 * size * 0.6 + 10.0;
+    let th = size + 8.0;
+    let left = match anchor {
+        Anchor::Start => x,
+        Anchor::Middle => x - tw / 2.0,
+        Anchor::End => x - tw,
+    };
+    nodes.push(Node::Rect {
+        x: left,
+        y: y - th / 2.0,
+        w: tw,
+        h: th,
+        rx: 2.0,
+        fill: Some(LABEL_BG),
+        stroke: None,
+    });
+    nodes.push(Node::Text(TextNode {
+        x: left + tw / 2.0,
+        y,
+        text: text.to_string(),
+        size,
+        color: Color::WHITE,
+        anchor: Anchor::Middle,
+        baseline: Baseline::Middle,
+        rotate: 0.0,
+        bold: false,
+    }));
+}
+
+impl Figure {
+    /// Crosshair in plot `i` at `m` and linked cursors in the plots with
+    /// the same x range.
+    fn crosshair(
+        &mut self,
+        layouts: &[Layout],
+        i: usize,
+        m: (f64, f64),
+        values: bool,
+        nodes: &mut Vec<Node>,
+    ) -> bool {
+        let Some(a) = self.cell_axes(i) else {
+            return false;
+        };
+        if a.kind != AxesKind::Cartesian {
+            return false;
+        }
+        let l = &layouts[i];
+        let p = l.plot;
+        let stroke = Stroke::new(CROSS, 1.0).dashed(vec![4.0, 3.0]);
+        let line = |x0: f64, y0: f64, x1: f64, y1: f64| Node::Path {
+            cmds: vec![PathCmd::MoveTo(x0, y0), PathCmd::LineTo(x1, y1)],
+            fill: None,
+            stroke: Some(stroke.clone()),
+        };
+        // Lines on pixel centres stay one pixel wide.
+        let (cx, cy) = (m.0.floor() + 0.5, m.1.floor() + 0.5);
+        nodes.push(line(cx, p.y, cx, p.bottom()));
+        nodes.push(line(p.x, cy, p.right(), cy));
+        let xv = l.x.value(m.0);
+        let xs = a.cursor_label(l, false, xv);
+        let ys = a.cursor_label(l, true, l.y.value(m.1));
+        axis_box(nodes, &xs, m.0, p.bottom() + 10.0, Anchor::Middle);
+        axis_box(nodes, &ys, p.x - 2.0, m.1, Anchor::End);
+        if let Some(y2) = &l.y2 {
+            let v = y2.value(m.1);
+            let s = super::series::short(v);
+            axis_box(nodes, &s, p.right() + 2.0, m.1, Anchor::Start);
+        }
+        if values {
+            let hits = a.hits_at_x(l, m.0, 30.0);
+            if !hits.is_empty() {
+                let text: Vec<&str> = hits.iter().map(|h| h.label.as_str()).collect();
+                let at = (m.0, (m.1 - 40.0).max(p.y + 4.0));
+                tooltip_lines(nodes, &text, at, p, &hits);
+            }
+        }
+        for (j, o) in layouts.iter().enumerate() {
+            if j == i || !same_x(l, o) {
+                continue;
+            }
+            let Some(b) = self.cell_axes(j) else { continue };
+            if b.kind != AxesKind::Cartesian {
+                continue;
+            }
+            let px = o.x.px(xv);
+            if !px.is_finite() || px < o.plot.x || px > o.plot.right() {
+                continue;
+            }
+            let x = px.floor() + 0.5;
+            nodes.push(line(x, o.plot.y, x, o.plot.bottom()));
+            if values {
+                let hits = b.hits_at_x(o, px, 30.0);
+                if !hits.is_empty() {
+                    let text: Vec<&str> = hits.iter().map(|h| h.label.as_str()).collect();
+                    tooltip_lines(nodes, &text, (px, o.plot.y + 4.0), o.plot, &hits);
+                }
+            }
+        }
+        true
+    }
+}
+
+/// A box with several lines of text next to `at`, kept inside `r`.
+/// `dots` are drawn at the data points the lines describe.
+fn tooltip_lines(
+    nodes: &mut Vec<Node>,
+    lines: &[&str],
+    at: (f64, f64),
+    r: Rect,
+    dots: &[super::series::Hit],
+) {
+    let size = 12.0;
+    let line_h = size + 4.0;
+    let tw = lines.iter().map(|t| t.chars().count()).max().unwrap_or(0) as f64 * size * 0.6 + 16.0;
+    let th = lines.len() as f64 * line_h + 8.0;
+    let x = if at.0 + 12.0 + tw <= r.right() {
+        at.0 + 12.0
+    } else {
+        (at.0 - 12.0 - tw).max(r.x)
+    };
+    let y = at.1.min(r.bottom() - th).max(r.y);
+    for d in dots {
+        if r.contains(d.px, d.py) {
+            nodes.push(Node::Circle {
+                cx: d.px,
+                cy: d.py,
+                r: 4.0,
+                fill: Some(Color::WHITE),
+                stroke: Some(Stroke::new(Color::rgb(30, 30, 30), 1.5)),
+            });
+        }
+    }
+    nodes.push(Node::Rect {
+        x,
+        y,
+        w: tw,
+        h: th,
+        rx: 4.0,
+        fill: Some(Color::rgba(255, 255, 255, 0.95)),
+        stroke: Some(Stroke::new(Color::rgb(120, 120, 120), 1.0)),
+    });
+    for (k, t) in lines.iter().enumerate() {
+        nodes.push(Node::Text(TextNode {
+            x: x + 8.0,
+            y: y + 4.0 + line_h * (k as f64 + 0.5),
+            text: t.to_string(),
+            size,
+            color: Color::rgb(20, 20, 20),
+            anchor: Anchor::Start,
+            baseline: Baseline::Middle,
+            rotate: 0.0,
+            bold: false,
+        }));
+    }
 }
 
 #[cfg(test)]
@@ -615,17 +839,78 @@ mod tests {
     }
 
     #[test]
-    fn composite_blends() {
-        let base = Pixels {
-            width: 1,
-            height: 1,
-            rgba: vec![0, 0, 0, 255],
-        };
-        let over = Pixels {
-            width: 1,
-            height: 1,
-            rgba: vec![255, 255, 255, 128],
-        };
-        assert_eq!(composite(&base, &over), vec![0x808080]);
+    fn overlay_draws_over_the_frame() {
+        // A black frame with a white half-transparent box drawn over it.
+        let mut buf = vec![u32::from_ne_bytes([0, 0, 0, 255]); 16];
+        let mut scene = Scene::new(4.0, 4.0);
+        scene.background = None;
+        scene.nodes.push(Node::Rect {
+            x: 0.0,
+            y: 0.0,
+            w: 4.0,
+            h: 4.0,
+            rx: 0.0,
+            fill: Some(Color::rgba(255, 255, 255, 0.5)),
+            stroke: None,
+        });
+        let fonts = Figure::new(4, 4).fonts();
+        crate::plot::raster::draw_over(&scene, &fonts, as_bytes_mut(&mut buf), 4, 4);
+        crate::plot::raster::premul_to_0rgb_in_place(&mut buf, 1);
+        assert!(
+            buf.iter().all(|&p| (0x7f7f7f..=0x818181).contains(&p)),
+            "{buf:x?}"
+        );
+    }
+
+    #[test]
+    fn legend_click_hides_a_series() {
+        let mut f = Figure::new(400, 300);
+        f.axes().line(vec![0.0, 1.0], vec![0.0, 1.0]).label("a");
+        f.axes().line(vec![0.0, 1.0], vec![5.0, 9.0]).label("b");
+        let (_, l) = f.scene_and_layouts();
+        assert_eq!(l[0].legend_items.len(), 2);
+        let (r, k) = l[0].legend_items[1];
+        assert_eq!(
+            legend_at(&l, (r.x + r.w / 2.0, r.y + r.h / 2.0)),
+            Some((0, k))
+        );
+        f.axes().set_visible(k, false);
+        let (_, l) = f.scene_and_layouts();
+        // The hidden series no longer sets the y range.
+        assert!(l[0].y.max < 5.0, "{}", l[0].y.max);
+        assert_eq!(l[0].legend_items.len(), 2);
+    }
+
+    #[test]
+    fn linked_cursor_finds_values_at_x() {
+        let mut f = Figure::new(400, 400);
+        f.grid(2, 1).share_x(true);
+        f.at(0, 0)
+            .line(vec![0.0, 1.0, 2.0], vec![1.0, 2.0, 3.0])
+            .label("a");
+        f.at(1, 0).bar(vec![0.0, 1.0, 2.0], vec![4.0, 5.0, 6.0]);
+        let (_, l) = f.scene_and_layouts();
+        assert!(same_x(&l[0], &l[1]));
+        let px = l[1].x.px(1.0);
+        let hits = f.cell_axes(1).unwrap().hits_at_x(&l[1], px, 30.0);
+        assert_eq!(hits.len(), 1);
+        assert!(hits[0].label.contains('5'), "{}", hits[0].label);
+        let mut nodes = Vec::new();
+        f.crosshair(
+            &l,
+            0,
+            (l[0].x.px(1.0), l[0].plot.y + 10.0),
+            true,
+            &mut nodes,
+        );
+        let texts: Vec<String> = nodes
+            .iter()
+            .filter_map(|n| match n {
+                Node::Text(t) => Some(t.text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(texts.iter().any(|t| t == "1.000"), "{texts:?}");
+        assert!(texts.iter().any(|t| t.contains('5')), "{texts:?}");
     }
 }
