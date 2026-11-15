@@ -264,7 +264,11 @@ fn plot_file(args: &Value) -> Result<Figure, String> {
                 "auto" if text_x && dates.is_none() => "bar",
                 "auto" => {
                     let xs = t.numbers(x);
-                    if dates.is_some() || xs.windows(2).all(|w| w[1] >= w[0] || w[0].is_nan() || w[1].is_nan()) {
+                    if dates.is_some()
+                        || xs
+                            .windows(2)
+                            .all(|w| w[1] >= w[0] || w[0].is_nan() || w[1].is_nan())
+                    {
                         "line"
                     } else {
                         "scatter"
