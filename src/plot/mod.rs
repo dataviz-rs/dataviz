@@ -21,6 +21,7 @@ pub mod a11y;
 pub mod anim;
 pub mod axes;
 pub mod axis;
+pub mod brush;
 pub mod color;
 pub mod data;
 pub mod facet;

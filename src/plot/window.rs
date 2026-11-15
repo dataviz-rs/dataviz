@@ -3,7 +3,8 @@
 //! Controls: mouse wheel zooms around the cursor, left-drag pans, right-drag
 //! zooms to a box, clicking a legend row hides or shows its series,
 //! Shift+drag measures (Δx, Δy and the change in percent), Ctrl+drag
-//! selects a box ([`Figure::selection`]), a range slider
+//! selects a box ([`Figure::selection`]; with [`Figure::link_brushing`]
+//! its rows are highlighted in every plot), a range slider
 //! ([`Axes::range_slider`](crate::plot::Axes::range_slider)) is dragged to
 //! pan and at its edges to zoom, `R` resets the view, `S` saves a PNG and
 //! Shift+S an SVG (and PDF) next to the program, Ctrl+C copies the plots to
@@ -318,6 +319,14 @@ impl Figure {
                             Instant::now(),
                         ));
                         self.selection = Some(sel);
+                        if self.brushing {
+                            let n = self.brush(i, sel.x, sel.y);
+                            message = Some((
+                                format!("{n} rows selected, highlighted in every plot"),
+                                Instant::now(),
+                            ));
+                            dirty = true;
+                        }
                     }
                 }
                 if let (Some((i, a, None)), Some(b)) = (measure, mouse) {
@@ -386,6 +395,7 @@ impl Figure {
                 }
                 views.clear();
                 self.selection = None;
+                self.brush = None;
                 measure = None;
                 self.restore(&original);
                 if live {

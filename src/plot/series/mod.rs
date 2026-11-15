@@ -500,6 +500,13 @@ pub trait Series: Any {
     fn data_points(&self, _max: usize) -> Vec<(f64, f64)> {
         Vec::new()
     }
+    /// Every data point in row order, gaps included (NaN), for linked
+    /// brushing ([`crate::plot::figure::Figure::link_brushing`]): row `i`
+    /// of series with the same number of rows is the same record.
+    /// Default: none (the series does not take part).
+    fn row_points(&self) -> Vec<(f64, f64)> {
+        Vec::new()
+    }
     /// Data range of a 3D series (None for 2D series).
     fn bounds3d(&self) -> Option<three_d::Bounds3> {
         None
@@ -528,6 +535,11 @@ pub(crate) fn spread_points(x: &[f64], y: &[f64], max: usize) -> Vec<(f64, f64)>
     }
     v.retain(|(a, b)| a.is_finite() && b.is_finite());
     v
+}
+
+/// Points `(x[i], y[i])` of the common length, non-finite values kept.
+pub(crate) fn row_pairs(x: &[f64], y: &[f64]) -> Vec<(f64, f64)> {
+    x.iter().zip(y).map(|(a, b)| (*a, *b)).collect()
 }
 
 /// Conversion of numeric types to `f64`.

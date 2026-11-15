@@ -55,7 +55,7 @@ memory of the Rust plotting libraries.**
   Renko), with themes, subplots, shared and broken axes.
 - **Interactive and live.** `fig.show()` opens a window with zoom, pan, a
   crosshair with axis values, hover readouts, legend toggling, a range
-  slider, measurement and selection; `fig.show_live()` streams data with
+  slider, measurement, selection and linked brushing across plots; `fig.show_live()` streams data with
   rolling windows and records it to CSV or a GIF.
 - **Every output.** PNG, SVG, PDF, JPEG, WebP, interactive HTML (one file,
   no internet needed: hover, zoom, pan, rotating 3D), animated GIF/PNG and MP4, the terminal, raw pixels

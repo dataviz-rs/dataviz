@@ -568,6 +568,10 @@ impl Series for Line {
         super::spread_points(&self.x, &self.y, max)
     }
 
+    fn row_points(&self) -> Vec<(f64, f64)> {
+        super::row_pairs(&self.x, &self.y)
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

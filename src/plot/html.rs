@@ -2,7 +2,8 @@
 //! external scripts) with the figure as SVG and a small script for hover
 //! readouts, a crosshair with axis values, hiding series from the legend,
 //! zoom (wheel; over an axis only that axis), pan (drag) and reset
-//! (double click) of 2D plots, and saving a PNG; 3D plots turn with the mouse (drag), zoom with the
+//! (double click) of 2D plots, linked brushing (Shift+drag, with
+//! [`Figure::link_brushing`]) and saving a PNG; 3D plots turn with the mouse (drag), zoom with the
 //! wheel and reset on double click. `fig.save("chart.html")` or
 //! [`Figure::to_html`].
 
@@ -14,6 +15,8 @@ use std::fmt::Write;
 
 /// Points per series kept for hover readouts.
 const HOVER_POINTS: usize = 2000;
+/// Largest series exported for linked brushing (all rows).
+const BRUSH_ROWS: usize = 50_000;
 
 fn json_str(s: &str) -> String {
     let mut o = String::with_capacity(s.len() + 2);
@@ -76,7 +79,20 @@ impl Figure {
             }
         }
         let title = self.title_text().unwrap_or_else(|| "Chart".into());
-        let meta = format!(r#"{{"plots":[{}]}}"#, plots.join(","));
+        let brush = match (&self.brush, self.brushing) {
+            (Some(b), true) => format!(
+                r#"{{"rows":{},"sel":[{}]}}"#,
+                b.rows,
+                b.selected
+                    .iter()
+                    .map(|i| i.to_string())
+                    .collect::<Vec<_>>()
+                    .join(",")
+            ),
+            (None, true) => "{}".into(),
+            _ => "null".into(),
+        };
+        let meta = format!(r#"{{"brush":{brush},"plots":[{}]}}"#, plots.join(","));
         let three = if plots.iter().any(|p| p.contains(r#""three":"#)) {
             format!("<script>{SCRIPT3D}</script>")
         } else {
@@ -111,6 +127,7 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
 
     fn plot_json(&mut self, i: usize, lay: &Layout) -> Option<String> {
         let theme = self.theme.clone();
+        let brushing = self.brushing;
         let ax = self.axes_at(i)?;
         if ax.kind == AxesKind::ThreeD {
             let clip = lay.clip3d.unwrap_or(lay.plot);
@@ -155,8 +172,23 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
                 labels.push_str(&json_str(&format!("{xl}\u{1f}{}", short(dy))));
             }
             let name = s.name().unwrap_or_else(|| format!("series {}", k + 1));
+            // All rows (pixels, null for gaps) for linked brushing.
+            let mut rows = String::new();
+            if brushing {
+                let rp = s.row_points();
+                if !rp.is_empty() && rp.len() <= BRUSH_ROWS {
+                    rows.push_str(r#","rows":["#);
+                    for (j, (dx, dy)) in rp.iter().enumerate() {
+                        if j > 0 {
+                            rows.push(',');
+                        }
+                        let _ = write!(rows, "{},{}", num(lay.x.px(*dx)), num(y.px(*dy)));
+                    }
+                    rows.push(']');
+                }
+            }
             series.push(format!(
-                r#"{{"id":"p{i}-s{k}","name":{},"xy":[{px}],"labels":[{labels}]}}"#,
+                r#"{{"id":"p{i}-s{k}","name":{},"xy":[{px}],"labels":[{labels}]{rows}}}"#,
                 json_str(&name)
             ));
         }
@@ -253,7 +285,7 @@ function ticks(a,len,gap){const n=Math.max(2,Math.abs(len)/gap),lo=Math.min(a.mi
 function px(a,v){return a.p0+(F(a,v)-F(a,a.min))/(F(a,a.max)-F(a,a.min))*(a.p1-a.p0);}
 function seg(d){const m=/M([-\d.e]+)[ ,]([-\d.e]+)L([-\d.e]+)[ ,]([-\d.e]+)/.exec(d||'');return m?m.slice(1).map(Number):null;}
 function redraw(P){const z=zoomed(P),[kx,tx]=aff(P.x0,P.x),[ky,ty]=aff(P.y0,P.y),mt='matrix('+kx+',0,0,'+ky+','+tx+','+ty+')';
- document.querySelectorAll('[id^="'+P.pid+'-s"]').forEach(g=>g.querySelectorAll('*').forEach(e=>{const t=e.tagName;if(t==='g'||t==='title')return;
+ document.querySelectorAll('[id^="'+P.pid+'-s"]').forEach(g=>g.querySelectorAll('*').forEach(e=>{const t=e.tagName;if(t==='g'||t==='title'||t==='defs'||e.closest('defs'))return;
   if(!e._o){e._o={};for(const k of['cx','cy','x','y','transform'])e._o[k]=e.getAttribute(k);}const o=e._o;
   const X=v=>kx*Number(v||0)+tx,Y=v=>ky*Number(v||0)+ty;
   if(t==='circle'||t==='ellipse'){e.setAttribute('cx',X(o.cx));e.setAttribute('cy',Y(o.cy));}
@@ -299,6 +331,30 @@ window.addEventListener('mousemove',ev=>{if(!drag)return;const m=pos(ev),d=[m[0]
 window.addEventListener('mouseup',()=>{if(drag&&drag.moved){svg.style.cursor='';const stop=e=>e.stopImmediatePropagation();
  svg.addEventListener('click',stop,{capture:true,once:true});setTimeout(()=>svg.removeEventListener('click',stop,{capture:true}),0);}drag=null;});
 function reset(P){P.x=Object.assign({},P.x0);P.y=Object.assign({},P.y0);redraw(P);}
+// ---- linked brushing: Shift+drag (or Ctrl+drag) selects rows, which are
+// highlighted in every plot; Shift+click clears ----
+const B=M.brush;
+function drawBrush(){if(!B)return;for(const P of M.plots){const id=P.pid+'-brush';const o=document.getElementById(id);if(o)o.remove();
+  if(!B.sel||!B.sel.length)continue;const host=(document.getElementById(P.series[0]?.id)||{}).parentNode;if(!host)continue;
+  const g=document.createElementNS(NS,'g');g.id=id;g.setAttribute('pointer-events','none');host.appendChild(g);
+  const kx=P.kx??1,tx=P.tx??0,ky=P.ky??1,ty=P.ty??0;
+  for(const s of P.series){if(!s.rows||s.rows.length!==2*B.rows||hidden.has(s.id))continue;
+   for(const i of B.sel){const x=s.rows[2*i],y=s.rows[2*i+1];if(x===null||y===null)continue;
+    el('circle',{cx:kx*x+tx,cy:ky*y+ty,r:5.5,fill:'rgba(255,152,0,.25)',stroke:'#ff9800','stroke-width':2},g);}}}}
+if(B){const r0=redraw;redraw=P=>{r0(P);drawBrush();};drawBrush();}
+let sel=null;
+svg.addEventListener('mousedown',ev=>{if(!B||ev.button||!(ev.shiftKey||ev.ctrlKey))return;const m=pos(ev),P=M.plots.find(p=>inside(p,m));if(!P)return;
+ ev.stopImmediatePropagation();ev.preventDefault();sel={P,a:m,b:m};},{capture:true});
+window.addEventListener('mousemove',ev=>{if(!sel)return;sel.b=pos(ev);ov.replaceChildren();const[a,b]=[sel.a,sel.b];
+ el('rect',{x:Math.min(a[0],b[0]),y:Math.min(a[1],b[1]),width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1]),fill:'rgba(255,152,0,.12)',stroke:'#ff9800','stroke-dasharray':'4 3'});});
+window.addEventListener('mouseup',()=>{if(!sel)return;const{P,a,b}=sel;sel=null;ov.replaceChildren();
+ if(Math.abs(a[0]-b[0])<3&&Math.abs(a[1]-b[1])<3){B.sel=[];drawBrush();return;}
+ const[x0,x1,y0,y1]=[Math.min(a[0],b[0]),Math.max(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[1],b[1])];
+ const kx=P.kx??1,tx=P.tx??0,ky=P.ky??1,ty=P.ty??0;let n=0,hit=null;
+ for(const s of P.series){if(!s.rows||hidden.has(s.id))continue;const k=s.rows.length/2;if(n&&k!==n)continue;if(!n){n=k;hit=new Uint8Array(n);}
+  for(let i=0;i<n;i++){const x=s.rows[2*i],y=s.rows[2*i+1];if(x===null||y===null)continue;const X=kx*x+tx,Y=ky*y+ty;if(X>=x0&&X<=x1&&Y>=y0&&Y<=y1)hit[i]=1;}}
+ B.rows=n;B.sel=[];if(hit)for(let i=0;i<n;i++)if(hit[i])B.sel.push(i);drawBrush();
+ const stop=e=>e.stopImmediatePropagation();svg.addEventListener('click',stop,{capture:true,once:true});setTimeout(()=>svg.removeEventListener('click',stop,{capture:true}),0);});
 svg.addEventListener('dblclick',ev=>{const m=pos(ev),P=M.plots.find(p=>inside(p,m));if(P&&zoomed(P)){ov.replaceChildren();reset(P);}});
 document.getElementById('dv-reset').addEventListener('click',()=>{for(const P of M.plots)if(zoomed(P))reset(P);});
 document.getElementById('dv-png').addEventListener('click',()=>{ov.replaceChildren();const vb=svg.viewBox.baseVal,s=2;const img=new Image();

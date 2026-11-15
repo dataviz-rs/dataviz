@@ -64,6 +64,10 @@ pub struct Figure {
     /// Pixel buffer reused between renders (real-time redraws).
     pub(crate) pixmap: Option<resvg::tiny_skia::Pixmap>,
     pub(crate) backend: Backend,
+    /// Linked brushing on ([`Figure::link_brushing`]).
+    pub(crate) brushing: bool,
+    /// Brushed rows.
+    pub(crate) brush: Option<super::brush::Brush>,
 }
 
 impl Drop for Figure {
@@ -96,6 +100,8 @@ impl Figure {
             home: None,
             pixmap: None,
             backend: Backend::Auto,
+            brushing: false,
+            brush: None,
         }
     }
 
@@ -417,6 +423,11 @@ impl Figure {
                 let mut nodes: Vec<Node> = Vec::new();
                 layouts.push(c.axes.render(r, &fig.theme, &fonts, &mut nodes));
                 prefix_ids(&mut nodes, i);
+                if let Some(b) = fig.brush_nodes(i, &layouts[i]) {
+                    let mut b = vec![b];
+                    prefix_ids(&mut b, i);
+                    nodes.extend(b);
+                }
                 scene.nodes.extend(nodes);
             }
             super::math::expand(&mut scene.nodes, &fonts);
@@ -515,7 +526,7 @@ fn prefix_ids(nodes: &mut [Node], i: usize) {
     for n in nodes {
         if let Node::Group { children, id, .. } = n {
             if let Some(s) = id.as_mut().filter(|s| {
-                s.starts_with('s') || matches!(s.as_str(), "grid" | "xt" | "yt" | "y2t")
+                s.starts_with('s') || matches!(s.as_str(), "grid" | "xt" | "yt" | "y2t" | "brush")
             }) {
                 *s = format!("p{i}-{s}");
             }

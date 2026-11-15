@@ -155,6 +155,10 @@ impl Series for Candles {
         super::spread_points(&self.x, &self.close, max)
     }
 
+    fn row_points(&self) -> Vec<(f64, f64)> {
+        super::row_pairs(&self.x, &self.close)
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

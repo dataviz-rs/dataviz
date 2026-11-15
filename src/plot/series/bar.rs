@@ -357,6 +357,17 @@ impl Series for Bars {
         super::spread_points(&x, &y, max)
     }
 
+    fn row_points(&self) -> Vec<(f64, f64)> {
+        if self.horizontal {
+            return Vec::new();
+        }
+        self.pos
+            .iter()
+            .zip(self.heights.iter().zip(&self.bottoms))
+            .map(|(p, (h, b))| (p + self.offset, h + b))
+            .collect()
+    }
+
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }

@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- Linked brushing (`Figure::link_brushing`, `brush`, `brush_rows`,
+  `brushed`, `clear_brush`): a box selected in one plot (Ctrl+drag in a
+  window, Shift+drag in HTML) highlights the same rows in every plot;
+  `Series::row_points` for custom series.
+- HTML output: zoom (wheel at the cursor, over an axis only that axis),
+  pan (drag) and reset (double click, Reset button) of 2D plots; ticks,
+  labels and grid are redrawn, markers keep their size.
+
 ## 0.16.0
 
 ### Added
