@@ -102,6 +102,27 @@ fn vs_shape(@builtin(vertex_index) vi: u32,
             @location(2) stroke: vec4<f32>,
             @location(3) clip: vec4<f32>,
             @location(4) kind: u32) -> ShapeOut {
+    var o: ShapeOut;
+    o.a = a;
+    o.fill = fill;
+    o.stroke = stroke;
+    o.clip = clip;
+    o.kind = kind;
+    if kind == 3u {
+        // Tube from a.xy to a.zw of radius stroke.x: a quad along it.
+        let d = a.zw - a.xy;
+        let len = length(d);
+        var u = vec2<f32>(1.0, 0.0);
+        if len > 1e-6 {
+            u = d / len;
+        }
+        let nrm = vec2<f32>(-u.y, u.x);
+        let e = stroke.x + 1.0;
+        let k = corner(vi, vec4<f32>(0.0, 0.0, 1.0, 1.0));
+        let q = a.xy + u * mix(-e, len + e, k.x) + nrm * mix(-e, e, k.y);
+        o.pos = ndc(q);
+        return o;
+    }
     var r: vec4<f32>;
     if kind == 0u {
         r = a + vec4<f32>(-1.0, -1.0, 1.0, 1.0);
@@ -112,13 +133,7 @@ fn vs_shape(@builtin(vertex_index) vi: u32,
     // Fragments outside the clip are never needed.
     r = vec4<f32>(max(r.xy, clip.xy - 1.0), min(r.zw, clip.zw + 1.0));
     r = vec4<f32>(r.xy, max(r.zw, r.xy));
-    var o: ShapeOut;
     o.pos = ndc(corner(vi, r));
-    o.a = a;
-    o.fill = fill;
-    o.stroke = stroke;
-    o.clip = clip;
-    o.kind = kind;
     return o;
 }
 
@@ -144,6 +159,34 @@ fn fs_shape(in: ShapeOut) -> @location(0) vec4<f32> {
         let h = max(dot(n, vec3<f32>(l.x, l.y, l.z + 1.0) * 0.5404), 0.0);
         let spec = pow(h, 20.0) * 0.75;
         let base = in.fill.rgb * (0.5 + 0.5 * pow(min(lam * 1.25, 1.0), 0.8));
+        let rgb = base + (vec3<f32>(1.0) - base) * spec;
+        let a = in.fill.a * cov;
+        c = vec4<f32>(rgb * a, a);
+    } else if in.kind == 3u {
+        // Lit tube with round ends (same model as the CPU rasterizer's
+        // `fill_tube`); `fill` is the straight base color.
+        let r = in.stroke.x;
+        let dd = in.a.zw - in.a.xy;
+        let len = length(dd);
+        var u = vec2<f32>(1.0, 0.0);
+        if len > 1e-6 {
+            u = dd / len;
+        }
+        let q = p - in.a.xy;
+        let along = dot(q, u);
+        let lat = q.y * u.x - q.x * u.y;
+        let o = max(max(-along, along - len), 0.0);
+        let d = sqrt(lat * lat + o * o);
+        let cov = clamp(r + 0.5 - d, 0.0, 1.0);
+        let t = clamp(lat / r, -1.0, 1.0);
+        let n = vec3<f32>(vec2<f32>(-u.y, u.x) * t, sqrt(max(1.0 - t * t, 0.0)));
+        let l = vec3<f32>(-0.4212, -0.5617, 0.7121);
+        let lam = max(dot(n, l), 0.0);
+        let h = max(dot(n, vec3<f32>(l.x, l.y, l.z + 1.0) * 0.5404), 0.0);
+        let spec = pow(h, 12.0) * 0.6;
+        let t2 = t * t;
+        let rim = 1.0 - 0.45 * t2 * t2 * t2;
+        let base = in.fill.rgb * (0.5 + 0.5 * pow(min(lam * 1.25, 1.0), 0.8)) * rim;
         let rgb = base + (vec3<f32>(1.0) - base) * spec;
         let a = in.fill.a * cov;
         c = vec4<f32>(rgb * a, a);

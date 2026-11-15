@@ -464,17 +464,23 @@ impl Figure {
         self.render_out(super::render::Out::Orgb(out))
     }
 
-    pub(crate) fn render_out(&mut self, out: super::render::Out<'_>) -> Result<(), Error> {
-        // On the GPU, 3D plots of opaque faces stay on the GPU between
-        // frames (only the camera is sent when the view turns).
+    /// The scene for raster output with the figure's back end: on the GPU,
+    /// 3D plots of opaque faces stay on the GPU between frames (only the
+    /// camera is sent when the view turns).
+    pub(crate) fn raster_scene(&mut self) -> (Scene, Vec<Layout>) {
         let gpu = cfg!(feature = "gpu") && matches!(self.backend, Backend::Gpu);
         for c in &mut self.cells {
             c.axes.gpu_mesh = gpu;
         }
-        let scene = self.to_scene();
+        let r = self.scene_and_layouts();
         for c in &mut self.cells {
             c.axes.gpu_mesh = false;
         }
+        r
+    }
+
+    pub(crate) fn render_out(&mut self, out: super::render::Out<'_>) -> Result<(), Error> {
+        let scene = self.raster_scene().0;
         let fonts = self.fonts();
         super::render::render_to(
             &scene,
@@ -488,6 +494,10 @@ impl Figure {
 
     /// Where raster output is computed (default [`Backend::Auto`]).
     pub fn backend(&mut self, backend: Backend) -> &mut Self {
+        #[cfg(feature = "gpu")]
+        if backend == Backend::Gpu {
+            super::gpu::warm_up();
+        }
         self.backend = backend;
         self
     }
@@ -501,7 +511,7 @@ impl Figure {
                 output::encode(&scene, &self.fonts(), format, self.scale)
             }
             Format::Png => {
-                let scene = self.to_scene();
+                let scene = self.raster_scene().0;
                 let fonts = self.fonts();
                 super::render::render(&scene, &fonts, self.scale, self.backend, &mut self.pixmap)?;
                 let pm = self

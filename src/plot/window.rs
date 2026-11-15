@@ -122,7 +122,7 @@ impl Figure {
     }
 
     fn frame(&mut self, px: &mut Pixels) -> Result<Vec<Layout>, Error> {
-        let (scene, layouts) = self.scene_and_layouts();
+        let (scene, layouts) = self.raster_scene();
         let mut pm = self.pixmap.take();
         let fonts = self.fonts();
         let r = super::render::render_to(

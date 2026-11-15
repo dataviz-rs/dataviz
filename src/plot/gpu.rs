@@ -16,7 +16,7 @@ use super::color::Color;
 use super::output::Error;
 use super::raster::{self, GlyphDraw, GlyphKey};
 use super::render::Out;
-use super::scene::{LineCap, Node, RasterImage, Scene, Stroke};
+use super::scene::{LineCap, Node, RasterImage, Scene, Segment, Stroke};
 use super::text::FontSet;
 use resvg::tiny_skia::{self as sk, Pixmap, Transform};
 use std::collections::HashMap;
@@ -161,6 +161,16 @@ pub(crate) fn available() -> bool {
     gpu().is_ok()
 }
 
+/// Starts opening the GPU on another thread (once): device creation takes
+/// a few hundred milliseconds, overlapped with building the figure.
+pub(crate) fn warm_up() {
+    if GPU.get().is_none() {
+        std::thread::spawn(|| {
+            let _ = gpu();
+        });
+    }
+}
+
 fn vertex_layout(
     stride: u64,
     attrs: &[wgpu::VertexAttribute],
@@ -179,12 +189,27 @@ fn vertex_layout(
 
 impl Gpu {
     fn new() -> Result<Gpu, String> {
-        let instance = wgpu::Instance::default();
-        let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::HighPerformance,
-            ..Default::default()
-        }))
-        .map_err(|e| e.to_string())?;
+        // Vulkan, Metal or DX12 first: opening OpenGL (EGL) as well costs
+        // ~80 ms of every program's first image; it is only the fallback.
+        // No validation layers in release builds (`WGPU_*` variables still
+        // override both).
+        let open = |backends: wgpu::Backends| {
+            let mut desc = wgpu::InstanceDescriptor::new_without_display_handle();
+            desc.backends = backends;
+            desc.flags = if cfg!(debug_assertions) {
+                wgpu::InstanceFlags::debugging()
+            } else {
+                wgpu::InstanceFlags::empty()
+            };
+            let instance = wgpu::Instance::new(desc.with_env());
+            block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::HighPerformance,
+                ..Default::default()
+            }))
+        };
+        let adapter = open(wgpu::Backends::PRIMARY)
+            .or_else(|_| open(wgpu::Backends::GL))
+            .map_err(|e| e.to_string())?;
         // A software rasterizer (llvmpipe, lavapipe, WARP) is slower than the
         // CPU backends; report no GPU instead.
         if adapter.get_info().device_type == wgpu::DeviceType::Cpu {
@@ -1022,6 +1047,29 @@ impl Builder<'_> {
             .push_shape([px, py, r as f32 * self.base.sx, 0.0], f, [0.0; 4], clip, 2);
     }
 
+    /// Lit tubes: one analytic shape (kind 3) per segment.
+    fn tube(&mut self, segs: &[Segment], width: f64, c: Color, clip: [f32; 4], alpha: f32) {
+        let a = c.a * alpha;
+        if a <= 0.0 {
+            return;
+        }
+        let f = [
+            c.r as f32 / 255.0,
+            c.g as f32 / 255.0,
+            c.b as f32 / 255.0,
+            a,
+        ];
+        let r = (width as f32 * self.base.sx / 2.0).max(0.15);
+        for &(p, q) in segs {
+            let (x0, y0) = self.dev(p.0, p.1);
+            let (x1, y1) = self.dev(q.0, q.1);
+            if [x0, y0, x1, y1].iter().all(|v| v.is_finite()) {
+                self.frame
+                    .push_shape([x0, y0, x1, y1], f, [r, 0.0, 0.0, 0.0], clip, 3);
+            }
+        }
+    }
+
     fn rect(&mut self, l: f32, t: f32, r: f32, b: f32, c: [f32; 4], clip: [f32; 4]) {
         if c[3] > 0.0 && r > l && b > t {
             self.frame.push_shape([l, t, r, b], c, [0.0; 4], clip, 0);
@@ -1241,11 +1289,7 @@ impl Builder<'_> {
                 smooth,
             } => self.image(*x, *y, *w, *h, image, *smooth, clip, alpha),
             Node::Sphere { cx, cy, r, color } => self.sphere(*cx, *cy, *r, *color, clip, alpha),
-            Node::Tube { segs, width, color } => {
-                for n in crate::plot::scene::tube_layers(segs, *width, *color) {
-                    self.node(&n, clip, alpha);
-                }
-            }
+            Node::Tube { segs, width, color } => self.tube(segs, *width, *color, clip, alpha),
             Node::Mesh3d(m) => {
                 let mut u = [0.0f32; 32];
                 u[..24].copy_from_slice(&m.view[..24]);
@@ -1992,6 +2036,37 @@ mod tests {
         fig.scale(2.0);
         let big_px = fig.to_pixels().unwrap();
         assert_eq!((big_px.width, big_px.height), (1280, 840));
+    }
+
+    /// Molecules (lit spheres and tubes) look the same on both back ends.
+    #[test]
+    fn molecule_matches_cpu() {
+        if !Backend::gpu_available() {
+            eprintln!("no GPU adapter: skipped");
+            return;
+        }
+        const PDB: &str = "\
+ATOM      1  N   ALA A   1      11.104   6.134  -6.504  1.00  0.00           N
+ATOM      2  CA  ALA A   1      11.639   6.071  -5.147  1.00  0.00           C
+ATOM      3  C   ALA A   1      13.149   5.856  -5.162  1.00  0.00           C
+ATOM      4  O   ALA A   1      13.691   5.111  -5.981  1.00  0.00           O
+ATOM      5  CB  ALA A   1      11.329   7.371  -4.393  1.00  0.00           C
+ATOM      6  N   GLY A   2      13.817   6.523  -4.236  1.00  0.00           N
+ATOM      7  CA  GLY A   2      15.264   6.410  -4.153  1.00  0.00           C
+END
+";
+        let mut fig = Figure::new(500, 400);
+        fig.axes().molecule(Molecule::from_pdb(PDB));
+        let cpu = fig
+            .backend(Backend::Cpu { threads: 1 })
+            .to_pixels()
+            .unwrap();
+        let gpu = fig.backend(Backend::Gpu).to_pixels().unwrap();
+        let (mean, big) = compare(&cpu.rgba, &gpu.rgba);
+        assert!(
+            mean < 1.0 && big < 0.003,
+            "mean {mean}, very different {big}"
+        );
     }
 
     /// Surfaces stay on the GPU as meshes: the image matches the CPU's,
