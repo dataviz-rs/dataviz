@@ -1,0 +1,10 @@
+{
+  "name": "dataviz",
+  "version": "0.1.0",
+  "description": "Charts for Claude: 120+ chart types (statistics, ML, finance, genomics, maps, 3D) from data, CSV/JSON files and PDB molecules, drawn by the dataviz Rust library and returned as images.",
+  "author": { "name": "Samet Eraslan", "url": "https://github.com/dataviz-rs" },
+  "homepage": "https://github.com/dataviz-rs/dataviz/tree/main/claude-plugin",
+  "repository": "https://github.com/dataviz-rs/dataviz",
+  "license": "MIT",
+  "keywords": ["charts", "plotting", "visualization", "mcp", "data", "bioinformatics", "trading"]
+}

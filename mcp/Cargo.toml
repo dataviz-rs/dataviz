@@ -1,0 +1,21 @@
+[package]
+name = "dataviz-mcp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+authors = ["Samet Eraslan <absameteraslan@gmail.com>"]
+description = "MCP server that gives AI assistants (Claude Code, Claude Desktop, any MCP client) fast charts: 120+ chart types from data, CSV/JSON files and PDB molecules, returned as images, built on dataviz."
+license = "MIT"
+repository = "https://github.com/dataviz-rs/dataviz"
+homepage = "https://github.com/dataviz-rs/dataviz/tree/main/mcp"
+keywords = ["mcp", "plotting", "chart", "claude", "visualization"]
+categories = ["visualization", "command-line-utilities", "science"]
+readme = "README.md"
+
+[[bin]]
+name = "dataviz-mcp"
+path = "src/main.rs"
+
+[dependencies]
+dataviz = { version = "0.16", path = "..", default-features = false, features = ["pdf"] }
+serde_json = "1"

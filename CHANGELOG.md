@@ -83,6 +83,13 @@
   the Cα geometry), `Molecule::phi_psi`; `Axes::isosurface` /
   `isosurface_fn` (marching tetrahedra, shared vertices, outward faces;
   `isosurface_mesh`); `Scene3d::tube_line`, `arrow`.
+- **Claude Code plugin and MCP server**: `dataviz-mcp` (crate in `mcp/`)
+  serves the tools `plot` (40 panel types from a JSON spec), `plot_file`
+  (CSV/TSV/JSON), `molecule` (PDB id, file or text) and `chart_types`,
+  returning PNG images and text summaries; `claude-plugin/` packages it with
+  skills (`charts`, `/dataviz:plot`, `/dataviz:molecule`) and a launcher
+  that installs the server on first use; the repository is a plugin
+  marketplace (`/plugin marketplace add dataviz-rs/dataviz`).
 - `Annotate::background`: a box behind text annotations (readable over
   dense data).
 - `Figure::resize(width, height)` (figures embedded in resizable panels).

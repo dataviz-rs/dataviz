@@ -36,6 +36,11 @@ jobs:
       - name: Headless build (no default features)
         run: cargo build --no-default-features
 
+      - name: MCP server (clippy, tests)
+        run: |
+          cargo clippy -p dataviz-mcp --all-targets -- -D warnings
+          cargo test -p dataviz-mcp
+
       - name: Docs
         run: cargo doc --no-deps --all-features
         env:

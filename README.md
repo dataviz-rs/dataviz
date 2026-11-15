@@ -483,6 +483,22 @@ Every image links to its example in
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_minimal.png" alt="Theme: minimal" width="100%"><br><sub>Theme: minimal</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_publication.png" alt="Theme: publication" width="100%"><br><sub>Theme: publication</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_solarized.png" alt="Theme: solarized" width="100%"><br><sub>Theme: solarized</sub></a></td></tr>
 </table>
 
+## Use it from Claude
+
+The [Claude Code plugin](claude-plugin) gives Claude all of these charts:
+it draws from your data, CSV/JSON files and PDB structures, looks at the
+image and refines it.
+
+```text
+/plugin marketplace add dataviz-rs/dataviz
+/plugin install dataviz@dataviz
+```
+
+Then ask: *"plot `bench.csv` and compare the branches"*, *"show 1UBQ as a
+cartoon with its Ramachandran plot"*, or use `/dataviz:plot` and
+`/dataviz:molecule`. Other MCP clients use the server directly:
+`cargo install dataviz-mcp` ([dataviz-mcp](mcp)).
+
 ## Installation
 
 ```toml

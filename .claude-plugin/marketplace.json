@@ -1,0 +1,14 @@
+{
+  "name": "dataviz",
+  "owner": { "name": "dataviz-rs", "url": "https://github.com/dataviz-rs" },
+  "description": "Fast charts for Claude: 120+ chart types, CSV/JSON files and 3D molecules, drawn by dataviz (Rust) and returned as images.",
+  "plugins": [
+    {
+      "name": "dataviz",
+      "source": "./claude-plugin",
+      "description": "Charts from data, files and PDB structures, returned as images Claude can look at and refine.",
+      "category": "data",
+      "tags": ["charts", "plotting", "visualization", "data-science", "bioinformatics", "finance", "mcp"]
+    }
+  ]
+}

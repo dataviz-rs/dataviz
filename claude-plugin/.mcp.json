@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "dataviz": {
+      "command": "${CLAUDE_PLUGIN_ROOT}/bin/dataviz-mcp-launcher",
+      "args": [],
+      "env": {
+        "DATAVIZ_MCP_HOME": "${CLAUDE_PLUGIN_DATA}"
+      }
+    }
+  }
+}

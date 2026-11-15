@@ -338,6 +338,22 @@ Every image links to its example in
 
 {{GALLERY}}
 
+## Use it from Claude
+
+The [Claude Code plugin](claude-plugin) gives Claude all of these charts:
+it draws from your data, CSV/JSON files and PDB structures, looks at the
+image and refines it.
+
+```text
+/plugin marketplace add dataviz-rs/dataviz
+/plugin install dataviz@dataviz
+```
+
+Then ask: *"plot `bench.csv` and compare the branches"*, *"show 1UBQ as a
+cartoon with its Ramachandran plot"*, or use `/dataviz:plot` and
+`/dataviz:molecule`. Other MCP clients use the server directly:
+`cargo install dataviz-mcp` ([dataviz-mcp](mcp)).
+
 ## Installation
 
 ```toml

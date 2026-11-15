@@ -1,0 +1,52 @@
+#!/bin/sh
+# Starts the dataviz MCP server, installing it on first use:
+#   1. $DATAVIZ_MCP_BIN, if set;
+#   2. the copy installed earlier in the plugin's data directory;
+#   3. `dataviz-mcp` on PATH (e.g. from `cargo install dataviz-mcp`);
+#   4. a prebuilt binary from the GitHub release (needs curl and tar);
+#   5. `cargo install dataviz-mcp` (needs Rust).
+# Messages go to stderr: stdout belongs to the MCP protocol.
+set -eu
+VERSION="0.1.0"
+REPO="dataviz-rs/dataviz"
+HOME_DIR="${DATAVIZ_MCP_HOME:-${XDG_CACHE_HOME:-$HOME/.cache}/dataviz-mcp}"
+[ -n "$HOME_DIR" ] || HOME_DIR="$HOME/.cache/dataviz-mcp"
+BIN="$HOME_DIR/bin/dataviz-mcp"
+
+log() { echo "dataviz-mcp: $*" >&2; }
+
+if [ -n "${DATAVIZ_MCP_BIN:-}" ]; then exec "$DATAVIZ_MCP_BIN" "$@"; fi
+
+current() { [ -x "$BIN" ] && "$BIN" --version 2>/dev/null | grep -q " $VERSION\$"; }
+if current; then exec "$BIN" "$@"; fi
+
+if command -v dataviz-mcp >/dev/null 2>&1; then exec dataviz-mcp "$@"; fi
+
+mkdir -p "$HOME_DIR/bin"
+
+target=""
+case "$(uname -s)-$(uname -m)" in
+  Linux-x86_64) target="x86_64-unknown-linux-gnu" ;;
+  Linux-aarch64|Linux-arm64) target="aarch64-unknown-linux-gnu" ;;
+  Darwin-x86_64) target="x86_64-apple-darwin" ;;
+  Darwin-arm64) target="aarch64-apple-darwin" ;;
+esac
+if [ -n "$target" ] && command -v curl >/dev/null 2>&1 && command -v tar >/dev/null 2>&1; then
+  url="https://github.com/$REPO/releases/download/mcp-v$VERSION/dataviz-mcp-$target.tar.gz"
+  log "downloading $url"
+  tmp="$(mktemp -d)"
+  if curl -fsSL --max-time 120 "$url" -o "$tmp/d.tar.gz" && tar -xzf "$tmp/d.tar.gz" -C "$tmp"; then
+    mv "$tmp/dataviz-mcp" "$BIN" && chmod +x "$BIN"
+  fi
+  rm -rf "$tmp"
+  if current; then exec "$BIN" "$@"; fi
+fi
+
+if command -v cargo >/dev/null 2>&1; then
+  log "building dataviz-mcp $VERSION with cargo (first start only, a minute or two)"
+  cargo install --quiet --locked --root "$HOME_DIR" dataviz-mcp --version "$VERSION" >&2
+  if current; then exec "$BIN" "$@"; fi
+fi
+
+log "could not install the server. Install it with \`cargo install dataviz-mcp\` (https://rustup.rs for Rust) or download it from https://github.com/$REPO/releases, then restart Claude Code."
+exit 1

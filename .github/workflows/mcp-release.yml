@@ -1,0 +1,59 @@
+name: dataviz-mcp release
+# Push a tag `mcp-vX.Y.Z` to build the MCP server for the Claude plugin's
+# launcher (claude-plugin/bin/dataviz-mcp-launcher) and attach it to the
+# GitHub release of that tag.
+on:
+  push:
+    tags: ["mcp-v*"]
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release view "$GITHUB_REF_NAME" || gh release create "$GITHUB_REF_NAME" --title "dataviz-mcp ${GITHUB_REF_NAME#mcp-v}" --notes "MCP server of the dataviz Claude plugin. Install the plugin with \`/plugin marketplace add dataviz-rs/dataviz\` and \`/plugin install dataviz@dataviz\`, or the server with \`cargo install dataviz-mcp\`."
+
+  build:
+    needs: release
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu }
+          - { os: macos-13, target: x86_64-apple-darwin }
+          - { os: macos-14, target: aarch64-apple-darwin }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p dataviz-mcp --target ${{ matrix.target }}
+      - name: Package and upload
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd target/${{ matrix.target }}/release
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            7z a "dataviz-mcp-${{ matrix.target }}.zip" dataviz-mcp.exe
+            asset="dataviz-mcp-${{ matrix.target }}.zip"
+          else
+            strip dataviz-mcp || true
+            tar -czf "dataviz-mcp-${{ matrix.target }}.tar.gz" dataviz-mcp
+            asset="dataviz-mcp-${{ matrix.target }}.tar.gz"
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$asset" --clobber

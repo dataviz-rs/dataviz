@@ -11,6 +11,8 @@ documentation = "https://docs.rs/dataviz"
 keywords = ["plotting", "chart", "visualization", "plot", "graph"]
 categories = ["visualization", "graphics", "science", "gui", "wasm"]
 readme = "./README.md"
+# The MCP server and the Claude plugin are published on their own.
+exclude = ["mcp/", "claude-plugin/", ".claude-plugin/", "cikti/", "TODO.md"]
 
 [dependencies]
 ab_glyph = "0.2.32"
@@ -42,3 +44,6 @@ required-features = ["window"]
 [dev-dependencies]
 # GIF decoding in the animation tests.
 image = { version = "0.25.6", default-features = false, features = ["png", "gif"] }
+
+[workspace]
+members = [".", "mcp"]
