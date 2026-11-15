@@ -58,7 +58,7 @@ memory of the Rust plotting libraries.**
   slider, measurement and selection; `fig.show_live()` streams data with
   rolling windows and records it to CSV or a GIF.
 - **Every output.** PNG, SVG, PDF, JPEG, WebP, interactive HTML (one file,
-  no internet needed), animated GIF/PNG and MP4, the terminal, raw pixels
+  no internet needed: hover, zoom, pan, rotating 3D), animated GIF/PNG and MP4, the terminal, raw pixels
   for your own GUI, and the browser via WebAssembly.
 - **Text done right.** TeX math (`$\sigma^2 = \frac{1}{N}\sum x_i^2$`) in
   every label, any language (CJK, Arabic and Hebrew right to left, Hindi,

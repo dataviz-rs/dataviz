@@ -509,11 +509,14 @@ impl Figure {
     }
 }
 
-/// Series group ids `s<k>` of plot `i` become `p<i>-s<k>`.
+/// Group ids of plot `i` (series `s<k>`, `grid`, ticks `xt`, `yt`,
+/// `y2t`) become `p<i>-<id>`.
 fn prefix_ids(nodes: &mut [Node], i: usize) {
     for n in nodes {
         if let Node::Group { children, id, .. } = n {
-            if let Some(s) = id.as_mut().filter(|s| s.starts_with('s')) {
+            if let Some(s) = id.as_mut().filter(|s| {
+                s.starts_with('s') || matches!(s.as_str(), "grid" | "xt" | "yt" | "y2t")
+            }) {
                 *s = format!("p{i}-{s}");
             }
             prefix_ids(children, i);

@@ -1090,7 +1090,9 @@ impl Axes {
                 fill: Some(theme.plot_background),
                 stroke: None,
             });
+            let g0 = out.len();
             self.draw_grid(&lay, theme, out);
+            group_tail(out, g0, "grid");
         } else if self.kind == AxesKind::Polar {
             self.polar.draw_frame(self, &lay, theme, fonts, out, true);
         }
@@ -1434,7 +1436,8 @@ impl Axes {
         let ts = theme.tick_size;
         let gap = tl.max(0.0) + 4.0;
 
-        // x ticks
+        // x ticks (grouped: interactive output redraws them when zoomed)
+        let x0 = out.len();
         if self.x.visible {
             let (xt, xm) = Self::tick_list(&self.x, lay.x.min, lay.x.max, p.w, 90.0);
             for v in xm {
@@ -1491,6 +1494,7 @@ impl Axes {
                 }
             }
         }
+        group_tail(out, x0, "xt");
         // y ticks
         let y_axis = |axis_cfg: &Axis, map: &AxisMap, right: bool, out: &mut Vec<Node>| {
             if !axis_cfg.visible {
@@ -1537,9 +1541,16 @@ impl Axes {
             }
             maxw
         };
+        let y0 = out.len();
         let yw = y_axis(&self.y, &lay.y, false, out);
+        group_tail(out, y0, "yt");
         let y2w = match &lay.y2 {
-            Some(m) => y_axis(&self.y2, m, true, out),
+            Some(m) => {
+                let y0 = out.len();
+                let w = y_axis(&self.y2, m, true, out);
+                group_tail(out, y0, "y2t");
+                w
+            }
             None => 0.0,
         };
 
@@ -1839,4 +1850,19 @@ fn best_corner(p: Rect, w: f64, h: f64, m: f64, pts: &[(f64, f64)]) -> (f64, f64
                 .count()
         })
         .unwrap_or(candidates[0])
+}
+
+/// Moves the nodes pushed since `from` into one group with `id` (named
+/// parts of a plot for interactive output); nothing when none were pushed.
+fn group_tail(out: &mut Vec<Node>, from: usize, id: &str) {
+    if out.len() > from {
+        let children = out.split_off(from);
+        out.push(Node::Group {
+            children,
+            clip: None,
+            opacity: 1.0,
+            tooltip: None,
+            id: Some(id.into()),
+        });
+    }
 }

@@ -1,7 +1,8 @@
 //! Interactive HTML output: one self-contained file (no network access, no
 //! external scripts) with the figure as SVG and a small script for hover
-//! readouts, a crosshair with axis values, hiding series from the legend
-//! and saving a PNG; 3D plots turn with the mouse (drag), zoom with the
+//! readouts, a crosshair with axis values, hiding series from the legend,
+//! zoom (wheel; over an axis only that axis), pan (drag) and reset
+//! (double click) of 2D plots, and saving a PNG; 3D plots turn with the mouse (drag), zoom with the
 //! wheel and reset on double click. `fig.save("chart.html")` or
 //! [`Figure::to_html`].
 
@@ -95,7 +96,7 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
 #dv:hover .bar{{opacity:1}}
 #dv button{{font:12px system-ui,sans-serif;padding:3px 8px;border:1px solid #bbb;border-radius:4px;background:#fff;cursor:pointer}}
 </style></head><body>
-<div id="dv"><div class="bar"><button id="dv-png" title="Save as PNG">PNG</button></div>
+<div id="dv"><div class="bar"><button id="dv-reset" title="Reset zoom (or double click)" style="display:none">Reset</button> <button id="dv-png" title="Save as PNG">PNG</button></div>
 {svg}</div>
 <script type="application/json" id="dv-meta">{meta}</script>
 <script>{SCRIPT}</script>
@@ -173,7 +174,8 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
             })
             .collect();
         Some(format!(
-            r#"{{"rect":[{},{},{},{}],"x":{},"y":{},"series":[{}],"legend":[{}]}}"#,
+            r#"{{"pid":"p{i}","y2":{},"rect":[{},{},{},{}],"x":{},"y":{},"series":[{}],"legend":[{}]}}"#,
+            lay.y2.is_some(),
             num(p.x),
             num(p.y),
             num(p.w),
@@ -221,14 +223,84 @@ svg.addEventListener('mousemove',ev=>{ov.replaceChildren();const m=pos(ev);const
   el('line',Object.assign({x1:qx,x2:qx,y1:S[1],y2:S[1]+S[3]},dash));readout(Q,qx,S[1]+4,false);}
 });
 function readout(P,x,y,dots){const lines=[];let head=null;
- for(const s of P.series){if(hidden.has(s.id))continue;let best=-1,bd=1e9;for(let i=0;i<s.xy.length;i+=2){const d=Math.abs(s.xy[i]-x);if(d<bd){bd=d;best=i;}}
+ const kx=P.kx??1,tx=P.tx??0,ky=P.ky??1,ty=P.ty??0,R=P.rect;
+ for(const s of P.series){if(hidden.has(s.id))continue;let best=-1,bd=1e9;for(let i=0;i<s.xy.length;i+=2){const qx=kx*s.xy[i]+tx;if(qx<R[0]-1||qx>R[0]+R[2]+1)continue;const d=Math.abs(qx-x);if(d<bd){bd=d;best=i;}}
   if(best<0||bd>30)continue;const [xl,yl]=s.labels[best/2].split('\u001f');if(head===null)head=xl;lines.push(s.name+': '+yl);
-  el('circle',{cx:s.xy[best],cy:s.xy[best+1],r:4,fill:'#fff',stroke:'#1e1e1e','stroke-width':1.5});}
+  el('circle',{cx:kx*s.xy[best]+tx,cy:ky*s.xy[best+1]+ty,r:4,fill:'#fff',stroke:'#1e1e1e','stroke-width':1.5});}
  if(lines.length)tip(x,y,dots?[head].concat(lines):lines,P.rect);}
 svg.addEventListener('mouseleave',()=>ov.replaceChildren());
 svg.addEventListener('click',ev=>{const m=pos(ev);for(const P of M.plots)for(const L of P.legend){const r=L.r;if(m[0]>=r[0]&&m[0]<=r[0]+r[2]&&m[1]>=r[1]&&m[1]<=r[1]+r[3]){
   const g=document.getElementById(L.id);const off=!hidden.has(L.id);if(off)hidden.add(L.id);else hidden.delete(L.id);if(g)g.style.display=off?'none':'';
   const k='dim-'+L.id;const old=document.getElementById(k);if(old)old.remove();if(off)el('rect',{id:k,x:r[0],y:r[1],width:r[2],height:r[3],fill:'rgba(255,255,255,.65)'},dims);return;}}});
+// ---- zoom and pan: wheel zooms at the cursor (over an axis: that axis
+// only), drag pans, double click resets; ticks and grid are redrawn ----
+const lg=v=>Math.log10(v),F=(a,v)=>a.scale==='log'?lg(v):v,Fi=(a,v)=>a.scale==='log'?Math.pow(10,v):v;
+for(const P of M.plots){P.x0=Object.assign({},P.x);P.y0=Object.assign({},P.y);}
+function aff(a0,a){const d=F(a,a.max)-F(a,a.min),k=(F(a0,a0.max)-F(a0,a0.min))/d;return[k,a.p0+(F(a0,a0.min)-F(a,a.min))*(a.p1-a.p0)/d-a.p0*k];}
+function zoomed(P){return P.x.min!==P.x0.min||P.x.max!==P.x0.max||P.y.min!==P.y0.min||P.y.max!==P.y0.max;}
+function nice(r){const e=Math.pow(10,Math.floor(Math.log10(r))),f=r/e;return(f<1.5?1:f<2.25?2:f<3.5?2.5:f<7.5?5:10)*e;}
+const TS=[1,2,5,10,15,30,60,120,300,600,900,1800,3600,7200,10800,21600,43200,86400,172800,604800,2629800,7889400,31557600];
+function ticks(a,len,gap){const n=Math.max(2,Math.abs(len)/gap),lo=Math.min(a.min,a.max),hi=Math.max(a.min,a.max),out=[];
+ if(a.scale==='log'){const l0=Math.floor(lg(lo)),l1=Math.ceil(lg(hi));const st=Math.max(1,Math.ceil((l1-l0)/n));
+  if(l1-l0>=2){for(let e=l0;e<=l1;e+=st){const v=Math.pow(10,e);if(v>=lo&&v<=hi)out.push([v,Math.abs(e)>3?'1e'+e:String(v)]);}return out;}
+  for(let e=l0;e<=l1;e++)for(const m of[1,2,5]){const v=m*Math.pow(10,e);if(v>=lo&&v<=hi)out.push([v,v.toPrecision(1).replace(/\.?0+e/,'e')]);}return out;}
+ let step;if(a.scale==='time'){const r=(hi-lo)/n;step=TS.find(t=>t>=r)||nice(r/31557600)*31557600;}else step=nice((hi-lo)/n);
+ if(a.scale==='cat')step=Math.max(1,Math.round(step));
+ const dig=Math.max(0,-Math.floor(Math.log10(step)+1e-9))+(Math.abs(step/Math.pow(10,Math.floor(Math.log10(step)))-2.5)<1e-6?1:0);
+ for(let v=Math.ceil(lo/step-1e-9)*step;v<=hi+step*1e-9;v+=step){const w=Math.abs(v)<step*1e-9?0:v;
+  out.push([w,a.scale==='cat'?(a.cats[Math.round(w)]??''):a.scale==='time'?fmt(a,w):w.toFixed(Math.min(12,dig))]);}
+ return out;}
+function px(a,v){return a.p0+(F(a,v)-F(a,a.min))/(F(a,a.max)-F(a,a.min))*(a.p1-a.p0);}
+function seg(d){const m=/M([-\d.e]+)[ ,]([-\d.e]+)L([-\d.e]+)[ ,]([-\d.e]+)/.exec(d||'');return m?m.slice(1).map(Number):null;}
+function redraw(P){const z=zoomed(P),[kx,tx]=aff(P.x0,P.x),[ky,ty]=aff(P.y0,P.y),mt='matrix('+kx+',0,0,'+ky+','+tx+','+ty+')';
+ document.querySelectorAll('[id^="'+P.pid+'-s"]').forEach(g=>g.querySelectorAll('*').forEach(e=>{const t=e.tagName;if(t==='g'||t==='title')return;
+  if(!e._o){e._o={};for(const k of['cx','cy','x','y','transform'])e._o[k]=e.getAttribute(k);}const o=e._o;
+  const X=v=>kx*Number(v||0)+tx,Y=v=>ky*Number(v||0)+ty;
+  if(t==='circle'||t==='ellipse'){e.setAttribute('cx',X(o.cx));e.setAttribute('cy',Y(o.cy));}
+  else if(t==='use'||(t==='text'&&!o.transform)){e.setAttribute('x',X(o.x));e.setAttribute('y',Y(o.y));}
+  else{if(z){e.setAttribute('transform',mt+(o.transform?' '+o.transform:''));e.setAttribute('vector-effect','non-scaling-stroke');}
+   else{o.transform?e.setAttribute('transform',o.transform):e.removeAttribute('transform');e.removeAttribute('vector-effect');}}}));
+ P.kx=kx;P.tx=tx;P.ky=ky;P.ty=ty;
+ const old=document.getElementById(P.pid+'-zoom');if(old)old.remove();const old2=document.getElementById(P.pid+'-zgrid');if(old2)old2.remove();
+ const show=(id,on)=>{const g=document.getElementById(P.pid+'-'+id);if(g)g.style.display=on?'':'none';return g;};
+ const grid=show('grid',!z),xt=show('xt',!z),yt=show('yt',!z||P.y2);
+ document.getElementById('dv-reset').style.display=M.plots.some(zoomed)?'':'none';
+ if(!z)return;
+ const R=P.rect,zg=document.createElementNS(NS,'g'),gg=document.createElementNS(NS,'g');zg.id=P.pid+'-zoom';gg.id=P.pid+'-zgrid';
+ (xt||yt||svg).parentNode.appendChild(zg);if(grid)grid.after(gg);
+ const xs=ticks(P.x,P.x.p1-P.x.p0,90),ys=P.y2?[]:ticks(P.y,P.y.p1-P.y.p0,48);
+ if(grid){const paths=[...grid.querySelectorAll('path')],gx=paths.find(p=>{const s=seg(p.getAttribute('d'));return s&&s[0]===s[2];}),gy=paths.find(p=>{const s=seg(p.getAttribute('d'));return s&&s[1]===s[3];});
+  if(gx)for(const[v]of xs){const x=px(P.x,v);const c=gx.cloneNode();c.setAttribute('d','M'+x+' '+R[1]+'L'+x+' '+(R[1]+R[3]));gg.appendChild(c);}
+  if(gy)for(const[v]of ys){const y=px(P.y,v);const c=gy.cloneNode();c.setAttribute('d','M'+R[0]+' '+y+'L'+(R[0]+R[2])+' '+y);gg.appendChild(c);}}
+ const axis=(g,list,a,vert)=>{if(!g||g.style.display!=='none')return;const tl=[...g.querySelectorAll('path')].map(p=>[p,seg(p.getAttribute('d'))]).filter(q=>q[1]),
+  mark=tl.find(q=>vert?q[1][1]===q[1][3]:q[1][0]===q[1][2]),lab=g.querySelector('text');if(!lab&&!mark)return;
+  let off=0;if(lab&&mark&&vert){let best=1e9;for(const q of tl){const d=Number(lab.getAttribute('y'))-q[1][1];if(Math.abs(d)<Math.abs(best))best=d;}off=best;}
+  let last=-1e9;
+  for(const[v,s]of list){const p=px(a,v);if(!(p>=(vert?R[1]:R[0])-0.5&&p<=(vert?R[1]+R[3]:R[0]+R[2])+0.5))continue;
+   if(mark){const c=mark[0].cloneNode(),m=mark[1];c.setAttribute('d',vert?'M'+m[0]+' '+p+'L'+m[2]+' '+p:'M'+p+' '+m[1]+'L'+p+' '+m[3]);zg.appendChild(c);}
+   if(lab){const c=lab.cloneNode();c.textContent=s;zg.appendChild(c);
+    if(vert)c.setAttribute('y',p+off);else{c.removeAttribute('transform');c.setAttribute('x',p);c.setAttribute('text-anchor','middle');
+     const w=c.getComputedTextLength();if(p-w/2<last+4){c.remove();continue;}last=p+w/2;}}}};
+ axis(xt,xs,P.x,false);axis(yt,ys,P.y,true);}
+function zoomAt(P,m,f,ax,ay){for(const[a,on,c]of[[P.x,ax,m[0]],[P.y,ay&&!P.y2,m[1]]]){if(!on)continue;
+  const v=F(a,value(a,c)),lo=F(a,a.min),hi=F(a,a.max);let n0=v-(v-lo)*f,n1=v+(hi-v)*f;
+  if(Math.abs(n1-n0)<Math.abs(hi-lo)*1e-6&&f<1)continue;a.min=Fi(a,n0);a.max=Fi(a,n1);}redraw(P);}
+svg.addEventListener('wheel',ev=>{const m=pos(ev);for(const P of M.plots){const R=P.rect;
+  const inX=m[0]>=R[0]&&m[0]<=R[0]+R[2],inY=m[1]>=R[1]&&m[1]<=R[1]+R[3];
+  const below=inX&&m[1]>R[1]+R[3]&&m[1]<R[1]+R[3]+40,left=inY&&m[0]<R[0]&&m[0]>R[0]-70;
+  if(!(inX&&inY)&&!below&&!left)continue;ev.preventDefault();ov.replaceChildren();
+  zoomAt(P,m,Math.exp(Math.max(-1,Math.min(1,ev.deltaY*(ev.deltaMode?0.05:0.0015)))),!left,!below);return;}},{passive:false});
+let drag=null;
+svg.addEventListener('mousedown',ev=>{if(ev.button)return;const m=pos(ev),P=M.plots.find(p=>inside(p,m));if(P)drag={P,m,moved:false};});
+window.addEventListener('mousemove',ev=>{if(!drag)return;const m=pos(ev),d=[m[0]-drag.m[0],m[1]-drag.m[1]];
+ if(!drag.moved&&Math.hypot(d[0],d[1])<4)return;drag.moved=true;svg.style.cursor='grabbing';ov.replaceChildren();
+ for(const[a,dp,on]of[[drag.P.x,d[0],true],[drag.P.y,d[1],!drag.P.y2]]){if(!on)continue;const s=(F(a,a.max)-F(a,a.min))/(a.p1-a.p0)*dp;a.min=Fi(a,F(a,a.min)-s);a.max=Fi(a,F(a,a.max)-s);}
+ drag.m=m;redraw(drag.P);});
+window.addEventListener('mouseup',()=>{if(drag&&drag.moved){svg.style.cursor='';const stop=e=>e.stopImmediatePropagation();
+ svg.addEventListener('click',stop,{capture:true,once:true});setTimeout(()=>svg.removeEventListener('click',stop,{capture:true}),0);}drag=null;});
+function reset(P){P.x=Object.assign({},P.x0);P.y=Object.assign({},P.y0);redraw(P);}
+svg.addEventListener('dblclick',ev=>{const m=pos(ev),P=M.plots.find(p=>inside(p,m));if(P&&zoomed(P)){ov.replaceChildren();reset(P);}});
+document.getElementById('dv-reset').addEventListener('click',()=>{for(const P of M.plots)if(zoomed(P))reset(P);});
 document.getElementById('dv-png').addEventListener('click',()=>{ov.replaceChildren();const vb=svg.viewBox.baseVal,s=2;const img=new Image();
  img.onload=()=>{const c=document.createElement('canvas');c.width=vb.width*s;c.height=vb.height*s;const x=c.getContext('2d');x.drawImage(img,0,0,c.width,c.height);const a=document.createElement('a');a.download=(document.title||'chart')+'.png';a.href=c.toDataURL('image/png');a.click();};
  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(svg));});
@@ -344,6 +416,11 @@ mod tests {
         assert!(!html.contains("<script src"));
         // The metadata is valid enough to find the series points.
         assert!(html.contains(r#""xy":["#));
+        // Zoom: grid and ticks are named groups the page redraws.
+        for id in ["p0-grid", "p0-xt", "p0-yt"] {
+            assert!(html.contains(&format!(r#"id="{id}""#)), "{id}");
+        }
+        assert!(html.contains(r#""pid":"p0","y2":false"#));
     }
 
     #[test]

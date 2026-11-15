@@ -19,8 +19,9 @@ redraws as data arrives.
 ## HTML pages
 
 `fig.save("chart.html")` writes one self-contained file: hover readouts,
-a crosshair, linked cursors, legend toggling, PNG download — and 3D plots
-that turn with the mouse.
+a crosshair, linked cursors, legend toggling, zoom (mouse wheel at the
+cursor; over an axis only that axis), pan (drag), reset (double click or
+the Reset button), PNG download — and 3D plots that turn with the mouse.
 
 ## Your own GUI or web page
 
