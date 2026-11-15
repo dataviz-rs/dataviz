@@ -73,6 +73,7 @@ struct Gpu {
     image_layout: wgpu::BindGroupLayout,
     stencil: wgpu::RenderPipeline,
     cover: wgpu::RenderPipeline,
+    tri: wgpu::RenderPipeline,
     shape: wgpu::RenderPipeline,
     glyph: wgpu::RenderPipeline,
     image: wgpu::RenderPipeline,
@@ -93,7 +94,7 @@ struct Gpu {
 struct State {
     targets: Option<Targets>,
     atlas: Atlas,
-    buffers: [Option<wgpu::Buffer>; 6],
+    buffers: [Option<wgpu::Buffer>; 7],
 }
 
 struct Targets {
@@ -325,6 +326,7 @@ impl Gpu {
         };
         let stencil_attrs = [a(0, Float32x2, 0)];
         let cover_attrs = [a(0, Float32x4, 0), a(1, Float32x4, 16), a(2, Float32x4, 32)];
+        let tri_attrs = [a(0, Float32x2, 0), a(1, Float32x4, 8), a(2, Float32x4, 24)];
         let shape_attrs = [
             a(0, Float32x4, 0),
             a(1, Float32x4, 16),
@@ -372,6 +374,13 @@ impl Gpu {
             "fs_cover",
             &[Some(vertex_layout(48, &cover_attrs, true))],
             ds(nonzero, nonzero, 0xff),
+            blend.clone(),
+        );
+        let tri = pipeline(
+            "vs_tri",
+            "fs_cover",
+            &[Some(vertex_layout(40, &tri_attrs, false))],
+            ds(keep, keep, 0),
             blend.clone(),
         );
         let shape = pipeline(
@@ -515,6 +524,7 @@ impl Gpu {
             image_layout,
             stencil,
             cover,
+            tri,
             shape,
             glyph,
             image,
@@ -620,9 +630,20 @@ impl Gpu {
 enum Cmd {
     Shapes(Range<u32>),
     Glyphs(Range<u32>),
-    Fill { stencil: Range<u32>, cover: u32 },
-    Image { instance: u32, bind: usize },
-    Sprites { instances: Range<u32>, bind: usize },
+    Fill {
+        stencil: Range<u32>,
+        cover: u32,
+    },
+    /// Vertices of convex fills (triangle list).
+    Tris(Range<u32>),
+    Image {
+        instance: u32,
+        bind: usize,
+    },
+    Sprites {
+        instances: Range<u32>,
+        bind: usize,
+    },
 }
 
 /// Geometry of one frame.
@@ -631,6 +652,7 @@ struct Frame {
     cmds: Vec<Cmd>,
     stencil: Vec<f32>,
     cover: Vec<f32>,
+    tris: Vec<f32>,
     shapes: Vec<f32>,
     glyphs: Vec<f32>,
     images: Vec<f32>,
@@ -671,10 +693,75 @@ impl Frame {
         }
     }
 
+    /// A convex polygon as a triangle fan, batched with the previous ones.
+    /// Returns false when `poly` is not convex.
+    fn push_convex(&mut self, poly: &[(f32, f32)], color: [f32; 4], clip: [f32; 4]) -> bool {
+        let n = poly.len();
+        if !(3..=64).contains(&n) {
+            return false;
+        }
+        let mut sign = 0.0f32;
+        for i in 0..n {
+            let (a, b, c) = (poly[i], poly[(i + 1) % n], poly[(i + 2) % n]);
+            let cross = (b.0 - a.0) * (c.1 - b.1) - (b.1 - a.1) * (c.0 - b.0);
+            if !cross.is_finite() {
+                return false;
+            }
+            if cross.abs() > 1e-6 {
+                if sign == 0.0 {
+                    sign = cross.signum();
+                } else if cross.signum() != sign {
+                    return false;
+                }
+            }
+        }
+        // A convex outline turns once: the direction changes sign at most
+        // twice along each axis (rejects self-overlapping stars).
+        let flips = |f: fn((f32, f32)) -> f32| {
+            let mut k = 0;
+            let mut last = 0.0f32;
+            for i in 0..n {
+                let d = f(poly[(i + 1) % n]) - f(poly[i]);
+                if d != 0.0 {
+                    if last != 0.0 && d.signum() != last {
+                        k += 1;
+                    }
+                    last = d.signum();
+                }
+            }
+            k
+        };
+        if sign == 0.0 || flips(|p| p.0) > 2 || flips(|p| p.1) > 2 {
+            return sign == 0.0; // degenerate: nothing to draw
+        }
+        let start = (self.tris.len() / 10) as u32;
+        let mut v = |p: (f32, f32)| {
+            self.tris.extend_from_slice(&[p.0, p.1]);
+            self.tris.extend_from_slice(&color);
+            self.tris.extend_from_slice(&clip);
+        };
+        for i in 1..n - 1 {
+            v(poly[0]);
+            v(poly[i]);
+            v(poly[i + 1]);
+        }
+        let end = (self.tris.len() / 10) as u32;
+        match self.cmds.last_mut() {
+            Some(Cmd::Tris(r)) if r.end == start => r.end = end,
+            _ => self.cmds.push(Cmd::Tris(start..end)),
+        }
+        true
+    }
+
     /// Nonzero fill of device-space contours.
     fn push_fill(&mut self, contours: &[Vec<(f32, f32)>], color: [f32; 4], clip: [f32; 4]) {
         if color[3] <= 0.0 {
             return;
+        }
+        if let [c] = contours {
+            if self.push_convex(c, color, clip) {
+                return;
+            }
         }
         let start = (self.stencil.len() / 2) as u32;
         let (mut l, mut t, mut r, mut b) = (
@@ -842,6 +929,23 @@ impl Builder<'_> {
         if let Some(outline) = p.stroke(&st, 1.0) {
             self.fill_path(&outline, premul(s.color, alpha * fade), clip);
         }
+    }
+
+    /// Shaded sphere: an analytic shape (kind 2) with the straight color.
+    fn sphere(&mut self, cx: f64, cy: f64, r: f64, c: Color, clip: [f32; 4], alpha: f32) {
+        let (px, py) = self.dev(cx, cy);
+        let a = c.a * alpha;
+        if !(px.is_finite() && py.is_finite()) || r <= 0.0 || a <= 0.0 {
+            return;
+        }
+        let f = [
+            c.r as f32 / 255.0,
+            c.g as f32 / 255.0,
+            c.b as f32 / 255.0,
+            a,
+        ];
+        self.frame
+            .push_shape([px, py, r as f32 * self.base.sx, 0.0], f, [0.0; 4], clip, 2);
     }
 
     fn rect(&mut self, l: f32, t: f32, r: f32, b: f32, c: [f32; 4], clip: [f32; 4]) {
@@ -1062,11 +1166,7 @@ impl Builder<'_> {
                 image,
                 smooth,
             } => self.image(*x, *y, *w, *h, image, *smooth, clip, alpha),
-            Node::Sphere { cx, cy, r, color } => {
-                for n in crate::plot::scene::sphere_layers(*cx, *cy, *r, *color) {
-                    self.node(&n, clip, alpha);
-                }
-            }
+            Node::Sphere { cx, cy, r, color } => self.sphere(*cx, *cy, *r, *color, clip, alpha),
             Node::Instances { template, offsets } => self.instances(template, offsets, clip, alpha),
             Node::MarkerGrid {
                 template,
@@ -1149,6 +1249,11 @@ impl Builder<'_> {
                     let (l, t) = dev(self, ox + x0, oy + y0);
                     let (r, b) = dev(self, ox + x1, oy + y1);
                     self.rect(l, t, r, b, c, clip);
+                }
+            }
+            Node::Sphere { cx, cy, r, color } => {
+                for &(x, y) in offsets {
+                    self.sphere(cx + x as f64, cy + y as f64, *r, *color, clip, alpha);
                 }
             }
             _ => {
@@ -1446,7 +1551,8 @@ fn render_inner(
     };
     gpu.queue
         .write_buffer(&gpu.globals, 0, bytes(&[w as f32, h as f32, mode, 0.0]));
-    let [b_stencil, b_cover, b_shapes, b_glyphs, b_images, b_sprites] = &mut state.buffers;
+    let [b_stencil, b_cover, b_shapes, b_glyphs, b_images, b_sprites, b_tris] = &mut state.buffers;
+    let tris = gpu.upload(b_tris, &frame.tris)?;
     let sprites = gpu.upload(b_sprites, &frame.sprites)?;
     let stencil = gpu.upload(b_stencil, &frame.stencil)?;
     let cover = gpu.upload(b_cover, &frame.cover)?;
@@ -1526,6 +1632,13 @@ fn render_inner(
                         pass.set_pipeline(&gpu.cover);
                         pass.set_vertex_buffer(0, cb.slice(..));
                         pass.draw(0..6, *c..*c + 1);
+                    }
+                }
+                Cmd::Tris(r) => {
+                    if let Some(b) = tris {
+                        pass.set_pipeline(&gpu.tri);
+                        pass.set_vertex_buffer(0, b.slice(..));
+                        pass.draw(r.clone(), 0..1);
                     }
                 }
                 Cmd::Sprites { instances, bind } => {

@@ -71,6 +71,19 @@ fn fs_cover(in: SolidOut) -> @location(0) vec4<f32> {
     return in.color * box_cov(in.pos.xy, in.clip);
 }
 
+// ---- convex fills as plain triangles (one draw for many faces) ----
+
+@vertex
+fn vs_tri(@location(0) p: vec2<f32>,
+          @location(1) color: vec4<f32>,
+          @location(2) clip: vec4<f32>) -> SolidOut {
+    var o: SolidOut;
+    o.pos = ndc(p);
+    o.color = color;
+    o.clip = clip;
+    return o;
+}
+
 // ---- analytic shapes: kind 0 = rectangle, 1 = circle ----
 
 struct ShapeOut {
@@ -115,6 +128,25 @@ fn fs_shape(in: ShapeOut) -> @location(0) vec4<f32> {
     var c: vec4<f32>;
     if in.kind == 0u {
         c = in.fill * box_cov(p, in.a);
+    } else if in.kind == 2u {
+        // Shaded sphere (same model as the CPU rasterizer); `fill` is the
+        // straight (not premultiplied) base color.
+        let r = in.a.z;
+        let dv = (p - in.a.xy) / r;
+        let d = length(dv);
+        let cov = clamp(r + 0.5 - d * r, 0.0, 1.0);
+        var n = vec3<f32>(dv, sqrt(max(1.0 - dot(dv, dv), 0.0)));
+        if d > 1.0 {
+            n = vec3<f32>(dv / d, 0.0);
+        }
+        let l = vec3<f32>(-0.4212, -0.5617, 0.7121);
+        let lam = max(dot(n, l), 0.0);
+        let h = max(dot(n, vec3<f32>(l.x, l.y, l.z + 1.0) * 0.5404), 0.0);
+        let spec = pow(h, 20.0) * 0.75;
+        let base = in.fill.rgb * (0.5 + 0.5 * pow(min(lam * 1.25, 1.0), 0.8));
+        let rgb = base + (vec3<f32>(1.0) - base) * spec;
+        let a = in.fill.a * cov;
+        c = vec4<f32>(rgb * a, a);
     } else {
         let d = distance(p, in.a.xy);
         let r = in.a.z;
