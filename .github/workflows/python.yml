@@ -6,6 +6,9 @@ name: Python package
 # once).
 on:
   push:
+    # Branch pushes run the tests when these paths change; tags build wheels
+    # (path filters do not apply to tags).
+    branches: ["**"]
     paths: ["python/**", "src/**", "Cargo.toml", ".github/workflows/python.yml"]
     tags: ["py-v*"]
   pull_request:
