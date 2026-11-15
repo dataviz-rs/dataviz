@@ -94,6 +94,15 @@
   dense data).
 - `Figure::resize(width, height)` (figures embedded in resizable panels).
 
+- Data from other crates without conversion: `Option` values (nulls of
+  Arrow and Polars arrays) become gaps, booleans count as 1/0; ndarray
+  arrays work as they are (tested).
+- Text descriptions (`Figure::alt_text`) of 3D plots: molecules (atoms,
+  residues, chains, helices, strands, ligands), DNA (length, GC content,
+  marked regions), surfaces, meshes, 3D scatter; 3D axis ranges;
+  `Series::describe` for custom series.
+- Visual regression tests (`tests/golden.rs`) and CI on Windows and macOS.
+
 ### Changed
 - Faster 3D: primitives sorted with a radix sort, same-looking spheres
   drawn from one cached sprite, 3D lines drawn in pieces, surface grids

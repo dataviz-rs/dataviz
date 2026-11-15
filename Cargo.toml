@@ -42,6 +42,8 @@ name = "plot_interactive"
 required-features = ["window"]
 
 [dev-dependencies]
+# Interoperability tests (arrays from ndarray work without a feature).
+ndarray = "0.16"
 # GIF decoding in the animation tests.
 image = { version = "0.25.6", default-features = false, features = ["png", "gif"] }
 

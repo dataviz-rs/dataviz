@@ -547,6 +547,24 @@ macro_rules! to_f64 {
 }
 to_f64!(f64, f32, i8, i16, i32, i64, i128, isize, u8, u16, u32, u64, u128, usize);
 
+/// Missing values (`None`, e.g. nulls of Arrow and Polars arrays) become
+/// gaps (NaN).
+impl<T: ToF64> ToF64 for Option<T> {
+    fn to_f64(&self) -> f64 {
+        self.as_ref().map_or(f64::NAN, |v| v.to_f64())
+    }
+}
+
+impl ToF64 for bool {
+    fn to_f64(&self) -> f64 {
+        if *self {
+            1.0
+        } else {
+            0.0
+        }
+    }
+}
+
 impl<T: ToF64 + ?Sized> ToF64 for &T {
     fn to_f64(&self) -> f64 {
         (**self).to_f64()

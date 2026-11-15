@@ -94,6 +94,20 @@ Every chart type has a runnable example with code and output in
 [dataviz-examples](https://github.com/dataviz-rs/dataviz-examples) — see
 the [gallery](#gallery).
 
+## Your data, as it is
+
+Any iterable of numbers works — `Vec`, slices, ranges, iterators and arrays
+from other crates, without conversion or features:
+
+```rust ignore
+ax.line(&x, &y);                                   // Vec<f64>, &[f32], i64, …
+ax.line(&array1, &array1.mapv(f64::sin));          // ndarray
+ax.line(&times, polars_df.column("price")?.f64()?); // Polars (nulls become gaps)
+ax.scatter(arrow_x.values(), &arrow_y);            // Arrow Float64Array
+let t = dataviz::plot::data::Table::read("data.csv")?;   // CSV/TSV, quoted fields
+ax.line(t.time_column("date").unwrap(), t.column("close").unwrap());
+```
+
 ## Features
 
 ### Interactive windows and live data
