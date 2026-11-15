@@ -12,7 +12,7 @@ keywords = ["plotting", "chart", "visualization", "plot", "graph"]
 categories = ["visualization", "graphics", "science", "gui", "wasm"]
 readme = "./README.md"
 # The MCP server and the Claude plugin are published on their own.
-exclude = ["mcp/", "python/", "claude-plugin/", ".claude-plugin/", "cikti/", "TODO.md", "tests/golden/", "tests/golden.rs"]
+exclude = ["mcp/", "python/", "claude-plugin/", ".claude-plugin/", "cikti/", "ROADMAP.md", "tests/golden/", "tests/golden.rs"]
 
 [dependencies]
 ab_glyph = "0.2.32"
