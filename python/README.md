@@ -61,6 +61,27 @@ fig.subplot(0, 2).molecule("1ubq.pdb", style="cartoon").rotate("y", 30)
 fig.save("report.png")
 ```
 
+## Interactive in Jupyter
+
+`fig.interactive()` shows the interactive page in the notebook: hover
+readouts, zoom (wheel) and pan (drag), turning 3D plots, and linked
+brushing — rows selected with Shift+drag in one plot are highlighted in all
+of them. With [anywidget](https://anywidget.dev) installed (`pip install "dataviz-rs[widget]"`) it is a widget
+whose `brushed` trait follows the selection, also kept by the figure:
+
+```python
+fig = dv.Figure(1100, 420).grid(1, 2).link_brushing()
+fig.subplot(0, 0).scatter(df.price, df.volume)
+fig.subplot(0, 1).scatter(df.price, df.returns)
+w = fig.interactive()
+w                                  # select points with Shift+drag
+df.iloc[fig.brushed()]             # the selected rows
+fig.save("selection.png")          # highlighted in saved images too
+```
+
+Without anywidget the same page is shown, without the link back to Python.
+`fig` alone still displays a PNG (light notebooks, nbviewer, GitHub).
+
 A whole figure can also come from a JSON spec (`dv.from_spec({...})`), the
 format of the dataviz MCP server for AI assistants.
 

@@ -10,6 +10,10 @@
 - HTML output: zoom (wheel at the cursor, over an axis only that axis),
   pan (drag) and reset (double click, Reset button) of 2D plots; ticks,
   labels and grid are redrawn, markers keep their size.
+- Python: `Figure.interactive()` shows the interactive page in Jupyter
+  (hover, zoom, pan, 3D, brushing); with anywidget (`dataviz-rs[widget]`)
+  it is a widget whose `brushed` trait follows the selection;
+  `Figure.link_brushing`, `brush`, `brushed`, `clear_brush`.
 
 ## 0.16.0
 

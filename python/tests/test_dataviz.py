@@ -109,3 +109,20 @@ def test_molecule_from_text():
         fig = dv.Figure(400, 400)
         fig.axes().molecule(ubq, style="cartoon", coloring="rainbow").rotate("y", 30)
         png_ok(fig)
+
+
+def test_linked_brushing_and_interactive_page():
+    x = np.arange(20.0)
+    fig = dv.Figure(600, 300).grid(1, 2).link_brushing()
+    fig.subplot(0, 0).scatter(x, x ** 2)
+    fig.subplot(0, 1).scatter(x, -x)
+    fig.brush([3, 4, 99], n=20)
+    assert fig.brushed() == [3, 4]
+    html = fig.to_html()
+    assert '"brush":{"rows":20,"sel":[3,4]}' in html and "postMessage" in html
+    assert 'id="p1-brush"' in fig.to_svg()
+    fig.clear_brush()
+    assert fig.brushed() == []
+    page = fig.interactive()
+    # anywidget is optional: a widget, or a plain HTML display without it.
+    assert hasattr(page, "html") or "srcdoc" in page.data

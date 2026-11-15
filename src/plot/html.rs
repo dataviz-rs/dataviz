@@ -334,6 +334,7 @@ function reset(P){P.x=Object.assign({},P.x0);P.y=Object.assign({},P.y0);redraw(P
 // ---- linked brushing: Shift+drag (or Ctrl+drag) selects rows, which are
 // highlighted in every plot; Shift+click clears ----
 const B=M.brush;
+function tell(){try{if(window.parent!==window)window.parent.postMessage({dataviz:'brush',rows:B.rows||0,sel:B.sel||[]},'*');}catch(e){}}
 function drawBrush(){if(!B)return;for(const P of M.plots){const id=P.pid+'-brush';const o=document.getElementById(id);if(o)o.remove();
   if(!B.sel||!B.sel.length)continue;const host=(document.getElementById(P.series[0]?.id)||{}).parentNode;if(!host)continue;
   const g=document.createElementNS(NS,'g');g.id=id;g.setAttribute('pointer-events','none');host.appendChild(g);
@@ -348,12 +349,12 @@ svg.addEventListener('mousedown',ev=>{if(!B||ev.button||!(ev.shiftKey||ev.ctrlKe
 window.addEventListener('mousemove',ev=>{if(!sel)return;sel.b=pos(ev);ov.replaceChildren();const[a,b]=[sel.a,sel.b];
  el('rect',{x:Math.min(a[0],b[0]),y:Math.min(a[1],b[1]),width:Math.abs(a[0]-b[0]),height:Math.abs(a[1]-b[1]),fill:'rgba(255,152,0,.12)',stroke:'#ff9800','stroke-dasharray':'4 3'});});
 window.addEventListener('mouseup',()=>{if(!sel)return;const{P,a,b}=sel;sel=null;ov.replaceChildren();
- if(Math.abs(a[0]-b[0])<3&&Math.abs(a[1]-b[1])<3){B.sel=[];drawBrush();return;}
+ if(Math.abs(a[0]-b[0])<3&&Math.abs(a[1]-b[1])<3){B.sel=[];drawBrush();tell();return;}
  const[x0,x1,y0,y1]=[Math.min(a[0],b[0]),Math.max(a[0],b[0]),Math.min(a[1],b[1]),Math.max(a[1],b[1])];
  const kx=P.kx??1,tx=P.tx??0,ky=P.ky??1,ty=P.ty??0;let n=0,hit=null;
  for(const s of P.series){if(!s.rows||hidden.has(s.id))continue;const k=s.rows.length/2;if(n&&k!==n)continue;if(!n){n=k;hit=new Uint8Array(n);}
   for(let i=0;i<n;i++){const x=s.rows[2*i],y=s.rows[2*i+1];if(x===null||y===null)continue;const X=kx*x+tx,Y=ky*y+ty;if(X>=x0&&X<=x1&&Y>=y0&&Y<=y1)hit[i]=1;}}
- B.rows=n;B.sel=[];if(hit)for(let i=0;i<n;i++)if(hit[i])B.sel.push(i);drawBrush();
+ B.rows=n;B.sel=[];if(hit)for(let i=0;i<n;i++)if(hit[i])B.sel.push(i);drawBrush();tell();
  const stop=e=>e.stopImmediatePropagation();svg.addEventListener('click',stop,{capture:true,once:true});setTimeout(()=>svg.removeEventListener('click',stop,{capture:true}),0);});
 svg.addEventListener('dblclick',ev=>{const m=pos(ev),P=M.plots.find(p=>inside(p,m));if(P&&zoomed(P)){ov.replaceChildren();reset(P);}});
 document.getElementById('dv-reset').addEventListener('click',()=>{for(const P of M.plots)if(zoomed(P))reset(P);});

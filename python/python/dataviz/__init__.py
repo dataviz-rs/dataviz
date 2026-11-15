@@ -273,6 +273,28 @@ class Figure:
         self._core.resize(width, height)
         return self
 
+    # ----- linked brushing -----------------------------------------------------------
+
+    def link_brushing(self, on: bool = True) -> "Figure":
+        """Links selections between plots: rows selected in one plot (Shift+drag
+        in :meth:`interactive` / HTML output) are highlighted in every plot whose
+        series have the same number of points."""
+        self._core.link_brushing(on)
+        return self
+
+    def brush(self, rows: Iterable[int], n: int) -> "Figure":
+        """Selects ``rows`` (indices) of the series with ``n`` points."""
+        self._core.brush_rows(int(n), [int(r) for r in rows])
+        return self
+
+    def clear_brush(self) -> "Figure":
+        self._core.clear_brush()
+        return self
+
+    def brushed(self) -> list:
+        """Indices of the selected rows (e.g. ``df.iloc[fig.brushed()]``)."""
+        return list(self._core.brushed())
+
     # ----- output -----------------------------------------------------------------
 
     def save(self, path: Union[str, "_os.PathLike[str]"]) -> None:
@@ -319,8 +341,88 @@ class Figure:
             f.write(self.to_png())
         webbrowser.open("file://" + path)
 
+    def interactive(self, height: Optional[int] = None):
+        """The interactive page in a notebook: hover readouts, zoom (wheel),
+        pan (drag), turning 3D plots and linked brushing (Shift+drag).
+
+        With `anywidget <https://anywidget.dev>`_ installed this is a widget
+        whose ``brushed`` trait follows the rows selected in the browser (also
+        stored in the figure: :meth:`brushed`, highlighted in saved images);
+        otherwise a plain HTML display."""
+        html = self.to_html()
+        h = int(height) if height else self._core.size()[1] + 40
+        try:
+            import anywidget  # noqa: F401
+        except ImportError:
+            return _Page(_iframe(html, h))
+        w = _widget_class()(html=html, height=h)
+
+        def sync(change):
+            rows, sel = change["new"].get("rows", 0), change["new"].get("sel", [])
+            if sel:
+                self._core.brush_rows(int(rows), [int(i) for i in sel])
+            else:
+                self._core.clear_brush()
+
+        w.observe(sync, names="selection")
+        return w
+
     def _repr_png_(self) -> bytes:
         return self.to_png()
+
+
+class _Page:
+    """HTML shown by Jupyter (``_repr_html_``) without extra packages."""
+
+    def __init__(self, data: str):
+        self.data = data
+
+    def _repr_html_(self) -> str:
+        return self.data
+
+
+def _iframe(html: str, height: int) -> str:
+    import html as _html
+
+    src = _html.escape(html, quote=True)
+    return f'<iframe style="width:100%;border:0" height="{height}" srcdoc="{src}"></iframe>'
+
+
+_WIDGET = None
+
+
+def _widget_class():
+    """The anywidget class, created on first use (anywidget is optional)."""
+    global _WIDGET
+    if _WIDGET is None:
+        import anywidget
+        import traitlets
+
+        class FigureWidget(anywidget.AnyWidget):
+            _esm = """
+export default { render({ model, el }) {
+  const f = document.createElement('iframe');
+  f.style.cssText = 'width:100%;border:0;display:block';
+  const load = () => { f.style.height = model.get('height') + 'px'; f.srcdoc = model.get('html'); };
+  load();
+  el.appendChild(f);
+  const on = e => {
+    if (e.source !== f.contentWindow || !e.data || e.data.dataviz !== 'brush') return;
+    model.set('selection', { rows: e.data.rows, sel: e.data.sel });
+    model.set('brushed', e.data.sel);
+    model.save_changes();
+  };
+  window.addEventListener('message', on);
+  model.on('change:html', load);
+  return () => window.removeEventListener('message', on);
+} };"""
+            html = traitlets.Unicode().tag(sync=True)
+            height = traitlets.Int(500).tag(sync=True)
+            brushed = traitlets.List(traitlets.Int()).tag(sync=True)
+            selection = traitlets.Dict().tag(sync=True)
+
+        _WIDGET = FigureWidget
+    return _WIDGET
 
 
 def from_spec(spec: Union[Mapping[str, Any], str]) -> Figure:

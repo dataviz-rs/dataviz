@@ -19,6 +19,9 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
 ]
 
+[project.optional-dependencies]
+widget = ["anywidget>=0.9"]
+
 [project.urls]
 Homepage = "https://github.com/dataviz-rs/dataviz"
 Documentation = "https://github.com/dataviz-rs/dataviz/tree/main/python"

@@ -142,6 +142,10 @@ impl Core {
     fn theme(&mut self, name: &str) {
         self.fig.theme(spec::theme(name));
     }
+    fn size(&self) -> (u32, u32) {
+        let (w, h) = self.fig.size();
+        (w.round() as u32, h.round() as u32)
+    }
     fn resize(&mut self, width: u32, height: u32) {
         self.fig.resize(width, height);
     }
@@ -176,6 +180,18 @@ impl Core {
     }
     fn alt_text(&mut self) -> String {
         self.fig.alt_text()
+    }
+    fn link_brushing(&mut self, on: bool) {
+        self.fig.link_brushing(on);
+    }
+    fn brush_rows(&mut self, rows: usize, selected: Vec<usize>) {
+        self.fig.brush_rows(rows, selected);
+    }
+    fn clear_brush(&mut self) {
+        self.fig.clear_brush();
+    }
+    fn brushed(&self) -> Vec<usize> {
+        self.fig.brushed().to_vec()
     }
 
     // ----- axes options ---------------------------------------------------
