@@ -1369,24 +1369,11 @@ fn draw_segs(out: &mut Vec<Node>, segs: &[Seg2], color: Color, width: f64, tube:
         });
         return;
     }
-    // Thin tubes need fewer bands for the same look.
-    let three = [
-        (1.0, 0.0, color.darken(0.45)),
-        (0.72, 0.1, color),
-        (0.36, 0.22, color.lighten(0.38)),
-    ];
-    let two = [
-        (1.0, 0.0, color.darken(0.35)),
-        (0.5, 0.16, color.lighten(0.15)),
-    ];
-    let bands: &[(f64, f64, Color)] = if width < 7.0 { &two } else { &three };
-    for &(wf, of, c) in bands {
-        out.push(Node::Path {
-            cmds: path(width * of),
-            fill: None,
-            stroke: Some(stroke(c, width * wf)),
-        });
-    }
+    out.push(Node::Tube {
+        segs: segs.to_vec(),
+        width,
+        color,
+    });
 }
 
 /// Draws the back panes, grid lines, ticks and axis labels of the box.

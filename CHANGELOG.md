@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Changed
+- Faster, smoother 3D molecules: bonds and other tubes are one lit
+  cylinder per segment (`Node::Tube`, shading table per direction)
+  instead of two or three stroked bands; shaded spheres reuse one
+  color-independent shading per size. Molecule rotation frames
+  2.8 → 2.1 ms on one core.
+
 ### Added
 - Linked brushing (`Figure::link_brushing`, `brush`, `brush_rows`,
   `brushed`, `clear_brush`): a box selected in one plot (Ctrl+drag in a

@@ -155,6 +155,9 @@ pub struct RasterImage {
 }
 
 /// A drawing primitive.
+/// A line segment: start and end point.
+pub type Segment = ((f64, f64), (f64, f64));
+
 #[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub enum Node {
@@ -206,6 +209,16 @@ pub enum Node {
         cy: f64,
         /// Radius.
         r: f64,
+        /// Base color.
+        color: Color,
+    },
+    /// Shaded tube segments (3D bonds, sticks): one lit cylinder of
+    /// `width` per segment, with round ends.
+    Tube {
+        /// Segments (start, end).
+        segs: Vec<Segment>,
+        /// Diameter.
+        width: f64,
         /// Base color.
         color: Color,
     },
@@ -609,6 +622,11 @@ impl SvgWriter<'_> {
                     stroke_attr(stroke)
                 );
             }
+            Node::Tube { segs, width, color } => {
+                for n in tube_layers(segs, *width, *color) {
+                    self.node(&n);
+                }
+            }
             Node::Sphere { cx, cy, r, color } => {
                 let rgb = [color.r, color.g, color.b];
                 let id = match self.spheres.iter().find(|s| s.0 == rgb) {
@@ -842,6 +860,49 @@ pub(crate) fn sphere_shade(base: [f32; 3], nx: f32, ny: f32, nz: f32) -> [f32; 3
         *o = c + (255.0 - c) * spec;
     }
     out
+}
+
+/// Tube segments as overlapping strokes (a dark rim and lighter bands
+/// offset towards the light), for back ends without per-pixel shading.
+pub(crate) fn tube_layers(segs: &[Segment], width: f64, color: Color) -> Vec<Node> {
+    let stroke = |c: Color, w: f64| {
+        Stroke::new(c, w.max(0.3))
+            .cap(LineCap::Round)
+            .join(LineJoin::Round)
+    };
+    let path = |o: f64| {
+        let mut cmds = Vec::with_capacity(segs.len() * 2);
+        for &(a, b) in segs {
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let l = dx.hypot(dy).max(1e-9);
+            let (mut nx, mut ny) = (-dy / l, dx / l);
+            if nx * f64::from(SPHERE_LIGHT[0]) + ny * f64::from(SPHERE_LIGHT[1]) < 0.0 {
+                (nx, ny) = (-nx, -ny);
+            }
+            cmds.push(PathCmd::MoveTo(a.0 + nx * o, a.1 + ny * o));
+            cmds.push(PathCmd::LineTo(b.0 + nx * o, b.1 + ny * o));
+        }
+        cmds
+    };
+    // Thin tubes need fewer bands for the same look.
+    let three = [
+        (1.0, 0.0, color.darken(0.45)),
+        (0.72, 0.1, color),
+        (0.36, 0.22, color.lighten(0.38)),
+    ];
+    let two = [
+        (1.0, 0.0, color.darken(0.35)),
+        (0.5, 0.16, color.lighten(0.15)),
+    ];
+    let bands: &[(f64, f64, Color)] = if width < 7.0 { &two } else { &three };
+    bands
+        .iter()
+        .map(|&(wf, of, c)| Node::Path {
+            cmds: path(width * of),
+            fill: None,
+            stroke: Some(stroke(c, width * wf)),
+        })
+        .collect()
 }
 
 /// A sphere as stacked circles, for back ends without per-pixel shading.

@@ -337,6 +337,237 @@ fn blend(dst: &mut [u8], rgb: [u32; 3], a: u32) {
     dst[3] = (a + (dst[3] as u32 * inv + 127) / 255).min(255) as u8;
 }
 
+/// Directions of the tube shading table.
+const TUBE_DIRS: usize = 64;
+/// Lateral positions per direction (−1 … 1 across the tube).
+const TUBE_STEPS: usize = 33;
+
+/// Shading of tubes, independent of color: for a tube whose screen normal
+/// points at angle `k / TUBE_DIRS · 2π`, at lateral position `t` the
+/// diffuse factor and specular amount (0–255) of the cylinder there.
+fn tube_shades() -> &'static [[u8; 2]] {
+    static TABLE: std::sync::OnceLock<Vec<[u8; 2]>> = std::sync::OnceLock::new();
+    TABLE.get_or_init(|| {
+        let [lx, ly, lz] = crate::plot::scene::SPHERE_LIGHT;
+        let (hx, hy, hz) = (lx * 0.5404, ly * 0.5404, (lz + 1.0) * 0.5404);
+        let mut t = Vec::with_capacity(TUBE_DIRS * TUBE_STEPS);
+        for k in 0..TUBE_DIRS {
+            let ang = k as f32 / TUBE_DIRS as f32 * std::f32::consts::TAU;
+            let (px, py) = (ang.cos(), ang.sin());
+            for s in 0..TUBE_STEPS {
+                let u = s as f32 / (TUBE_STEPS - 1) as f32 * 2.0 - 1.0;
+                let (nx, ny, nz) = (px * u, py * u, (1.0 - u * u).max(0.0).sqrt());
+                let lam = (nx * lx + ny * ly + nz * lz).max(0.0);
+                let h = (nx * hx + ny * hy + nz * hz).max(0.0);
+                let h4 = (h * h) * (h * h);
+                // A cylinder's highlight is a stripe: softer than a sphere's.
+                let spec = h4 * h4 * h4 * 0.6;
+                // Darker towards the silhouette: the outline that defines
+                // a tube against others of the same color.
+                let u2 = u * u;
+                let rim = 1.0 - 0.45 * u2 * u2 * u2;
+                let d = (0.5 + 0.5 * (lam * 1.25).min(1.0).powf(0.8)) * rim;
+                let b = |v: f32| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+                t.push([b(d), b(spec)]);
+            }
+        }
+        t
+    })
+}
+
+/// A lit tube from `a` to `b` (device pixels) of radius `r`, round ends.
+fn fill_tube(pm: &mut PixmapMut<'_>, a: (f32, f32), b: (f32, f32), r: f32, c: Color, clip: Clip) {
+    if !(a.0.is_finite() && a.1.is_finite() && b.0.is_finite() && b.1.is_finite()) {
+        return;
+    }
+    let (w, h) = (pm.width() as i32, pm.height() as i32);
+    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+    let len = (dx * dx + dy * dy).sqrt();
+    let (ux, uy) = if len > 1e-6 {
+        (dx / len, dy / len)
+    } else {
+        (1.0, 0.0)
+    };
+    // Screen normal (-uy, ux) and its table row.
+    let ang = ux.atan2(-uy).rem_euclid(std::f32::consts::TAU);
+    let row = ((ang / std::f32::consts::TAU * TUBE_DIRS as f32).round() as usize % TUBE_DIRS)
+        * TUBE_STEPS;
+    let table = &tube_shades()[row..row + TUBE_STEPS];
+    let reach = r + 0.5;
+    let inv_r = 1.0 / r;
+    let ca = (c.a.clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
+    let base = [c.r as u32, c.g as u32, c.b as u32];
+    let y0 = ((a.1.min(b.1) - reach).floor() as i32)
+        .max(0)
+        .max(clip.t.floor() as i32);
+    let y1 = ((a.1.max(b.1) + reach).ceil() as i32)
+        .min(h - 1)
+        .min(clip.b.ceil() as i32 - 1);
+    let (bx0, bx1) = (a.0.min(b.0) - reach, a.0.max(b.0) + reach);
+    let data = pm.data_mut();
+    for py in y0..=y1 {
+        let yc = py as f32 + 0.5;
+        let (mut lo, mut hi) = (bx0, bx1);
+        if uy.abs() > 1e-6 {
+            let base_l = (yc - a.1) * ux;
+            let e0 = a.0 + (base_l - reach) / uy;
+            let e1 = a.0 + (base_l + reach) / uy;
+            lo = lo.max(e0.min(e1));
+            hi = hi.min(e0.max(e1));
+        }
+        let x0 = ((lo - 0.5).floor() as i32)
+            .max(0)
+            .max(clip.l.floor() as i32);
+        let x1 = ((hi - 0.5).ceil() as i32)
+            .min(w - 1)
+            .min(clip.r.ceil() as i32 - 1);
+        let qy = yc - a.1;
+        for px in x0..=x1 {
+            let qx = px as f32 + 0.5 - a.0;
+            let along = qx * ux + qy * uy;
+            let lat = qy * ux - qx * uy;
+            let o = (-along).max(along - len).max(0.0);
+            let d = if o > 0.0 {
+                (lat * lat + o * o).sqrt()
+            } else {
+                lat.abs()
+            };
+            let cov = (r + 0.5 - d).min(1.0);
+            if cov <= 0.0 {
+                continue;
+            }
+            // lat = q · normal: t = 1 on the normal's side.
+            let t = (lat * inv_r).clamp(-1.0, 1.0);
+            let [dd, sp] = table[((t + 1.0) * 0.5 * (TUBE_STEPS - 1) as f32 + 0.5) as usize];
+            let (dd, sp) = (dd as u32, sp as u32);
+            let rgb = base.map(|bc| {
+                let v = div255(bc * dd);
+                v + div255((255 - v) * sp)
+            });
+            let mut al = (cov * ca as f32) as u32;
+            if !(px as f32 >= clip.l
+                && px as f32 + 1.0 <= clip.r
+                && py as f32 >= clip.t
+                && py as f32 + 1.0 <= clip.b)
+            {
+                al = div255(al * clip.cov(px, py));
+            }
+            if al == 0 {
+                continue;
+            }
+            let i = (py * w + px) as usize * 4;
+            blend(&mut data[i..i + 4], rgb, al);
+        }
+    }
+}
+
+/// Shading of a sphere independent of its color: per pixel the coverage,
+/// the diffuse factor and the specular amount (0–255 each), around a
+/// centre at sub-pixel offset `((qx + 0.5) / 4, (qy + 0.5) / 4)`.
+struct SphereShade {
+    /// Offset of the first pixel from the centre's pixel.
+    half: i32,
+    size: i32,
+    /// Per row: first column, then (coverage, diffuse, specular) per pixel.
+    rows: Vec<(i32, Vec<[u8; 3]>)>,
+}
+
+impl SphereShade {
+    fn new(r: f32, qx: u8, qy: u8) -> Self {
+        let half = (r + 1.5).ceil() as i32;
+        let size = 2 * half + 1;
+        let (cx, cy) = (
+            half as f32 + (qx as f32 + 0.5) / 4.0,
+            half as f32 + (qy as f32 + 0.5) / 4.0,
+        );
+        let (re, inv_r) = (r + 0.5, 1.0 / r);
+        let [lx, ly, lz] = crate::plot::scene::SPHERE_LIGHT;
+        let mut rows = Vec::with_capacity(size as usize);
+        for py in 0..size {
+            let dy = py as f32 + 0.5 - cy;
+            let mut first = -1;
+            let mut px_row = Vec::new();
+            for px in 0..size {
+                let dx = px as f32 + 0.5 - cx;
+                let dist = (dx * dx + dy * dy).sqrt();
+                let cov = (re - dist).min(1.0);
+                if cov <= 0.0 {
+                    if first >= 0 {
+                        break;
+                    }
+                    continue;
+                }
+                if first < 0 {
+                    first = px;
+                }
+                let (nx, ny) = (dx * inv_r, dy * inv_r);
+                let s = 1.0 - nx * nx - ny * ny;
+                let (nx, ny, nz) = if s > 0.0 {
+                    (nx, ny, s.sqrt())
+                } else {
+                    let k = 1.0 / (dist * inv_r).max(1e-6);
+                    (nx * k, ny * k, 0.0)
+                };
+                // Same model as `scene::sphere_shade`, split into factors.
+                let lam = (nx * lx + ny * ly + nz * lz).max(0.0);
+                let (hx, hy, hz) = (lx * 0.5404, ly * 0.5404, (lz + 1.0) * 0.5404);
+                let h = (nx * hx + ny * hy + nz * hz).max(0.0);
+                let h4 = (h * h) * (h * h);
+                let spec = h4 * h4 * h4 * h4 * h4 * 0.75;
+                let d = 0.5 + 0.5 * (lam * 1.25).min(1.0).powf(0.8);
+                let b = |v: f32| (v * 255.0 + 0.5).clamp(0.0, 255.0) as u8;
+                px_row.push([b(cov), b(d), b(spec)]);
+            }
+            rows.push((first.max(0), px_row));
+        }
+        SphereShade { half, size, rows }
+    }
+
+    /// Draws the sphere in color `c` with its centre in pixel `(ix, iy)`.
+    fn draw(&self, pm: &mut PixmapMut<'_>, ix: i32, iy: i32, c: Color, clip: Clip) {
+        let (w, h) = (pm.width() as i32, pm.height() as i32);
+        let (x0, y0) = (ix - self.half, iy - self.half);
+        let inside = x0 as f32 >= clip.l
+            && (x0 + self.size) as f32 <= clip.r
+            && y0 as f32 >= clip.t
+            && (y0 + self.size) as f32 <= clip.b
+            && x0 >= 0
+            && y0 >= 0
+            && x0 + self.size <= w
+            && y0 + self.size <= h;
+        let ca = (c.a.clamp(0.0, 1.0) * 255.0 + 0.5) as u32;
+        let base = [c.r as u32, c.g as u32, c.b as u32];
+        let data = pm.data_mut();
+        for (ry, (first, px_row)) in self.rows.iter().enumerate() {
+            let py = y0 + ry as i32;
+            if py < 0 || py >= h {
+                continue;
+            }
+            for (k, &[cov, d, spec]) in px_row.iter().enumerate() {
+                let px = x0 + first + k as i32;
+                if px < 0 || px >= w {
+                    continue;
+                }
+                let mut a = cov as u32 * ca;
+                if !inside {
+                    a = div255(a * clip.cov(px, py));
+                }
+                let a = div255(a);
+                if a == 0 {
+                    continue;
+                }
+                let (d, sp) = (d as u32, spec as u32);
+                let rgb = base.map(|b| {
+                    let v = div255(b * d);
+                    v + div255((255 - v) * sp)
+                });
+                let i = (py * w + px) as usize * 4;
+                blend(&mut data[i..i + 4], rgb, a);
+            }
+        }
+    }
+}
+
 /// Per-pixel shaded sphere at device centre `(cx, cy)`, radius `r`.
 fn fill_sphere(pm: &mut PixmapMut<'_>, cx: f32, cy: f32, r: f32, c: Color, clip: Clip) {
     let (w, h) = (pm.width() as f32, pm.height() as f32);
@@ -1526,6 +1757,8 @@ struct Ctx<'a> {
     mask: Option<(Clip, Mask)>,
     /// Sprites of `Node::Instances` templates.
     instance_sprites: Vec<InstanceSprite>,
+    /// Sphere shading by (radius × 8, quarter-pixel x, y).
+    sphere_shades: HashMap<(u32, u8, u8), SphereShade>,
     /// Opaque background while nothing has been drawn yet: a rectangle
     /// filled with it (a plot area on the same background) is skipped.
     pristine: Option<Color>,
@@ -1713,6 +1946,7 @@ impl<'a> Ctx<'a> {
             clip: Clip::new(0.0, 0.0, w as f32, h as f32),
             mask: None,
             instance_sprites: Vec::new(),
+            sphere_shades: HashMap::default(),
             pristine: None,
         }
     }
@@ -2005,6 +2239,19 @@ impl<'a> Ctx<'a> {
                     self.with_mask(pm, |c, pm, m| c.fill_stroke(pm, &p, *fill, stroke, ts, m));
                 }
             }
+            Node::Tube { segs, width, color } => {
+                if ts.kx != 0.0 || ts.ky != 0.0 || (ts.sx - ts.sy).abs() > 1e-6 {
+                    for l in crate::plot::scene::tube_layers(segs, *width, *color) {
+                        self.node(pm, &l, counts);
+                    }
+                    return;
+                }
+                let pt = |p: (f64, f64)| (p.0 as f32 * ts.sx + ts.tx, p.1 as f32 * ts.sy + ts.ty);
+                let r = (*width as f32 * ts.sx / 2.0).max(0.15);
+                for &(a, b) in segs {
+                    fill_tube(pm, pt(a), pt(b), r, *color, self.clip);
+                }
+            }
             Node::Sphere { cx, cy, r, color } => {
                 if !cx.is_finite() || !cy.is_finite() || *r <= 0.0 {
                     return;
@@ -2017,7 +2264,22 @@ impl<'a> Ctx<'a> {
                 }
                 let gx = *cx as f32 * ts.sx + ts.tx;
                 let gy = *cy as f32 * ts.sy + ts.ty;
-                fill_sphere(pm, gx, gy, *r as f32 * ts.sx, *color, self.clip);
+                let rd = *r as f32 * ts.sx;
+                if rd <= 48.0 {
+                    // Shading of a sphere of this size and sub-pixel offset,
+                    // computed once whatever its color (depth cueing gives
+                    // every atom its own color).
+                    let (ix, iy) = (gx.floor(), gy.floor());
+                    let q = |f: f32| ((f * 4.0) as u8).min(3);
+                    let key = ((rd * 8.0).round() as u32, q(gx - ix), q(gy - iy));
+                    let sh = self
+                        .sphere_shades
+                        .entry(key)
+                        .or_insert_with(|| SphereShade::new(rd, key.1, key.2));
+                    sh.draw(pm, ix as i32, iy as i32, *color, self.clip);
+                } else {
+                    fill_sphere(pm, gx, gy, rd, *color, self.clip);
+                }
             }
             Node::Circle {
                 cx,

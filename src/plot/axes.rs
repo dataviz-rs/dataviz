@@ -1784,6 +1784,13 @@ fn anchor_points(nodes: &[Node]) -> Vec<(f64, f64)> {
                 }
             }
             Node::Circle { cx, cy, .. } => v.push((*cx, *cy)),
+            Node::Tube { segs, .. } => {
+                for (a, b) in segs {
+                    v.push(*a);
+                    v.push(*b);
+                    v.push(((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0));
+                }
+            }
             Node::Sphere { cx, cy, r, .. } => {
                 v.push((*cx, *cy));
                 for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
