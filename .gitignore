@@ -22,3 +22,9 @@ Cargo.lock
 
 # Local gallery output
 /cikti/
+
+# Built guide and generated pages (tools/book.py)
+book/book/
+book/src/catalog/
+book/src/performance.md
+book/src/SUMMARY.md

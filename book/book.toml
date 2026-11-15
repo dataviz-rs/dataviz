@@ -1,0 +1,11 @@
+[book]
+title = "dataviz guide"
+authors = ["dataviz contributors"]
+language = "en"
+src = "src"
+description = "Fast plotting for Rust and Python: every chart type with code, interactivity, 3D, maps, output formats and performance."
+
+[output.html]
+git-repository-url = "https://github.com/dataviz-rs/dataviz"
+edit-url-template = "https://github.com/dataviz-rs/dataviz/edit/main/book/{path}"
+site-url = "/dataviz/"

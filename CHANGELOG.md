@@ -120,6 +120,10 @@
   click to reset — with the same lighting, perspective, depth order, box
   and ticks as the Rust renderer (shaded spheres as radial gradients); the
   scene is exported once in normalized coordinates and drawn on a canvas.
+- **Guide** (`book/`, mdBook): installation, quick start, data input,
+  choosing a chart, a chart catalog generated from the examples
+  (`tools/book.py`), interactivity, 3D, maps, output, performance, Python
+  and Claude; published with the WebAssembly demo on GitHub Pages.
 - Visual regression tests (`tests/golden.rs`) and CI on Windows and macOS.
 
 ### Changed

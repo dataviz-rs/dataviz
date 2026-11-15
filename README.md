@@ -30,6 +30,10 @@ memory of the Rust plotting libraries.**
 </tr>
 </table>
 
+**[Guide and chart catalog](https://dataviz-rs.github.io/dataviz/)** ·
+**[Live demo in the browser](https://dataviz-rs.github.io/dataviz/demo/)** ·
+[API docs](https://docs.rs/dataviz) · [Examples](https://github.com/dataviz-rs/dataviz-examples)
+
 ## Why dataviz
 
 - **Fast and lean.** Its own rasterizer draws straight into the output

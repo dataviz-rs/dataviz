@@ -1,0 +1,62 @@
+name: Guide and demo (GitHub Pages)
+# Builds the guide (book/, chart catalog from the examples' READMEs) and the
+# WebAssembly demo (dataviz-examples/plot-wasm, built against this
+# checkout) and publishes them at https://dataviz-rs.github.io/dataviz/.
+on:
+  push:
+    branches: [main]
+    paths: ["book/**", "tools/book.py", "tools/gallery.py", "tools/perf_section.py", "src/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: dataviz-rs/dataviz-examples
+          path: ex
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ex
+      - name: Install mdBook
+        run: |
+          v=v0.5.4
+          curl -sSfL "https://github.com/rust-lang/mdBook/releases/download/$v/mdbook-$v-x86_64-unknown-linux-gnu.tar.gz" | tar xz -C /usr/local/bin
+      - name: Build the guide
+        run: |
+          python3 tools/book.py ex
+          mdbook build book
+      - name: Build the WebAssembly demo
+        run: |
+          cd ex
+          cargo build --profile wasm --target wasm32-unknown-unknown -p plot-wasm --config 'patch.crates-io.dataviz.path=".."'
+          mkdir -p ../book/book/demo
+          cp plot-wasm/www/* ../book/book/demo/
+          cp target/wasm32-unknown-unknown/wasm/plot_wasm.wasm ../book/book/demo/
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: book/book
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
