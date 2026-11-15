@@ -1,7 +1,9 @@
 //! Interactive HTML output: one self-contained file (no network access, no
 //! external scripts) with the figure as SVG and a small script for hover
 //! readouts, a crosshair with axis values, hiding series from the legend
-//! and saving a PNG. `fig.save("chart.html")` or [`Figure::to_html`].
+//! and saving a PNG; 3D plots turn with the mouse (drag), zoom with the
+//! wheel and reset on double click. `fig.save("chart.html")` or
+//! [`Figure::to_html`].
 
 use super::axes::{AxesKind, Layout};
 use super::figure::Figure;
@@ -74,6 +76,11 @@ impl Figure {
         }
         let title = self.title_text().unwrap_or_else(|| "Chart".into());
         let meta = format!(r#"{{"plots":[{}]}}"#, plots.join(","));
+        let three = if plots.iter().any(|p| p.contains(r#""three":"#)) {
+            format!("<script>{SCRIPT3D}</script>")
+        } else {
+            String::new()
+        };
         let mut html = String::with_capacity(svg.len() + meta.len() + 8192);
         let _ = write!(
             html,
@@ -92,6 +99,7 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
 {svg}</div>
 <script type="application/json" id="dv-meta">{meta}</script>
 <script>{SCRIPT}</script>
+{three}
 </body></html>
 "#,
             super::scene::esc(&title),
@@ -101,7 +109,15 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
     }
 
     fn plot_json(&mut self, i: usize, lay: &Layout) -> Option<String> {
+        let theme = self.theme.clone();
         let ax = self.axes_at(i)?;
+        if ax.kind == AxesKind::ThreeD {
+            let clip = lay.clip3d.unwrap_or(lay.plot);
+            return Some(format!(
+                r#"{{"gid":"p{i}-s3d","three":{}}}"#,
+                ax.export3d(lay.plot, clip, &theme)
+            ));
+        }
         if ax.kind != AxesKind::Cartesian {
             return None;
         }
@@ -173,6 +189,7 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
 /// The page script (no dependencies).
 const SCRIPT: &str = r#"(()=>{
 const M=JSON.parse(document.getElementById('dv-meta').textContent);
+M.plots=M.plots.filter(p=>!p.three);
 const box=document.getElementById('dv'),svg=box.querySelector('svg'),NS='http://www.w3.org/2000/svg';
 const ov=document.createElementNS(NS,'g');ov.setAttribute('pointer-events','none');svg.appendChild(ov);
 const dims=document.createElementNS(NS,'g');dims.setAttribute('pointer-events','none');svg.appendChild(dims);
@@ -217,6 +234,94 @@ document.getElementById('dv-png').addEventListener('click',()=>{ov.replaceChildr
  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(svg));});
 })();"#;
 
+/// 3D renderer of the page: the scene's primitives (normalized box
+/// coordinates) drawn on a canvas with the camera, lighting, perspective and
+/// depth order of dataviz; drag turns, the wheel zooms, double click resets.
+const SCRIPT3D: &str = r#"(()=>{
+const M=JSON.parse(document.getElementById('dv-meta').textContent);
+const svg=document.querySelector('#dv svg'),NS='http://www.w3.org/2000/svg';
+const L=[-0.42,0.56,0.71],Hn=un([-0.42,0.56,1.71]);
+function un(a){const l=Math.hypot(a[0],a[1],a[2])||1;return[a[0]/l,a[1]/l,a[2]/l];}
+function dot(a,b){return a[0]*b[0]+a[1]*b[1]+a[2]*b[2];}
+function cross(a,b){return[a[1]*b[2]-a[2]*b[1],a[2]*b[0]-a[0]*b[2],a[0]*b[1]-a[1]*b[0]];}
+function sub(a,b){return[a[0]-b[0],a[1]-b[1],a[2]-b[2]];}
+function mul(a,b){return a.map(r=>[0,1,2].map(j=>r[0]*b[0][j]+r[1]*b[1][j]+r[2]*b[2][j]));}
+function rot(ax,deg){const t=deg*Math.PI/180,s=Math.sin(t),c=Math.cos(t);return ax===0?[[1,0,0],[0,c,-s],[0,s,c]]:ax===1?[[c,0,s],[0,1,0],[-s,0,c]]:[[c,-s,0],[s,c,0],[0,0,1]];}
+function ortho(m){const r0=un(m[0]);const d=dot(m[1],r0);const r1=un(sub(m[1],[r0[0]*d,r0[1]*d,r0[2]*d]));return[r0,r1,cross(r0,r1)];}
+function mix(c,d,t){t=Math.max(0,Math.min(1,t));return[c[0]+(d[0]-c[0])*t,c[1]+(d[1]-c[1])*t,c[2]+(d[2]-c[2])*t,c[3]];}
+function dark(c,a){return mix(c,[0,0,0,c[3]],a);}
+function light(c,a){return mix(c,[255,255,255,c[3]],a);}
+function css(c,a){return'rgba('+Math.round(c[0])+','+Math.round(c[1])+','+Math.round(c[2])+','+(a===undefined?c[3]:a)+')';}
+function lambert(n){if(n[2]<0)n=[-n[0],-n[1],-n[2]];const d=Math.max(0,dot(n,L));const s=Math.pow(Math.max(0,dot(n,Hn)),28);return[0.42+0.62*d,0.32*s];}
+function lit(c,ls){let b=ls[0]<1?dark(c,1-ls[0]):light(c,(ls[0]-1)*0.6);return ls[1]>0.004?light(b,ls[1]):b;}
+for(const P of M.plots){if(P.three)setup(P);}
+function setup(P){
+ const T=P.three,g=document.getElementById(P.gid);if(g)g.style.display='none';
+ const [cx,cy,cw,ch]=T.clip;
+ const fo=document.createElementNS(NS,'foreignObject');for(const [k,v] of [['x',cx],['y',cy],['width',cw],['height',ch]])fo.setAttribute(k,v);
+ const cv=document.createElement('canvas');cv.style.cssText='width:100%;height:100%;display:block;cursor:grab;touch-action:none';fo.appendChild(cv);svg.appendChild(fo);
+ const ctx=cv.getContext('2d');const m0=T.m.map(r=>r.slice());let m=m0.map(r=>r.slice()),zoom=1;
+ const ext=T.ext,fog=T.fog,bg=T.bg;
+ function view(p){return[dot(m[0],p),dot(m[1],p),dot(m[2],p)];}
+ function persp(d){return T.dist>0?T.dist/Math.max(T.dist-d,T.radius*0.05):1;}
+ function scr(v){const f=persp(v[2]);return[T.center[0]+v[0]*T.scale*zoom*f,T.center[1]-v[1]*T.scale*zoom*f,v[2],f];}
+ function cue(c,d){if(fog<=0)return c;const near=Math.max(0,Math.min(1,(d/T.radius+1)/2));return mix(c,[bg[0],bg[1],bg[2],c[3]],fog*(1-near));}
+ function resize(){const k=svg.getBoundingClientRect().width/svg.viewBox.baseVal.width,dpr=window.devicePixelRatio||1;cv.width=Math.max(1,Math.round(cw*k*dpr));cv.height=Math.max(1,Math.round(ch*k*dpr));ctx.setTransform(k*dpr,0,0,k*dpr,-cx*k*dpr,-cy*k*dpr);draw();}
+ function text(x,y,t,size,c,align,base,rotate,bold){ctx.save();ctx.font=(bold?'bold ':'')+size+'px "DejaVu Sans",system-ui,sans-serif';ctx.fillStyle=css(c);ctx.textAlign=align;ctx.textBaseline=base;ctx.translate(x,y);if(rotate)ctx.rotate(rotate*Math.PI/180);ctx.fillText(t,0,0);ctx.restore();}
+ function boxDraw(){if(!T.axes.length)return;const e=ext;
+  const far=[0,1,2].map(i=>{const a=[0,0,0];a[i]=1;return view(a)[2]>0?-e[i]:e[i];});
+  const at=c=>scr(view(c));
+  ctx.lineWidth=1;
+  for(let i=0;i<3;i++){const u=(i+1)%3,w=(i+2)%3;const corner=(a,b)=>{const c=[0,0,0];c[i]=far[i];c[u]=a;c[w]=b;return at(c);};
+   const q=[corner(-e[u],-e[w]),corner(e[u],-e[w]),corner(e[u],e[w]),corner(-e[u],e[w])];
+   ctx.beginPath();q.forEach((p,k)=>k?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.closePath();ctx.fillStyle=css(dark(bg,0.035));ctx.fill();ctx.strokeStyle=css(T.axis,0.35*T.axis[3]);ctx.stroke();
+   ctx.strokeStyle=css(T.grid);ctx.beginPath();
+   for(const [ax,ot] of [[u,w],[w,u]]){for(const t of T.axes[ax].t){const n=t[0];const a=ax===u?corner(n,-e[ot]):corner(-e[ot],n),b=ax===u?corner(n,e[ot]):corner(e[ot],n);ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);}}
+   ctx.stroke();}
+  const ctr=at([0,0,0]),ts=T.ts*0.85;
+  for(let i=0;i<3;i++){const u=(i+1)%3,w=(i+2)%3;const a=[0,0,0];a[i]=1;const dv=view(a);if(Math.hypot(dv[0],dv[1])<0.12)continue;const across=Math.abs(dv[0])>=Math.abs(dv[1]);
+   let best=null,bs=-1e9;for(const [su,sw] of [[-1,-1],[1,-1],[1,1],[-1,1]]){const c=[0,0,0];c[u]=su*e[u];c[w]=sw*e[w];const back=(c[u]===far[u])+(c[w]===far[w]);if(back===2)continue;const s=at(c);const sc=across?s[1]:-s[0];if(sc>bs){bs=sc;best=c;}}
+   if(!best)continue;const pt=t=>{const c=best.slice();c[i]=t;return at(c);};const m0_=pt(-e[i]),m1=pt(e[i]),mid=[(m0_[0]+m1[0])/2,(m0_[1]+m1[1])/2];
+   let ox=mid[0]-ctr[0],oy=mid[1]-ctr[1];const ol=Math.hypot(ox,oy)||1;ox/=ol;oy/=ol;
+   ctx.strokeStyle=css(T.axis);ctx.beginPath();ctx.moveTo(m0_[0],m0_[1]);ctx.lineTo(m1[0],m1[1]);ctx.stroke();
+   const align=ox<-0.45?'right':ox>0.45?'left':'center';let widest=0;ctx.font=ts+'px "DejaVu Sans",system-ui,sans-serif';
+   for(const t of T.axes[i].t){const s=pt(t[0]);ctx.beginPath();ctx.moveTo(s[0],s[1]);ctx.lineTo(s[0]+ox*4,s[1]+oy*4);ctx.stroke();widest=Math.max(widest,ctx.measureText(t[1]).width);text(s[0]+ox*9,s[1]+oy*9,t[1],ts,T.text,align,'middle');}
+   const name=T.axes[i].name;if(name){if(across){const d=14+ts*0.6+widest*Math.abs(ox);text(mid[0]+ox*d,mid[1]+oy*d,name,T.ls,T.text,align,'middle');}else{const d=14+widest*Math.abs(ox)+T.ls*0.6;text(mid[0]+ox*d,mid[1]+oy*d,name,T.ls,T.text,'center','middle',-90);}}}
+ }
+ function draw(){ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.clearRect(0,0,cv.width,cv.height);ctx.restore();
+  boxDraw();const prims=[],labels=[];
+  for(const it of T.items){const k=it.k,c0=it.c;
+   if(k==='f'){const n=it.p.length/3,v=[];for(let j=0;j<n;j++)v.push(view([it.p[3*j],it.p[3*j+1],it.p[3*j+2]]));
+    let nv=it.n?view(it.n):un(cross(sub(v[1],v[0]),sub(v[2],v[0])));if(it.cull&&nv[2]<-0.02)continue;const d=v.reduce((a,q)=>a+q[2],0)/n;
+    const col=cue(T.light?lit(c0,lambert(nv)):c0,d);prims.push([d,()=>{ctx.beginPath();v.forEach((q,j)=>{const s=scr(q);j?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]);});ctx.closePath();ctx.fillStyle=css(col);ctx.fill();
+     if(it.e){ctx.strokeStyle=css(cue(it.e,d));ctx.lineWidth=it.ew;ctx.stroke();}else if(col[3]>0.99){ctx.strokeStyle=css(col);ctx.lineWidth=0.6;ctx.stroke();}}]);}
+   else if(k==='b'){const v=view(it.p),s=scr(v);const r=it.px!==undefined?it.px*s[3]:it.r*T.scale*zoom*s[3];if(!(r>0))continue;const col=cue(c0,v[2]);const sh=it.s&&T.light;
+    prims.push([v[2],()=>{if(sh&&r>=1.6){const gx=s[0]+L[0]*0.62*r*0.55,gy=s[1]-L[1]*0.62*r*0.55;const gr=ctx.createRadialGradient(gx,gy,r*0.08,s[0],s[1],r);gr.addColorStop(0,css(light(col,0.6)));gr.addColorStop(0.35,css(col));gr.addColorStop(1,css(dark(col,0.5)));ctx.fillStyle=gr;}else ctx.fillStyle=css(col);ctx.beginPath();ctx.arc(s[0],s[1],r,0,2*Math.PI);ctx.fill();}]);}
+   else if(k==='l'||k==='t'){const n=it.p.length/3,pts=[];for(let j=0;j<n;j++)pts.push(view([it.p[3*j],it.p[3*j+1],it.p[3*j+2]]));
+    const piece=k==='t'?12:32;for(let a=0;a+1<n;a+=piece){const b=Math.min(a+piece,n-1),seg=pts.slice(a,b+1),d=seg.reduce((x,q)=>x+q[2],0)/seg.length,f=persp(d);
+     const col=cue(it.cs?it.cs[Math.floor((a+b)/2)]:c0,d);const w=k==='t'?2*it.r*T.scale*zoom*f:it.w*f;
+     prims.push([d,()=>{const sp=seg.map(scr);const path=()=>{ctx.beginPath();sp.forEach((s,j)=>j?ctx.lineTo(s[0],s[1]):ctx.moveTo(s[0],s[1]));};ctx.lineCap='round';ctx.lineJoin='round';
+      if(k==='t'&&T.light&&w>3){path();ctx.strokeStyle=css(dark(col,0.3));ctx.lineWidth=w;ctx.stroke();path();ctx.strokeStyle=css(light(col,0.18));ctx.lineWidth=w*0.5;ctx.stroke();}else{path();ctx.strokeStyle=css(col);ctx.lineWidth=Math.max(w,0.3);ctx.stroke();}}]);}}
+   else if(k==='a'){const a=view(it.p.slice(0,3)),b=view(it.p.slice(3,6)),d=(a[2]+b[2])/2,col=cue(c0,d);
+    prims.push([d,()=>{const sa=scr(a),sb=scr(b);const dx=sb[0]-sa[0],dy=sb[1]-sa[1],l=Math.hypot(dx,dy);if(l<0.5)return;const ux=dx/l,uy=dy/l,h=Math.min(it.h,l*0.6),bx=sb[0]-ux*h,by=sb[1]-uy*h,w=h*0.45;
+     ctx.strokeStyle=css(col);ctx.lineWidth=it.w;ctx.lineCap='round';ctx.beginPath();ctx.moveTo(sa[0],sa[1]);ctx.lineTo(bx,by);ctx.stroke();ctx.fillStyle=css(col);ctx.beginPath();ctx.moveTo(sb[0],sb[1]);ctx.lineTo(bx-uy*w,by+ux*w);ctx.lineTo(bx+uy*w,by-ux*w);ctx.closePath();ctx.fill();}]);}
+   else if(k==='x')labels.push(it);}
+  prims.sort((a,b)=>a[0]-b[0]);for(const p of prims)p[1]();
+  for(const it of labels){const s=scr(view(it.p));if(it.bg){ctx.font=(it.bold?'bold ':'')+it.z+'px "DejaVu Sans",system-ui,sans-serif';const w=ctx.measureText(it.t).width+it.z*0.8,h=it.z*1.45;ctx.fillStyle=css(it.bg);ctx.beginPath();if(ctx.roundRect)ctx.roundRect(s[0]-w/2,s[1]-h/2,w,h,h*0.3);else ctx.rect(s[0]-w/2,s[1]-h/2,w,h);ctx.fill();}
+   text(s[0],s[1],it.t,it.z,it.c,'center','middle',0,it.bold);}
+ }
+ let drag=null;
+ cv.addEventListener('pointerdown',e=>{drag=[e.clientX,e.clientY];cv.setPointerCapture(e.pointerId);cv.style.cursor='grabbing';});
+ cv.addEventListener('pointermove',e=>{if(!drag)return;const k=svg.viewBox.baseVal.width/svg.getBoundingClientRect().width;const dx=(e.clientX-drag[0])*k,dy=(e.clientY-drag[1])*k;drag=[e.clientX,e.clientY];
+  m=ortho(mul(m,rot(2,dx*0.5)));m=ortho(mul(rot(0,dy*0.5),m));draw();});
+ const up=()=>{drag=null;cv.style.cursor='grab';};cv.addEventListener('pointerup',up);cv.addEventListener('pointercancel',up);
+ cv.addEventListener('wheel',e=>{e.preventDefault();zoom=Math.max(0.05,Math.min(50,zoom*(e.deltaY<0?1/0.85:0.85)));draw();},{passive:false});
+ cv.addEventListener('dblclick',()=>{m=m0.map(r=>r.slice());zoom=1;draw();});
+ if(window.ResizeObserver)new ResizeObserver(resize).observe(svg);else window.addEventListener('resize',resize);
+ resize();
+}
+})();"#;
+
 #[cfg(test)]
 mod tests {
     use crate::prelude::*;
@@ -239,5 +344,32 @@ mod tests {
         assert!(!html.contains("<script src"));
         // The metadata is valid enough to find the series points.
         assert!(html.contains(r#""xy":["#));
+    }
+
+    #[test]
+    fn three_d_plots_are_exported_for_the_browser() {
+        let mut fig = Figure::new(600, 400);
+        fig.grid(1, 2);
+        fig.at(0, 0)
+            .surface_fn(|x, y| x * y, (-1.0, 1.0), (-1.0, 1.0), 6);
+        fig.at(0, 0).x_label("x");
+        fig.at(0, 1).dna_helix("ATGC");
+        let html = fig.to_html();
+        assert!(html.contains(r#""gid":"p0-s3d""#) && html.contains(r#""gid":"p1-s3d""#));
+        assert!(
+            html.contains(r#""k":"f""#)
+                && html.contains(r#""k":"t""#)
+                && html.contains(r#""k":"b""#)
+        );
+        assert!(html.contains("createRadialGradient"));
+        let meta = html
+            .split(r#"id="dv-meta">"#)
+            .nth(1)
+            .unwrap()
+            .split("</script>")
+            .next()
+            .unwrap();
+        // Balanced JSON (no stray quotes from labels).
+        assert_eq!(meta.matches('{').count(), meta.matches('}').count());
     }
 }

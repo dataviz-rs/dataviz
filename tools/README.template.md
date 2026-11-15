@@ -323,7 +323,7 @@ shaped; color emoji are drawn.
 
 ```rust ignore
 fig.save("chart.png")?;            // also .svg .pdf .jpg .webp .bmp
-fig.save("chart.html")?;           // interactive, self-contained page
+fig.save("chart.html")?;           // interactive page; 3D plots turn with the mouse
 fig.record("wave.gif", 30.0, 120, |fig, i| { /* change the figure */ })?; // .gif .png (APNG) .mp4 .webm
 fig.print()?;                      // terminal (colored half blocks or Braille)
 fig.render_into(&mut pixels)?;     // RGBA pixels for your own window or texture

@@ -551,9 +551,52 @@ pub struct Scene3d<'a> {
     fog: f64,
     background: Color,
     light: bool,
+    /// Recording for interactive HTML instead of drawing.
+    rec: Option<Rec3>,
+}
+
+/// 3D primitives recorded in normalized box coordinates (before the
+/// camera), as JSON fragments for the HTML page's 3D renderer.
+#[derive(Default)]
+pub(crate) struct Rec3 {
+    items: Vec<String>,
+}
+
+fn j4(v: f64) -> String {
+    if v.is_finite() {
+        let r = (v * 10_000.0).round() / 10_000.0;
+        format!("{r}")
+    } else {
+        "null".into()
+    }
+}
+
+fn jc(c: Color) -> String {
+    format!("[{},{},{},{}]", c.r, c.g, c.b, j4(c.a as f64))
+}
+
+fn jp(p: [f64; 3]) -> String {
+    format!("{},{},{}", j4(p[0]), j4(p[1]), j4(p[2]))
 }
 
 impl Scene3d<'_> {
+    /// Rotated view coordinates back to normalized box coordinates (the
+    /// rotation is orthonormal: its inverse is the transpose).
+    fn unview(&self, v: [f64; 3]) -> [f64; 3] {
+        let m = self.proj.cam.m;
+        [
+            m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2],
+            m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2],
+            m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2],
+        ]
+    }
+
+    fn record(&mut self, item: String) {
+        if let Some(r) = &mut self.rec {
+            r.items.push(item);
+        }
+    }
+
     /// The projection of this scene.
     pub fn projection(&self) -> &Projection3d {
         self.proj
@@ -584,6 +627,23 @@ impl Scene3d<'_> {
         colors: Option<&[Color]>,
         width: f64,
     ) {
+        if self.rec.is_some() {
+            let p: Vec<String> = pts.iter().map(|q| jp(self.proj.norm(*q))).collect();
+            let cs = colors.map_or(String::new(), |c| {
+                format!(
+                    ",\"cs\":[{}]",
+                    c.iter().map(|c| jc(*c)).collect::<Vec<_>>().join(",")
+                )
+            });
+            let item = format!(
+                "{{\"k\":\"l\",\"p\":[{}],\"c\":{},\"w\":{}{cs}}}",
+                p.join(","),
+                jc(color),
+                j4(width)
+            );
+            self.record(item);
+            return;
+        }
         const PIECE: usize = 64;
         let mut start = 0;
         while start + 1 < pts.len() {
@@ -677,6 +737,23 @@ impl Scene3d<'_> {
         if q.iter().any(|p| !p.iter().all(|c| c.is_finite())) {
             return;
         }
+        if self.rec.is_some() {
+            let pts: Vec<String> = q.iter().map(|v| jp(self.unview(*v))).collect();
+            let n = normal.map_or(String::new(), |n| {
+                format!(",\"n\":[{}]", jp(self.unview(n)))
+            });
+            let e = edge.map_or(String::new(), |e| {
+                format!(",\"e\":{},\"ew\":{}", jc(e.color), j4(e.width))
+            });
+            let item = format!(
+                "{{\"k\":\"f\",\"p\":[{}],\"c\":{}{n}{e}{}}}",
+                pts.join(","),
+                jc(color),
+                if cull { ",\"cull\":1" } else { "" }
+            );
+            self.record(item);
+            return;
+        }
         let n = normal.unwrap_or_else(|| unit(cross(sub(q[1], q[0]), sub(q[2], q[0]))));
         if cull && n[2] < -0.02 {
             return;
@@ -720,6 +797,16 @@ impl Scene3d<'_> {
 
     /// A shaded sphere with a radius in data units (x-axis units).
     pub fn sphere(&mut self, c: [f64; 3], radius: f64, color: Color) {
+        if self.rec.is_some() {
+            let item = format!(
+                "{{\"k\":\"b\",\"p\":[{}],\"r\":{},\"c\":{},\"s\":1}}",
+                jp(self.proj.norm(c)),
+                j4(radius * self.proj.k[0]),
+                jc(color)
+            );
+            self.record(item);
+            return;
+        }
         let (x, y, d) = self.proj.project(c);
         let r = radius * self.proj.px_per_unit(d);
         self.ball(x, y, d, r, color, true);
@@ -727,6 +814,17 @@ impl Scene3d<'_> {
 
     /// A marker (shaded when `shaded`) of `size` pixels across.
     pub fn marker(&mut self, c: [f64; 3], size: f64, color: Color, shaded: bool) {
+        if self.rec.is_some() {
+            let item = format!(
+                "{{\"k\":\"b\",\"p\":[{}],\"px\":{},\"c\":{},\"s\":{}}}",
+                jp(self.proj.norm(c)),
+                j4(size / 2.0),
+                jc(color),
+                shaded as u8
+            );
+            self.record(item);
+            return;
+        }
         let (x, y, d) = self.proj.project(c);
         let r = size / 2.0 * self.proj.persp(d);
         self.ball(x, y, d, r, color, shaded);
@@ -764,6 +862,23 @@ impl Scene3d<'_> {
         color: Color,
         colors: Option<&[Color]>,
     ) {
+        if self.rec.is_some() {
+            let p: Vec<String> = pts.iter().map(|q| jp(self.proj.norm(*q))).collect();
+            let cs = colors.map_or(String::new(), |c| {
+                format!(
+                    ",\"cs\":[{}]",
+                    c.iter().map(|c| jc(*c)).collect::<Vec<_>>().join(",")
+                )
+            });
+            let item = format!(
+                "{{\"k\":\"t\",\"p\":[{}],\"c\":{},\"r\":{}{cs}}}",
+                p.join(","),
+                jc(color),
+                j4(radius * self.proj.k[0])
+            );
+            self.record(item);
+            return;
+        }
         const PIECE: usize = 12;
         let mut start = 0;
         while start + 1 < pts.len() {
@@ -820,6 +935,18 @@ impl Scene3d<'_> {
     /// An arrow from `a` to `b`: a line of `width` pixels and a head of
     /// about `head` pixels facing the screen.
     pub fn arrow(&mut self, a: [f64; 3], b: [f64; 3], color: Color, width: f64, head: f64) {
+        if self.rec.is_some() {
+            let item = format!(
+                "{{\"k\":\"a\",\"p\":[{},{}],\"c\":{},\"w\":{},\"h\":{}}}",
+                jp(self.proj.norm(a)),
+                jp(self.proj.norm(b)),
+                jc(color),
+                j4(width),
+                j4(head)
+            );
+            self.record(item);
+            return;
+        }
         let (pa, pb) = (self.proj.project(a), self.proj.project(b));
         if !(pa.0.is_finite() && pa.1.is_finite() && pb.0.is_finite() && pb.1.is_finite()) {
             return;
@@ -866,6 +993,22 @@ impl Scene3d<'_> {
     }
 
     fn seg(&mut self, a: [f64; 3], b: [f64; 3], color: Color, w: f64, data: bool, tube: bool) {
+        if self.rec.is_some() {
+            let (k, size) = if tube {
+                ("t", format!("\"r\":{}", j4(w * self.proj.k[0])))
+            } else {
+                ("l", format!("\"w\":{}", j4(w)))
+            };
+            let item = format!(
+                "{{\"k\":\"{k}\",\"p\":[{},{}],\"c\":{},{size}}}",
+                jp(self.proj.norm(a)),
+                jp(self.proj.norm(b)),
+                jc(color)
+            );
+            let _ = data;
+            self.record(item);
+            return;
+        }
         let (pa, pb) = (self.proj.project(a), self.proj.project(b));
         if !(pa.0.is_finite() && pa.1.is_finite() && pb.0.is_finite() && pb.1.is_finite()) {
             return;
@@ -915,6 +1058,22 @@ impl Scene3d<'_> {
         background: Option<Color>,
         bold: bool,
     ) {
+        if self.rec.is_some() {
+            let bg = background.map_or(String::new(), |b| format!(",\"bg\":{}", jc(b)));
+            let t = text
+                .replace('\\', "\\\\")
+                .replace('"', "\\\"")
+                .replace('<', "\\u003c");
+            let item = format!(
+                "{{\"k\":\"x\",\"p\":[{}],\"t\":\"{t}\",\"z\":{},\"c\":{},\"bold\":{}{bg}}}",
+                jp(self.proj.norm(at)),
+                j4(size),
+                jc(color),
+                bold as u8
+            );
+            self.record(item);
+            return;
+        }
         let (x, y, _) = self.proj.project(at);
         if x.is_finite() && y.is_finite() {
             self.labels.push(Label3 {
@@ -1475,11 +1634,107 @@ impl Axes {
             fog: self.view3d.fog,
             background: theme.plot_background,
             light: self.view3d.light,
+            rec: None,
         };
         for s in self.shown() {
             s.draw3d(&mut scene);
         }
         scene.finish(fonts, out);
+    }
+
+    /// The 3D scene as JSON for the interactive HTML page: camera, fit,
+    /// box ticks and the primitives in normalized box coordinates.
+    pub(crate) fn export3d(&self, plot: Rect, clip: Rect, theme: &Theme) -> String {
+        let proj = self.projection3d(plot);
+        let mut scene = Scene3d {
+            proj: &proj,
+            prims: Vec::new(),
+            keys: Vec::new(),
+            labels: Vec::new(),
+            fog: self.view3d.fog,
+            background: theme.plot_background,
+            light: self.view3d.light,
+            rec: Some(Rec3::default()),
+        };
+        for s in self.shown() {
+            s.draw3d(&mut scene);
+        }
+        let items = scene.rec.take().map(|r| r.items).unwrap_or_default();
+        // Box: per axis the ticks (normalized position, label) and the name.
+        let mut axes = Vec::new();
+        if self.view3d.show_box {
+            let cats: [&[String]; 3] = [&self.x.categories, &self.y.categories, &[]];
+            let names = [
+                self.x.label.as_deref(),
+                self.y.label.as_deref(),
+                self.view3d.z_label.as_deref(),
+            ];
+            for i in 0..3 {
+                let (lo, hi) = proj.bounds[i];
+                let ticks: Vec<(f64, String)> = if cats[i].is_empty() {
+                    let (t, step) =
+                        ticks::linear_ticks(lo, hi, if proj.ext[i] < 0.4 { 2 } else { 4 });
+                    t.into_iter()
+                        .map(|v| {
+                            (
+                                v,
+                                ticks::format_value(
+                                    v,
+                                    &ticks::TickFormat::Auto,
+                                    &crate::plot::Scale::Linear,
+                                    step,
+                                    lo.abs().max(hi.abs()),
+                                    None,
+                                ),
+                            )
+                        })
+                        .collect()
+                } else {
+                    cats[i]
+                        .iter()
+                        .enumerate()
+                        .map(|(k, c)| (k as f64, c.clone()))
+                        .collect()
+                };
+                let t: Vec<String> = ticks
+                    .iter()
+                    .map(|(v, l)| (((v - proj.mid[i]) * proj.k[i]), l))
+                    .filter(|(n, _)| n.abs() <= proj.ext[i] + 1e-9)
+                    .map(|(n, l)| format!("[{},\"{}\"]", j4(n), l.replace('"', "'")))
+                    .collect();
+                let name = names[i].map_or("null".to_string(), |n| {
+                    format!("\"{}\"", n.replace('"', "'"))
+                });
+                axes.push(format!("{{\"t\":[{}],\"name\":{name}}}", t.join(",")));
+            }
+        }
+        let m = proj.cam.m;
+        format!(
+            "{{\"m\":[[{}],[{}],[{}]],\"ext\":[{}],\"scale\":{},\"center\":[{},{}],\"dist\":{},\"radius\":{},\"fog\":{},\"light\":{},\"bg\":{},\"text\":{},\"grid\":{},\"axis\":{},\"ts\":{},\"ls\":{},\"clip\":[{},{},{},{}],\"axes\":[{}],\"items\":[{}]}}",
+            jp(m[0]),
+            jp(m[1]),
+            jp(m[2]),
+            jp(proj.ext),
+            j4(proj.scale),
+            j4(proj.center.0),
+            j4(proj.center.1),
+            j4(proj.dist),
+            j4(proj.radius),
+            j4(self.view3d.fog),
+            self.view3d.light as u8,
+            jc(theme.plot_background),
+            jc(theme.text),
+            jc(theme.grid),
+            jc(theme.axis),
+            j4(theme.tick_size),
+            j4(theme.label_size),
+            j4(clip.x),
+            j4(clip.y),
+            j4(clip.w),
+            j4(clip.h),
+            axes.join(","),
+            items.join(",")
+        )
     }
 
     pub(crate) fn hit3d(&self, plot: Rect, px: f64, py: f64) -> Option<Hit> {

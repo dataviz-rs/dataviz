@@ -115,6 +115,11 @@
   and color by value, arrows), `Axes::geo_hexbin` (density maps),
   `Axes::basemap` (web-map tiles from any source, e.g. `tile_dir`;
   `tile_range`). `Anchor` and `Baseline` in the prelude.
+- **Interactive 3D in HTML**: `fig.save("x.html")` / `Figure::to_html`
+  turns 3D plots in the browser — drag to rotate, wheel to zoom, double
+  click to reset — with the same lighting, perspective, depth order, box
+  and ticks as the Rust renderer (shaded spheres as radial gradients); the
+  scene is exported once in normalized coordinates and drawn on a canvas.
 - Visual regression tests (`tests/golden.rs`) and CI on Windows and macOS.
 
 ### Changed

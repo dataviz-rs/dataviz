@@ -105,6 +105,8 @@ pub struct Layout {
     pub(crate) legend_items: Vec<(Rect, usize)>,
     /// Range slider: its rectangle and the mapping of all data's x range.
     pub(crate) slider: Option<(Rect, AxisMap)>,
+    /// Area a 3D scene is drawn into (clip), for interactive output.
+    pub(crate) clip3d: Option<Rect>,
 }
 
 impl Axes {
@@ -906,6 +908,7 @@ impl Axes {
                     y2: None,
                     legend_items: Vec::new(),
                     slider: None,
+                    clip3d: None,
                 },
                 decor,
             );
@@ -920,6 +923,7 @@ impl Axes {
                 plot,
                 legend_items: Vec::new(),
                 slider: None,
+                clip3d: None,
             };
             return (lay, decor);
         }
@@ -1058,6 +1062,7 @@ impl Axes {
                     .with_breaks(&self.x.breaks);
                 (rect, map)
             }),
+            clip3d: None,
             plot,
             legend_items: Vec::new(),
         };
@@ -1143,6 +1148,12 @@ impl Axes {
             // plot rectangle), without the colorbar.
             AxesKind::ThreeD => {
                 let right = cell.right() - decor.colorbar.as_ref().map_or(0.0, |c| c.1);
+                lay.clip3d = Some(Rect {
+                    x: cell.x,
+                    y: p.y,
+                    w: right - cell.x,
+                    h: cell.bottom() - p.y,
+                });
                 Some((cell.x, p.y, right - cell.x, cell.bottom() - p.y))
             }
             _ => None,

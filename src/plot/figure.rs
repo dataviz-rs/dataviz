@@ -44,7 +44,7 @@ pub(crate) type AxesLimitsSnapshot = (
 pub struct Figure {
     width: f64,
     height: f64,
-    theme: Theme,
+    pub(crate) theme: Theme,
     title: Option<String>,
     rows: usize,
     cols: usize,
