@@ -197,6 +197,18 @@ pub enum Node {
         /// Outline.
         stroke: Option<Stroke>,
     },
+    /// Shaded sphere (3D ball): lit from the upper left with a specular
+    /// highlight, shaded per pixel by the rasterizer.
+    Sphere {
+        /// Centre.
+        cx: f64,
+        /// Centre.
+        cy: f64,
+        /// Radius.
+        r: f64,
+        /// Base color.
+        color: Color,
+    },
     /// Text.
     Text(TextNode),
     /// Raster image scaled to the rectangle.
@@ -323,6 +335,7 @@ impl Scene {
         let mut w = SvgWriter {
             out: String::with_capacity(4096),
             clip_id: 0,
+            spheres: Vec::new(),
             font: &self.font_family,
         };
         let a11y = match (&self.title, &self.description) {
@@ -531,6 +544,8 @@ pub(crate) fn path_data(cmds: &[PathCmd]) -> String {
 struct SvgWriter<'a> {
     out: String,
     clip_id: usize,
+    /// Sphere gradients written so far: (rgb, id).
+    spheres: Vec<([u8; 3], usize)>,
     #[allow(dead_code)]
     font: &'a str,
 }
@@ -592,6 +607,39 @@ impl SvgWriter<'_> {
                     num(r.max(0.0)),
                     fill_attr(*fill),
                     stroke_attr(stroke)
+                );
+            }
+            Node::Sphere { cx, cy, r, color } => {
+                let rgb = [color.r, color.g, color.b];
+                let id = match self.spheres.iter().find(|s| s.0 == rgb) {
+                    Some(s) => s.1,
+                    None => {
+                        self.clip_id += 1;
+                        let id = self.clip_id;
+                        self.spheres.push((rgb, id));
+                        let stop = |c: Color| format!("rgb({},{},{})", c.r, c.g, c.b);
+                        let c = color.with_alpha(1.0);
+                        let _ = writeln!(
+                            self.out,
+                            r#"<defs><radialGradient id="g{id}" fx="0.29" fy="0.22"><stop offset="0" stop-color="{}"/><stop offset="0.35" stop-color="{}"/><stop offset="1" stop-color="{}"/></radialGradient></defs>"#,
+                            stop(c.lighten(0.55)),
+                            stop(c),
+                            stop(c.darken(0.5))
+                        );
+                        id
+                    }
+                };
+                let op = if color.a < 1.0 {
+                    format!(r#" fill-opacity="{}""#, num(color.a as f64))
+                } else {
+                    String::new()
+                };
+                let _ = writeln!(
+                    self.out,
+                    r#"<circle cx="{}" cy="{}" r="{}" fill="url(#g{id})"{op}/>"#,
+                    num(*cx),
+                    num(*cy),
+                    num(r.max(0.0))
                 );
             }
             Node::Text(t) => self.text(t),
@@ -769,6 +817,65 @@ pub(crate) fn base64(data: &[u8]) -> String {
         });
     }
     s
+}
+
+/// Light direction of shaded spheres on screen (x right, y down, z
+/// towards the viewer), normalized.
+pub(crate) const SPHERE_LIGHT: [f32; 3] = [-0.4212, -0.5617, 0.7121];
+
+/// Color of a sphere point with unit normal `(nx, ny, nz)` (screen axes).
+#[inline]
+pub(crate) fn sphere_shade(base: [f32; 3], nx: f32, ny: f32, nz: f32) -> [f32; 3] {
+    let [lx, ly, lz] = SPHERE_LIGHT;
+    let lam = (nx * lx + ny * ly + nz * lz).max(0.0);
+    // Half vector of the light and the viewer (0, 0, 1).
+    let (hx, hy, hz) = (lx * 0.5404, ly * 0.5404, (lz + 1.0) * 0.5404);
+    let h = (nx * hx + ny * hy + nz * hz).max(0.0);
+    let h2 = h * h;
+    let h4 = h2 * h2;
+    let h8 = h4 * h4;
+    let spec = h8 * h8 * h4 * 0.75;
+    let d = 0.5 + 0.5 * (lam * 1.25).min(1.0).powf(0.8);
+    let mut out = [0.0; 3];
+    for (o, b) in out.iter_mut().zip(base) {
+        let c = b * d;
+        *o = c + (255.0 - c) * spec;
+    }
+    out
+}
+
+/// A sphere as stacked circles, for back ends without per-pixel shading.
+pub(crate) fn sphere_layers(cx: f64, cy: f64, r: f64, color: Color) -> Vec<Node> {
+    let rim = color.darken(0.5);
+    let steps = ((r / 1.4) as usize).clamp(3, 18);
+    let (ox, oy) = (SPHERE_LIGHT[0] as f64 * 0.62, SPHERE_LIGHT[1] as f64 * 0.62);
+    let mut out = Vec::with_capacity(steps + 1);
+    out.push(Node::Circle {
+        cx,
+        cy,
+        r,
+        fill: Some(rim),
+        stroke: None,
+    });
+    for k in 1..=steps {
+        let t = k as f64 / steps as f64;
+        // Radius shrinks, centre moves towards the highlight.
+        let rr = r * (1.0 - 0.9 * t);
+        let off = r * t * 0.55;
+        let c = if t < 0.72 {
+            rim.mix(color, (t / 0.72).powf(0.7))
+        } else {
+            color.mix(color.lighten(0.6), (t - 0.72) / 0.28)
+        };
+        out.push(Node::Circle {
+            cx: cx + ox * off,
+            cy: cy + oy * off,
+            r: rr,
+            fill: Some(c.with_alpha(color.a)),
+            stroke: None,
+        });
+    }
+    out
 }
 
 #[cfg(test)]

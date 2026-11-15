@@ -1062,6 +1062,11 @@ impl Builder<'_> {
                 image,
                 smooth,
             } => self.image(*x, *y, *w, *h, image, *smooth, clip, alpha),
+            Node::Sphere { cx, cy, r, color } => {
+                for n in crate::plot::scene::sphere_layers(*cx, *cy, *r, *color) {
+                    self.node(&n, clip, alpha);
+                }
+            }
             Node::Instances { template, offsets } => self.instances(template, offsets, clip, alpha),
             Node::MarkerGrid {
                 template,

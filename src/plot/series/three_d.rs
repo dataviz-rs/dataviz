@@ -644,36 +644,68 @@ impl Scene3d<'_> {
             self.record(item);
             return;
         }
+        // Pieces of up to 64 kept points; steps shorter than a third of a
+        // pixel are merged into the next (dense trajectories have most of
+        // their segments below a pixel, which adds work but no detail).
         const PIECE: usize = 64;
-        let mut start = 0;
-        while start + 1 < pts.len() {
-            let end = (start + PIECE).min(pts.len() - 1);
-            let mut screen = Vec::with_capacity(end - start + 1);
-            let mut depth = 0.0;
-            for p in &pts[start..=end] {
-                let (x, y, d) = self.proj.project(*p);
-                if x.is_finite() && y.is_finite() {
-                    screen.push((x, y));
-                    depth += d;
-                }
-            }
+        const MIN_STEP2: f64 = 0.35 * 0.35;
+        let mut screen: Vec<(f64, f64)> = Vec::with_capacity(PIECE + 1);
+        let (mut depth, mut first) = (0.0, 0usize);
+        let flush = |me: &mut Self,
+                     screen: &mut Vec<(f64, f64)>,
+                     depth: &mut f64,
+                     first: usize,
+                     last: usize| {
             if screen.len() >= 2 {
-                let depth = depth / screen.len() as f64;
+                let d = *depth / screen.len() as f64;
                 let c = colors
-                    .and_then(|c| c.get((start + end) / 2).copied())
+                    .and_then(|c| c.get((first + last) / 2).copied())
                     .unwrap_or(color);
-                let c = self.cue(c, depth);
-                self.add(
-                    depth,
+                let c = me.cue(c, d);
+                let w = width * me.proj.persp(d);
+                me.add(
+                    d,
                     Prim::Line {
-                        pts: screen,
+                        pts: std::mem::take(screen),
                         color: c,
-                        width: width * self.proj.persp(depth),
+                        width: w,
                     },
                 );
             }
-            start = end;
+            screen.clear();
+            *depth = 0.0;
+        };
+        for (k, p) in pts.iter().enumerate() {
+            let (x, y, d) = self.proj.project(*p);
+            if !(x.is_finite() && y.is_finite()) {
+                flush(self, &mut screen, &mut depth, first, k);
+                first = k + 1;
+                continue;
+            }
+            let last = k + 1 == pts.len();
+            if let Some(&(lx, ly)) = screen.last() {
+                if !last && (x - lx) * (x - lx) + (y - ly) * (y - ly) < MIN_STEP2 {
+                    continue;
+                }
+            }
+            screen.push((x, y));
+            depth += d;
+            if screen.len() > PIECE {
+                // The next piece starts where this one ends (no gap).
+                let (end, dd) = (*screen.last().unwrap(), d);
+                flush(self, &mut screen, &mut depth, first, k);
+                screen.push(end);
+                depth = dd;
+                first = k;
+            }
         }
+        flush(
+            self,
+            &mut screen,
+            &mut depth,
+            first,
+            pts.len().saturating_sub(1),
+        );
     }
 
     fn cue(&self, c: Color, depth: f64) -> Color {
@@ -1182,7 +1214,30 @@ impl Scene3d<'_> {
                     color,
                     width,
                     tube,
-                } => draw_seg(out, a, b, color, width, tube),
+                } => {
+                    // Following segments of the same look (bonds of one
+                    // element, tube pieces) become one path per band.
+                    let mut segs = vec![(a, b)];
+                    while let Some(&key) = keys.get(k) {
+                        match &prims[idx(key)] {
+                            Prim::Seg {
+                                a: sa,
+                                b: sb,
+                                color: sc,
+                                width: sw,
+                                tube: st,
+                            } if *sc == color
+                                && *st == tube
+                                && (sw - width).abs() <= width * 0.05 =>
+                            {
+                                segs.push((*sa, *sb));
+                                k += 1;
+                            }
+                            _ => break,
+                        }
+                    }
+                    draw_segs(out, &segs, color, width, tube);
+                }
                 Prim::Taken => {}
             }
         }
@@ -1274,65 +1329,45 @@ fn draw_ball(out: &mut Vec<Node>, x: f64, y: f64, r: f64, color: Color, shaded: 
         });
         return;
     }
-    let rim = color.darken(0.5);
-    let steps = ((r / 1.4) as usize).clamp(3, 18);
-    let (ox, oy) = (LIGHT[0] * 0.62, -LIGHT[1] * 0.62);
-    out.push(Node::Circle {
+    out.push(Node::Sphere {
         cx: x,
         cy: y,
         r,
-        fill: Some(rim),
-        stroke: None,
+        color,
     });
-    for k in 1..=steps {
-        let t = k as f64 / steps as f64;
-        // Radius shrinks, centre moves towards the highlight.
-        let rr = r * (1.0 - 0.9 * t);
-        let off = r * t * 0.55;
-        let c = if t < 0.72 {
-            rim.mix(color, (t / 0.72).powf(0.7))
-        } else {
-            color.mix(color.lighten(0.6), (t - 0.72) / 0.28)
-        };
-        out.push(Node::Circle {
-            cx: x + ox * off,
-            cy: y + oy * off,
-            r: rr,
-            fill: Some(c.with_alpha(color.a)),
-            stroke: None,
-        });
-    }
 }
 
-fn draw_seg(
-    out: &mut Vec<Node>,
-    a: (f64, f64),
-    b: (f64, f64),
-    color: Color,
-    width: f64,
-    tube: bool,
-) {
-    let path =
-        |a: (f64, f64), b: (f64, f64)| vec![PathCmd::MoveTo(a.0, a.1), PathCmd::LineTo(b.0, b.1)];
+/// Screen segment: start and end point.
+type Seg2 = ((f64, f64), (f64, f64));
+
+fn draw_segs(out: &mut Vec<Node>, segs: &[Seg2], color: Color, width: f64, tube: bool) {
     let stroke = |c: Color, w: f64| {
         Stroke::new(c, w.max(0.3))
             .cap(LineCap::Round)
             .join(LineJoin::Round)
     };
+    let path = |o: f64| {
+        let mut cmds = Vec::with_capacity(segs.len() * 2);
+        for &(a, b) in segs {
+            // Perpendicular offset towards the light (highlight bands).
+            let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+            let l = dx.hypot(dy).max(1e-9);
+            let (mut nx, mut ny) = (-dy / l, dx / l);
+            if nx * LIGHT[0] - ny * LIGHT[1] < 0.0 {
+                (nx, ny) = (-nx, -ny);
+            }
+            cmds.push(PathCmd::MoveTo(a.0 + nx * o, a.1 + ny * o));
+            cmds.push(PathCmd::LineTo(b.0 + nx * o, b.1 + ny * o));
+        }
+        cmds
+    };
     if !tube || width < 2.5 {
         out.push(Node::Path {
-            cmds: path(a, b),
+            cmds: path(0.0),
             fill: None,
             stroke: Some(stroke(color, width)),
         });
         return;
-    }
-    // Perpendicular offset towards the light for the highlight bands.
-    let (dx, dy) = (b.0 - a.0, b.1 - a.1);
-    let l = dx.hypot(dy).max(1e-9);
-    let (mut nx, mut ny) = (-dy / l, dx / l);
-    if nx * LIGHT[0] - ny * LIGHT[1] < 0.0 {
-        (nx, ny) = (-nx, -ny);
     }
     // Thin tubes need fewer bands for the same look.
     let three = [
@@ -1346,9 +1381,8 @@ fn draw_seg(
     ];
     let bands: &[(f64, f64, Color)] = if width < 7.0 { &two } else { &three };
     for &(wf, of, c) in bands {
-        let o = width * of;
         out.push(Node::Path {
-            cmds: path((a.0 + nx * o, a.1 + ny * o), (b.0 + nx * o, b.1 + ny * o)),
+            cmds: path(width * of),
             fill: None,
             stroke: Some(stroke(c, width * wf)),
         });

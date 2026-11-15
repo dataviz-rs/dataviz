@@ -1773,6 +1773,12 @@ fn anchor_points(nodes: &[Node]) -> Vec<(f64, f64)> {
                 }
             }
             Node::Circle { cx, cy, .. } => v.push((*cx, *cy)),
+            Node::Sphere { cx, cy, r, .. } => {
+                v.push((*cx, *cy));
+                for (dx, dy) in [(1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)] {
+                    v.push((cx + dx * r, cy + dy * r));
+                }
+            }
             Node::Text(t) => v.push((t.x, t.y)),
             Node::Image { x, y, w, h, .. } => {
                 for i in 0..=4 {

@@ -337,6 +337,80 @@ fn blend(dst: &mut [u8], rgb: [u32; 3], a: u32) {
     dst[3] = (a + (dst[3] as u32 * inv + 127) / 255).min(255) as u8;
 }
 
+/// Per-pixel shaded sphere at device centre `(cx, cy)`, radius `r`.
+fn fill_sphere(pm: &mut PixmapMut<'_>, cx: f32, cy: f32, r: f32, c: Color, clip: Clip) {
+    let (w, h) = (pm.width() as f32, pm.height() as f32);
+    let y0 = (cy - r - 0.5).max(clip.t).max(0.0).floor() as i32;
+    let y1 = (cy + r + 0.5).min(clip.b).min(h).ceil() as i32;
+    let xl = (clip.l.max(0.0)).floor() as i32;
+    let xr = (clip.r.min(w)).ceil() as i32;
+    if y0 >= y1 || xl >= xr || r <= 0.0 {
+        return;
+    }
+    let ca = c.a.clamp(0.0, 1.0);
+    let base = [c.r as f32, c.g as f32, c.b as f32];
+    let inv_r = 1.0 / r;
+    let re = r + 0.5;
+    let stride = pm.width() as usize * 4;
+    let inside = |x0: i32, x1: i32, y: i32| {
+        x0 as f32 >= clip.l && x1 as f32 <= clip.r && y as f32 >= clip.t && y as f32 + 1.0 <= clip.b
+    };
+    let data = pm.data_mut();
+    for py in y0..y1 {
+        let dy = py as f32 + 0.5 - cy;
+        let span = re * re - dy * dy;
+        if span <= 0.0 {
+            continue;
+        }
+        let half = span.sqrt();
+        let x0 = ((cx - half).floor() as i32).max(xl);
+        let x1 = ((cx + half).ceil() as i32).min(xr);
+        if x0 >= x1 {
+            continue;
+        }
+        let full = inside(x0, x1, py);
+        let ny = dy * inv_r;
+        let row = &mut data[py as usize * stride..(py as usize + 1) * stride];
+        for px in x0..x1 {
+            let dx = px as f32 + 0.5 - cx;
+            let d2 = dx * dx + dy * dy;
+            let dist = d2.sqrt();
+            let cov = (re - dist).min(1.0);
+            if cov <= 0.0 {
+                continue;
+            }
+            let nx = dx * inv_r;
+            // Normal of the rim pixels is clamped to the silhouette.
+            let s = (1.0 - nx * nx - ny * ny).max(0.0);
+            let (nx, ny, nz) = if s > 0.0 {
+                (nx, ny, s.sqrt())
+            } else {
+                let k = 1.0 / (dist * inv_r).max(1e-6);
+                (nx * k, ny * k, 0.0)
+            };
+            let rgb = crate::plot::scene::sphere_shade(base, nx, ny, nz);
+            let mut a = cov * ca;
+            if !full {
+                a *= clip.cov(px, py) as f32 / 255.0;
+            }
+            let a8 = (a * 255.0 + 0.5) as u32;
+            if a8 == 0 {
+                continue;
+            }
+            let i = px as usize * 4;
+            blend(
+                &mut row[i..i + 4],
+                [
+                    rgb[0].min(255.0) as u32,
+                    rgb[1].min(255.0) as u32,
+                    rgb[2].min(255.0) as u32,
+                ],
+                a8,
+            );
+        }
+    }
+}
+
 /// Anti-aliased fill of the device rectangle `[x0,x1)×[y0,y1)`, clipped.
 fn fill_rect_aa(pm: &mut PixmapMut<'_>, x0: f32, y0: f32, x1: f32, y1: f32, c: Color, clip: Clip) {
     let (w, h) = (pm.width() as f32, pm.height() as f32);
@@ -1054,6 +1128,8 @@ struct Coverage {
     /// Evaluated runs (first index, length, vertical?), so the blend pass
     /// visits exactly the pixels near the line.
     spans: Vec<(u32, u32, bool)>,
+    /// Pixels touched by thin lines (indices into `cov`).
+    touched: Vec<u32>,
 }
 
 thread_local! {
@@ -1098,6 +1174,15 @@ fn stroke_polyline(
     };
     let reach = r + 1.0;
     let pt = |x: f64, y: f64| (x as f32 * ts.sx + ts.tx, y as f32 * ts.sy + ts.ty);
+
+    // Hairlines (up to 1.25 px): Xiaolin Wu's anti-aliased lines, two
+    // pixels per step along the major axis instead of a distance field per
+    // segment — dense polylines (3D trajectories, many series) are several
+    // times faster and look the same at this width.
+    if wpx <= 1.25 {
+        thin_polyline(pm, cmds, s, pt, wpx.min(1.0), clip);
+        return true;
+    }
 
     COVERAGE.with(|c| {
         let mut c = c.borrow_mut();
@@ -1306,6 +1391,106 @@ fn stroke_polyline(
     true
 }
 
+/// Thin anti-aliased polyline (Wu): coverage per pixel kept as the maximum
+/// over the segments, blended once.
+fn thin_polyline(
+    pm: &mut PixmapMut<'_>,
+    cmds: &[PathCmd],
+    s: &Stroke,
+    pt: impl Fn(f64, f64) -> (f32, f32),
+    fade: f32,
+    clip: Clip,
+) {
+    let (w, h) = (pm.width() as i32, pm.height() as i32);
+    COVERAGE.with(|c| {
+        let mut c = c.borrow_mut();
+        let Coverage { cov, touched, .. } = &mut *c;
+        cov.resize((w * h) as usize, 0);
+        touched.clear();
+        let mut plot = |x: i32, y: i32, k: f32| {
+            if x < 0 || y < 0 || x >= w || y >= h || k <= 0.0 {
+                return;
+            }
+            let i = (y * w + x) as usize;
+            let v = (k * fade * 255.0 + 0.5).min(255.0) as u8;
+            let cell = &mut cov[i];
+            if *cell == 0 {
+                touched.push(i as u32);
+            }
+            if v > *cell {
+                *cell = v;
+            }
+        };
+        let mut seg = |a: (f32, f32), b: (f32, f32)| {
+            // Pixel centres at integer + 0.5.
+            let (mut x0, mut y0, mut x1, mut y1) = (a.0 - 0.5, a.1 - 0.5, b.0 - 0.5, b.1 - 0.5);
+            if !(x0.is_finite() && y0.is_finite() && x1.is_finite() && y1.is_finite()) {
+                return;
+            }
+            let steep = (y1 - y0).abs() > (x1 - x0).abs();
+            if steep {
+                std::mem::swap(&mut x0, &mut y0);
+                std::mem::swap(&mut x1, &mut y1);
+            }
+            if x0 > x1 {
+                std::mem::swap(&mut x0, &mut x1);
+                std::mem::swap(&mut y0, &mut y1);
+            }
+            let dx = x1 - x0;
+            let g = if dx < 1e-6 { 0.0 } else { (y1 - y0) / dx };
+            // Thickness correction: a diagonal covers more length per step.
+            let k = (1.0 + g * g).sqrt().min(1.42);
+            let (xs, xe) = (x0.round() as i32, x1.round() as i32);
+            for x in xs..=xe {
+                let y = y0 + g * (x as f32 - x0);
+                let yf = y.floor();
+                let f = y - yf;
+                let (p, q) = ((1.0 - f) * k, f * k);
+                if steep {
+                    plot(yf as i32, x, p.min(1.0));
+                    plot(yf as i32 + 1, x, q.min(1.0));
+                } else {
+                    plot(x, yf as i32, p.min(1.0));
+                    plot(x, yf as i32 + 1, q.min(1.0));
+                }
+            }
+        };
+        let mut cur: Option<(f32, f32)> = None;
+        for cmd in cmds {
+            match *cmd {
+                PathCmd::MoveTo(x, y) => cur = Some(pt(x, y)),
+                PathCmd::LineTo(x, y) => {
+                    let p = pt(x, y);
+                    if let Some(a) = cur {
+                        seg(a, p);
+                    }
+                    cur = Some(p);
+                }
+                _ => {}
+            }
+        }
+        let ca = (s.color.a.clamp(0.0, 1.0) * 255.0).round() as u32;
+        let rgb = [s.color.r as u32, s.color.g as u32, s.color.b as u32];
+        let dst = pm.data_mut();
+        let wu = w as usize;
+        for &i in touched.iter() {
+            let i = i as usize;
+            let k = std::mem::take(&mut cov[i]) as u32;
+            let m = clip.cov((i % wu) as i32, (i / wu) as i32);
+            let a = (k * ca * m + 255 * 255 / 2) / (255 * 255);
+            if a > 0 {
+                let inv = 255 - a;
+                let di = i * 4;
+                for j in 0..3 {
+                    dst[di + j] =
+                        ((rgb[j] * a + dst[di + j] as u32 * inv + 127) / 255).min(255) as u8;
+                }
+                dst[di + 3] = (a + (dst[di + 3] as u32 * inv + 127) / 255).min(255) as u8;
+            }
+        }
+    });
+}
+
 /// Fills and/or strokes a path with tiny-skia.
 fn fill_stroke_path(
     pm: &mut PixmapMut<'_>,
@@ -1429,6 +1614,7 @@ pub(crate) fn template_bounds(n: &Node) -> Option<(f64, f64, f64, f64)> {
             let e = r + sw(stroke) / 2.0;
             Some((cx - e, cy - e, cx + e, cy + e))
         }
+        Node::Sphere { cx, cy, r, .. } => Some((cx - r, cy - r, cx + r, cy + r)),
         Node::Rect {
             x, y, w, h, stroke, ..
         } => {
@@ -1818,6 +2004,20 @@ impl<'a> Ctx<'a> {
                 ) {
                     self.with_mask(pm, |c, pm, m| c.fill_stroke(pm, &p, *fill, stroke, ts, m));
                 }
+            }
+            Node::Sphere { cx, cy, r, color } => {
+                if !cx.is_finite() || !cy.is_finite() || *r <= 0.0 {
+                    return;
+                }
+                if ts.kx != 0.0 || ts.ky != 0.0 || (ts.sx - ts.sy).abs() > 1e-6 {
+                    for l in crate::plot::scene::sphere_layers(*cx, *cy, *r, *color) {
+                        self.node(pm, &l, counts);
+                    }
+                    return;
+                }
+                let gx = *cx as f32 * ts.sx + ts.tx;
+                let gy = *cy as f32 * ts.sy + ts.ty;
+                fill_sphere(pm, gx, gy, *r as f32 * ts.sx, *color, self.clip);
             }
             Node::Circle {
                 cx,
