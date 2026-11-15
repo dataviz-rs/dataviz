@@ -183,6 +183,10 @@ impl Figure {
                 if !kinds.contains(&kind) {
                     kinds.push(kind);
                 }
+                if let Some(d) = s.describe() {
+                    names.push(d);
+                    continue;
+                }
                 let mut d = s.name().unwrap_or_else(|| format!("series {}", k + 1));
                 if let Some(e) = s.extent() {
                     if e.y_min.is_finite() && e.y_max.is_finite() {
@@ -228,6 +232,22 @@ impl Figure {
                     "; {}; {}",
                     axis(&ax.x.label, false, &lay.x),
                     axis(&ax.y.label, true, &lay.y)
+                ));
+            }
+            if ax.kind == super::AxesKind::ThreeD && ax.view3d.show_box {
+                let b = ax.bounds3d();
+                let lab = |l: &Option<String>, d: &str| l.clone().unwrap_or_else(|| d.into());
+                p.push_str(&format!(
+                    "; {} from {} to {}; {} from {} to {}; {} from {} to {}",
+                    lab(&ax.x.label, "x"),
+                    short(b[0].0),
+                    short(b[0].1),
+                    lab(&ax.y.label, "y"),
+                    short(b[1].0),
+                    short(b[1].1),
+                    lab(&ax.view3d.z_label, "z"),
+                    short(b[2].0),
+                    short(b[2].1)
                 ));
             }
             p.push_str(&format!(". Series: {}.", names.join("; ")));

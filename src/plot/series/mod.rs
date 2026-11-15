@@ -485,6 +485,12 @@ pub trait Series: Any {
             _ => "data",
         }
     }
+    /// A sentence about what the series shows, for text descriptions
+    /// ([`Figure::alt_text`](crate::plot::Figure::alt_text)); `None` (the
+    /// default) describes it by its name and y-range.
+    fn describe(&self) -> Option<String> {
+        None
+    }
     /// Name shown for the series (legend label) in interactive output.
     fn name(&self) -> Option<String> {
         self.legend().into_iter().next().map(|e| e.label)

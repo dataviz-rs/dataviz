@@ -56,3 +56,20 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Build with the minimum supported Rust version
         run: cargo build --all-targets
+
+  # Tests on Windows and macOS (the window feature builds there without
+  # extra system packages).
+  platforms:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests (library and MCP server)
+        run: |
+          cargo test --features pdf
+          cargo test -p dataviz-mcp

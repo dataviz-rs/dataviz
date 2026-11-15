@@ -9,6 +9,9 @@
 <a href="https://docs.rs/dataviz">
     <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
 </a>
+<a href="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml">
+    <img style="display: inline!important" src="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml/badge.svg"></img>
+</a>
 
 **Fast, pure-Rust plotting: 120+ chart types, interactive windows, live
 data, animations, maps, math and every language — with the least CPU and

@@ -1745,6 +1745,16 @@ impl Series for Surface {
     fn kind(&self) -> &'static str {
         "3D surface"
     }
+    fn describe(&self) -> Option<String> {
+        let (a, b) = self.z_range();
+        Some(format!(
+            "surface on a {} × {} grid, z from {} to {}",
+            self.cols(),
+            self.z.len(),
+            short(a),
+            short(b)
+        ))
+    }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -1895,6 +1905,19 @@ impl Series for Points3d {
             "3D scatter"
         }
     }
+    fn describe(&self) -> Option<String> {
+        let what = if self.line { "line through" } else { "" };
+        let name = self
+            .label
+            .as_ref()
+            .map_or(String::new(), |l| format!("{l}: "));
+        Some(
+            format!("{name}{what} {} points", self.n())
+                .replace("  ", " ")
+                .trim()
+                .to_string(),
+        )
+    }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -2034,6 +2057,13 @@ impl Series for Spheres {
     }
     fn kind(&self) -> &'static str {
         "3D spheres"
+    }
+    fn describe(&self) -> Option<String> {
+        let name = self
+            .label
+            .as_ref()
+            .map_or(String::new(), |l| format!("{l}: "));
+        Some(format!("{name}{} spheres", self.centers.len()))
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
@@ -2222,6 +2252,13 @@ impl Series for Mesh3d {
     }
     fn kind(&self) -> &'static str {
         "3D mesh"
+    }
+    fn describe(&self) -> Option<String> {
+        let name = self
+            .label
+            .as_ref()
+            .map_or(String::new(), |l| format!("{l}: "));
+        Some(format!("{name}surface of {} faces", self.faces.len()))
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self

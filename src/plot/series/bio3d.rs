@@ -231,6 +231,35 @@ impl Series for DnaHelix {
     fn kind(&self) -> &'static str {
         "DNA helix"
     }
+    fn describe(&self) -> Option<String> {
+        let n = self.seq.len();
+        let gc = self
+            .seq
+            .iter()
+            .filter(|b| matches!(b.to_ascii_uppercase(), b'G' | b'C'))
+            .count();
+        let shown: String = self
+            .seq
+            .iter()
+            .take(30)
+            .map(|b| b.to_ascii_uppercase() as char)
+            .collect();
+        let mut d = format!(
+            "{} double helix of {n} base pairs ({:.0} % GC), sequence {shown}{}",
+            if self.rna { "RNA" } else { "DNA" },
+            gc as f64 * 100.0 / n.max(1) as f64,
+            if n > 30 { "…" } else { "" }
+        );
+        for (r, _, l) in &self.highlights {
+            d.push_str(&format!(
+                "; base pairs {}–{} marked{}",
+                r.start + 1,
+                r.end,
+                l.as_ref().map_or(String::new(), |l| format!(" as {l}"))
+            ));
+        }
+        Some(d)
+    }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
@@ -1040,6 +1069,56 @@ impl Series for MoleculeView {
     }
     fn kind(&self) -> &'static str {
         "molecule"
+    }
+    fn describe(&self) -> Option<String> {
+        let atoms: Vec<&Atom> = self.mol.atoms.iter().filter(|a| self.shown(a)).collect();
+        let mut chains: Vec<char> = atoms
+            .iter()
+            .filter(|a| !a.hetero)
+            .map(|a| a.chain)
+            .collect();
+        chains.dedup();
+        chains.sort_unstable();
+        chains.dedup();
+        let residues = self.mol.residues().len();
+        let mut ligands: Vec<&str> = atoms
+            .iter()
+            .filter(|a| a.hetero)
+            .map(|a| a.residue.as_str())
+            .collect();
+        ligands.sort_unstable();
+        ligands.dedup();
+        let style = match self.style {
+            MolStyle::BallAndStick => "ball-and-stick",
+            MolStyle::Sticks => "sticks",
+            MolStyle::SpaceFilling => "space-filling",
+            MolStyle::Backbone => "backbone tube",
+            MolStyle::Cartoon => "cartoon",
+        };
+        let mut d = format!("{style} model of {} atoms", atoms.len());
+        if residues > 0 {
+            d.push_str(&format!(
+                ", {residues} residues in {} chain{}",
+                chains.len(),
+                if chains.len() == 1 { "" } else { "s" }
+            ));
+        }
+        let (h, s) = self
+            .mol
+            .secondary
+            .iter()
+            .fold((0, 0), |(h, s), x| match x.3 {
+                SecondaryStructure::Helix => (h + 1, s),
+                SecondaryStructure::Strand => (h, s + 1),
+                SecondaryStructure::Coil => (h, s),
+            });
+        if h + s > 0 {
+            d.push_str(&format!(", {h} helices and {s} strands"));
+        }
+        if !ligands.is_empty() {
+            d.push_str(&format!(", ligands {}", ligands.join(", ")));
+        }
+        Some(d)
     }
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
