@@ -155,6 +155,21 @@ pub struct RasterImage {
 }
 
 /// A drawing primitive.
+/// Triangles of a 3D plot in normalized box coordinates (independent of
+/// the camera) and the camera of this frame: the GPU keeps the triangles
+/// (by `id`) and only receives the camera when the view turns.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Mesh3d {
+    /// Identity of `vertices` (unchanged data keeps its id).
+    pub(crate) id: u64,
+    /// Per vertex: position (3), normal (3), RGBA color 0–1 (4).
+    pub(crate) vertices: std::sync::Arc<Vec<f32>>,
+    /// Rotation rows (3 × vec4), then `[scale, centre x, centre y,
+    /// distance]`, `[radius, fog, lighting, 0]`, background RGBA and the
+    /// clip rectangle `[l, t, r, b]` (canvas units).
+    pub(crate) view: [f32; 28],
+}
+
 /// A line segment: start and end point.
 pub type Segment = ((f64, f64), (f64, f64));
 
@@ -222,6 +237,9 @@ pub enum Node {
         /// Base color.
         color: Color,
     },
+    /// Opaque lit 3D faces kept on the GPU between frames (GPU back end;
+    /// see [`Mesh3d`]). Other back ends never receive it.
+    Mesh3d(Box<Mesh3d>),
     /// Text.
     Text(TextNode),
     /// Raster image scaled to the rectangle.
@@ -627,6 +645,8 @@ impl SvgWriter<'_> {
                     self.node(&n);
                 }
             }
+            // Only built for the GPU back end.
+            Node::Mesh3d(_) => {}
             Node::Sphere { cx, cy, r, color } => {
                 let rgb = [color.r, color.g, color.b];
                 let id = match self.spheres.iter().find(|s| s.0 == rgb) {

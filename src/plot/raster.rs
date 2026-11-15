@@ -2239,6 +2239,8 @@ impl<'a> Ctx<'a> {
                     self.with_mask(pm, |c, pm, m| c.fill_stroke(pm, &p, *fill, stroke, ts, m));
                 }
             }
+            // Only built for the GPU back end.
+            Node::Mesh3d(_) => {}
             Node::Tube { segs, width, color } => {
                 if ts.kx != 0.0 || ts.ky != 0.0 || (ts.sx - ts.sy).abs() > 1e-6 {
                     for l in crate::plot::scene::tube_layers(segs, *width, *color) {

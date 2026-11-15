@@ -3,6 +3,12 @@
 ## Unreleased
 
 ### Changed
+- GPU back end: 3D plots of opaque faces (surfaces, meshes,
+  isosurfaces) stay on the GPU as meshes — uploaded once, then only the
+  camera is sent; projection, perspective, lighting and depth cueing run in
+  the shaders with a depth buffer. A rotation frame of a 200² surface:
+  34 ms on one CPU core, 0.5 ms on the GPU (was 5.7 ms for 120²). Scenes
+  with lines, points, text, edges or translucent faces keep the CPU path.
 - Faster, smoother 3D molecules: bonds and other tubes are one lit
   cylinder per segment (`Node::Tube`, shading table per direction)
   instead of two or three stroked bands; shaded spheres reuse one

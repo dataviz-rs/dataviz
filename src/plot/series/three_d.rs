@@ -553,6 +553,45 @@ pub struct Scene3d<'a> {
     light: bool,
     /// Recording for interactive HTML instead of drawing.
     rec: Option<Rec3>,
+    /// Capture of opaque faces for the GPU instead of drawing.
+    mesh: Option<MeshCapture>,
+}
+
+/// GPU mesh of an axes: valid while the series (`revision`) and the
+/// normalization of the box (`norm`) are unchanged; `vertices` is `None`
+/// when the scene cannot be a mesh.
+pub(crate) struct MeshCache {
+    revision: u64,
+    norm: [u64; 6],
+    id: u64,
+    vertices: Option<std::sync::Arc<Vec<f32>>>,
+}
+
+impl MeshCache {
+    /// Identity of the cached mesh.
+    #[cfg(test)]
+    pub(crate) fn id(&self) -> u64 {
+        self.id
+    }
+}
+
+/// Clip rectangle `[l, t, r, b]` of a plot area (canvas units).
+fn self_clip(r: Rect) -> [f32; 4] {
+    [
+        r.x as f32,
+        r.y as f32,
+        (r.x + r.w) as f32,
+        (r.y + r.h) as f32,
+    ]
+}
+
+/// Faces captured in normalized box coordinates for [`Node::Mesh3d`];
+/// `other` is set when the scene has anything a mesh cannot show (lines,
+/// points, text, edges, translucent faces).
+#[derive(Default)]
+struct MeshCapture {
+    vertices: Vec<f32>,
+    other: bool,
 }
 
 /// 3D primitives recorded in normalized box coordinates (before the
@@ -609,6 +648,10 @@ impl Scene3d<'_> {
     }
 
     fn add(&mut self, depth: f64, p: Prim) {
+        if let Some(m) = &mut self.mesh {
+            m.other = true;
+            return;
+        }
         // f32 bits flipped so that unsigned order is numeric order.
         let b = (depth as f32).to_bits();
         let ord = if b >> 31 == 1 { !b } else { b | 0x8000_0000 };
@@ -767,6 +810,30 @@ impl Scene3d<'_> {
         cull: bool,
     ) {
         if q.iter().any(|p| !p.iter().all(|c| c.is_finite())) {
+            return;
+        }
+        if self.mesh.is_some() {
+            let ok = edge.is_none() && color.a >= 0.99 && q.len() >= 3;
+            let n = normal.unwrap_or_else(|| unit(cross(sub(q[1], q[0]), sub(q[2], q[0]))));
+            let (n, pts) = (
+                self.unview(n),
+                q.iter().map(|v| self.unview(*v)).collect::<Vec<_>>(),
+            );
+            if let Some(m) = self.mesh.as_mut() {
+                if !ok {
+                    m.other = true;
+                    return;
+                }
+                let c = [color.r, color.g, color.b].map(|v| v as f32 / 255.0);
+                for i in 1..pts.len() - 1 {
+                    for p in [pts[0], pts[i], pts[i + 1]] {
+                        m.vertices.extend(p.map(|v| v as f32));
+                        m.vertices.extend(n.map(|v| v as f32));
+                        m.vertices.extend(c);
+                        m.vertices.push(color.a);
+                    }
+                }
+            }
             return;
         }
         if self.rec.is_some() {
@@ -1647,6 +1714,12 @@ impl Axes {
                 fonts,
             );
         }
+        if self.gpu_mesh {
+            if let Some(node) = self.gpu_mesh_node(&proj, plot, theme) {
+                out.push(node);
+                return;
+            }
+        }
         let mut scene = Scene3d {
             proj: &proj,
             prims: Vec::new(),
@@ -1656,11 +1729,94 @@ impl Axes {
             background: theme.plot_background,
             light: self.view3d.light,
             rec: None,
+            mesh: None,
         };
         for s in self.shown() {
             s.draw3d(&mut scene);
         }
         scene.finish(fonts, out);
+    }
+
+    /// The scene as a GPU mesh when it is only opaque faces: captured once
+    /// per change of the series or limits (`Axes::revision`), then only the
+    /// camera changes from frame to frame.
+    fn gpu_mesh_node(&self, proj: &Projection3d, plot: Rect, theme: &Theme) -> Option<Node> {
+        let norm: [u64; 6] = [
+            proj.mid[0],
+            proj.mid[1],
+            proj.mid[2],
+            proj.k[0],
+            proj.k[1],
+            proj.k[2],
+        ]
+        .map(f64::to_bits);
+        let mut cache = self.mesh_cache.lock().unwrap_or_else(|e| e.into_inner());
+        let hit = cache
+            .as_ref()
+            .filter(|c| c.revision == self.revision && c.norm == norm);
+        let (id, vertices) = match hit {
+            Some(c) => (c.id, c.vertices.clone()?),
+            None => {
+                let mut scene = Scene3d {
+                    proj,
+                    prims: Vec::new(),
+                    keys: Vec::new(),
+                    labels: Vec::new(),
+                    fog: self.view3d.fog,
+                    background: theme.plot_background,
+                    light: self.view3d.light,
+                    rec: None,
+                    mesh: Some(MeshCapture::default()),
+                };
+                for s in self.shown() {
+                    s.draw3d(&mut scene);
+                }
+                let m = scene.mesh.take().unwrap_or_default();
+                let ok = !m.other && scene.labels.is_empty() && !m.vertices.is_empty();
+                static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+                let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                let vertices = ok.then(|| std::sync::Arc::new(m.vertices));
+                *cache = Some(MeshCache {
+                    revision: self.revision,
+                    norm,
+                    id,
+                    vertices: vertices.clone(),
+                });
+                (id, vertices?)
+            }
+        };
+        let m = proj.cam.m;
+        let row = |r: [f64; 3]| [r[0] as f32, r[1] as f32, r[2] as f32, 0.0];
+        let bg = theme.plot_background;
+        let clip = self_clip(plot);
+        let mut view = [0.0f32; 28];
+        view[0..4].copy_from_slice(&row(m[0]));
+        view[4..8].copy_from_slice(&row(m[1]));
+        view[8..12].copy_from_slice(&row(m[2]));
+        view[12..16].copy_from_slice(&[
+            proj.scale as f32,
+            proj.center.0 as f32,
+            proj.center.1 as f32,
+            proj.dist as f32,
+        ]);
+        view[16..20].copy_from_slice(&[
+            proj.radius as f32,
+            self.view3d.fog as f32,
+            if self.view3d.light { 1.0 } else { 0.0 },
+            0.0,
+        ]);
+        view[20..24].copy_from_slice(&[
+            bg.r as f32 / 255.0,
+            bg.g as f32 / 255.0,
+            bg.b as f32 / 255.0,
+            bg.a,
+        ]);
+        view[24..28].copy_from_slice(&clip);
+        Some(Node::Mesh3d(Box::new(crate::plot::scene::Mesh3d {
+            id,
+            vertices,
+            view,
+        })))
     }
 
     /// The 3D scene as JSON for the interactive HTML page: camera, fit,
@@ -1676,6 +1832,7 @@ impl Axes {
             background: theme.plot_background,
             light: self.view3d.light,
             rec: Some(Rec3::default()),
+            mesh: None,
         };
         for s in self.shown() {
             s.draw3d(&mut scene);

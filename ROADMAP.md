@@ -13,11 +13,12 @@ then breadth. There is no backward-compatibility promise before 1.0.
 
 ## Performance
 
-- [ ] Retained 3D geometry: tessellate a 3D scene once and only
-      re-project, re-light and re-sort when the camera moves
-      (isosurfaces, cartoons and large meshes rotate without rebuilding)
-- [ ] GPU 3D path: keep the retained geometry in GPU buffers, camera as a
-      uniform, depth buffer instead of painter's sort for opaque meshes
+- [x] GPU 3D path for opaque faces: geometry kept in GPU buffers, camera
+      as a uniform, depth buffer instead of painter's sort
+- [ ] The same for lines, spheres and tubes (instanced), so molecules and
+      trajectories also turn without CPU work
+- [ ] Retained 3D geometry on the CPU: re-project and re-sort only when
+      the camera moves (cartoons rebuild their splines every frame today)
 - [ ] SIMD (std::simd once stable) for the rasterizer's coverage and blend loops
 - [ ] Incremental redraw of streaming charts (only the plot area that changed)
 

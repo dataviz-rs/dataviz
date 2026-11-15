@@ -465,7 +465,16 @@ impl Figure {
     }
 
     pub(crate) fn render_out(&mut self, out: super::render::Out<'_>) -> Result<(), Error> {
+        // On the GPU, 3D plots of opaque faces stay on the GPU between
+        // frames (only the camera is sent when the view turns).
+        let gpu = cfg!(feature = "gpu") && matches!(self.backend, Backend::Gpu);
+        for c in &mut self.cells {
+            c.axes.gpu_mesh = gpu;
+        }
         let scene = self.to_scene();
+        for c in &mut self.cells {
+            c.axes.gpu_mesh = false;
+        }
         let fonts = self.fonts();
         super::render::render_to(
             &scene,

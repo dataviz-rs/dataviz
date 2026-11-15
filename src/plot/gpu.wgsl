@@ -283,3 +283,73 @@ fn fs_sprite(in: SpriteOut) -> @location(0) vec4<f32> {
     let t = vec2<i32>(floor(in.uv + in.pos.xy - in.dst.xy));
     return textureLoad(img, t, 0) * in.alpha * box_cov(in.pos.xy, in.clip);
 }
+
+// ---- retained 3D meshes: triangles in normalized box coordinates, turned
+// and lit here with the camera of the frame (same model as the CPU scene) ----
+
+struct MeshView {
+    m0: vec4<f32>,
+    m1: vec4<f32>,
+    m2: vec4<f32>,
+    // scale, centre x, centre y, perspective distance (canvas units)
+    p: vec4<f32>,
+    // radius, fog, lighting (0/1), unused
+    q: vec4<f32>,
+    bg: vec4<f32>,
+    // clip rectangle in device pixels
+    clip: vec4<f32>,
+    // canvas → device: scale, offset x, offset y
+    dev: vec4<f32>,
+};
+
+@group(2) @binding(0) var<uniform> mv: MeshView;
+
+struct MeshOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(0) color: vec4<f32>,
+};
+
+@vertex
+fn vs_mesh(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c: vec4<f32>) -> MeshOut {
+    let v = vec3<f32>(dot(mv.m0.xyz, p), dot(mv.m1.xyz, p), dot(mv.m2.xyz, p));
+    let radius = mv.q.x;
+    var f = 1.0;
+    if mv.p.w > 0.0 {
+        f = mv.p.w / max(mv.p.w - v.z, radius * 0.05);
+    }
+    let sx = (mv.p.y + v.x * mv.p.x * f) * mv.dev.x + mv.dev.y;
+    let sy = (mv.p.z - v.y * mv.p.x * f) * mv.dev.x + mv.dev.z;
+    var o: MeshOut;
+    let q = ndc(vec2<f32>(sx, sy));
+    // Nearer (larger view z) is smaller depth.
+    o.pos = vec4<f32>(q.xy, clamp(0.5 - v.z / (4.0 * max(radius, 1e-6)), 0.0, 1.0), 1.0);
+    var rgb = c.rgb;
+    if mv.q.z > 0.5 {
+        var nv = vec3<f32>(dot(mv.m0.xyz, n), dot(mv.m1.xyz, n), dot(mv.m2.xyz, n));
+        if nv.z < 0.0 {
+            nv = -nv;
+        }
+        let l = vec3<f32>(-0.42, 0.56, 0.71);
+        let d = 0.42 + 0.62 * max(dot(nv, l), 0.0);
+        let s = 0.32 * pow(max(dot(nv, normalize(l + vec3<f32>(0.0, 0.0, 1.0))), 0.0), 28.0);
+        if d < 1.0 {
+            rgb = rgb * d;
+        } else {
+            rgb = rgb + (vec3<f32>(1.0) - rgb) * (d - 1.0) * 0.6;
+        }
+        if s > 0.004 {
+            rgb = rgb + (vec3<f32>(1.0) - rgb) * s;
+        }
+    }
+    if mv.q.y > 0.0 {
+        let near = clamp((v.z / max(radius, 1e-6) + 1.0) * 0.5, 0.0, 1.0);
+        rgb = mix(rgb, mv.bg.rgb, mv.q.y * (1.0 - near));
+    }
+    o.color = vec4<f32>(rgb * c.a, c.a);
+    return o;
+}
+
+@fragment
+fn fs_mesh(in: MeshOut) -> @location(0) vec4<f32> {
+    return in.color * box_cov(in.pos.xy, mv.clip);
+}

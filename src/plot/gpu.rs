@@ -74,6 +74,8 @@ struct Gpu {
     stencil: wgpu::RenderPipeline,
     cover: wgpu::RenderPipeline,
     tri: wgpu::RenderPipeline,
+    mesh: wgpu::RenderPipeline,
+    mesh_layout: wgpu::BindGroupLayout,
     shape: wgpu::RenderPipeline,
     glyph: wgpu::RenderPipeline,
     image: wgpu::RenderPipeline,
@@ -95,6 +97,8 @@ struct State {
     targets: Option<Targets>,
     atlas: Atlas,
     buffers: [Option<wgpu::Buffer>; 7],
+    /// Vertex buffers of retained 3D meshes by id, with vertex counts.
+    meshes: std::collections::HashMap<u64, (wgpu::Buffer, u32)>,
 }
 
 struct Targets {
@@ -409,8 +413,72 @@ impl Gpu {
             "fs_image",
             &[Some(vertex_layout(36, &image_attrs, true))],
             ds(keep, keep, 0),
-            blend,
+            blend.clone(),
         );
+
+        // Retained 3D meshes: own uniform (group 2), depth tested.
+        let mesh_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("mesh"),
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
+                },
+                count: None,
+            }],
+        });
+        let mesh_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("mesh"),
+            bind_group_layouts: &[
+                Some(&globals_layout),
+                Some(&image_layout),
+                Some(&mesh_layout),
+            ],
+            immediate_size: 0,
+        });
+        let mesh_attrs = [
+            a(0, wgpu::VertexFormat::Float32x3, 0),
+            a(1, wgpu::VertexFormat::Float32x3, 12),
+            a(2, Float32x4, 24),
+        ];
+        let mesh = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("mesh"),
+            layout: Some(&mesh_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_mesh"),
+                compilation_options: Default::default(),
+                buffers: &[Some(vertex_layout(40, &mesh_attrs, false))],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState {
+                    front: keep,
+                    back: keep,
+                    read_mask: 0xff,
+                    write_mask: 0,
+                },
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_mesh"),
+                compilation_options: Default::default(),
+                targets: &[blend],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
 
         let post = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("post"),
@@ -525,6 +593,8 @@ impl Gpu {
             stencil,
             cover,
             tri,
+            mesh,
+            mesh_layout,
             shape,
             glyph,
             image,
@@ -636,6 +706,8 @@ enum Cmd {
     },
     /// Vertices of convex fills (triangle list).
     Tris(Range<u32>),
+    /// A retained 3D mesh (index into `Frame::meshes`).
+    Mesh(usize),
     Image {
         instance: u32,
         bind: usize,
@@ -653,6 +725,8 @@ struct Frame {
     stencil: Vec<f32>,
     cover: Vec<f32>,
     tris: Vec<f32>,
+    /// Retained meshes: id, vertices, uniform (camera, light, clip, device).
+    meshes: Vec<(u64, std::sync::Arc<Vec<f32>>, [f32; 32])>,
     shapes: Vec<f32>,
     glyphs: Vec<f32>,
     images: Vec<f32>,
@@ -1172,6 +1246,23 @@ impl Builder<'_> {
                     self.node(&n, clip, alpha);
                 }
             }
+            Node::Mesh3d(m) => {
+                let mut u = [0.0f32; 32];
+                u[..24].copy_from_slice(&m.view[..24]);
+                // Clip: the mesh's plot area within the current clip, in
+                // device pixels.
+                let (l, t) = self.dev(m.view[24] as f64, m.view[25] as f64);
+                let (r, b) = self.dev(m.view[26] as f64, m.view[27] as f64);
+                u[24..28].copy_from_slice(&[
+                    l.max(clip[0]),
+                    t.max(clip[1]),
+                    r.min(clip[2]),
+                    b.min(clip[3]),
+                ]);
+                u[28..32].copy_from_slice(&[self.base.sx, self.base.tx, self.base.ty, 0.0]);
+                self.frame.meshes.push((m.id, m.vertices.clone(), u));
+                self.frame.cmds.push(Cmd::Mesh(self.frame.meshes.len() - 1));
+            }
             Node::Instances { template, offsets } => self.instances(template, offsets, clip, alpha),
             Node::MarkerGrid {
                 template,
@@ -1558,6 +1649,44 @@ fn render_inner(
         .write_buffer(&gpu.globals, 0, bytes(&[w as f32, h as f32, mode, 0.0]));
     let [b_stencil, b_cover, b_shapes, b_glyphs, b_images, b_sprites, b_tris] = &mut state.buffers;
     let tris = gpu.upload(b_tris, &frame.tris)?;
+    // Retained meshes: uploaded once per id; dropped when no longer drawn.
+    state
+        .meshes
+        .retain(|id, _| frame.meshes.iter().any(|m| m.0 == *id));
+    let mut mesh_binds = Vec::with_capacity(frame.meshes.len());
+    for (id, verts, u) in &frame.meshes {
+        if !state.meshes.contains_key(id) {
+            let size = std::mem::size_of_val(verts.as_slice()) as u64;
+            if size > gpu.device.limits().max_buffer_size {
+                return Err(Error::Render(
+                    "GPU: 3D mesh exceeds the buffer limit".into(),
+                ));
+            }
+            let b = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("mesh"),
+                size: size.max(4),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            });
+            gpu.queue.write_buffer(&b, 0, bytes(verts));
+            state.meshes.insert(*id, (b, (verts.len() / 10) as u32));
+        }
+        let ub = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("mesh view"),
+            size: 128,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        gpu.queue.write_buffer(&ub, 0, bytes(u));
+        mesh_binds.push(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &gpu.mesh_layout,
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: ub.as_entire_binding(),
+            }],
+        }));
+    }
     let sprites = gpu.upload(b_sprites, &frame.sprites)?;
     let stencil = gpu.upload(b_stencil, &frame.stencil)?;
     let cover = gpu.upload(b_cover, &frame.cover)?;
@@ -1637,6 +1766,15 @@ fn render_inner(
                         pass.set_pipeline(&gpu.cover);
                         pass.set_vertex_buffer(0, cb.slice(..));
                         pass.draw(0..6, *c..*c + 1);
+                    }
+                }
+                Cmd::Mesh(i) => {
+                    let (id, ..) = &frame.meshes[*i];
+                    if let Some((b, n)) = state.meshes.get(id) {
+                        pass.set_pipeline(&gpu.mesh);
+                        pass.set_bind_group(2, &mesh_binds[*i], &[]);
+                        pass.set_vertex_buffer(0, b.slice(..));
+                        pass.draw(0..*n, 0..1);
                     }
                 }
                 Cmd::Tris(r) => {
@@ -1854,5 +1992,46 @@ mod tests {
         fig.scale(2.0);
         let big_px = fig.to_pixels().unwrap();
         assert_eq!((big_px.width, big_px.height), (1280, 840));
+    }
+
+    /// Surfaces stay on the GPU as meshes: the image matches the CPU's,
+    /// turning keeps the mesh and new data replaces it.
+    #[test]
+    fn retained_mesh_matches_cpu() {
+        if !Backend::gpu_available() {
+            eprintln!("no GPU adapter: skipped");
+            return;
+        }
+        let mut fig = Figure::new(500, 400);
+        fig.axes()
+            .surface_fn(|x, y| (x * y).sin(), (-2.0, 2.0), (-2.0, 2.0), 40);
+        let cpu = fig
+            .backend(Backend::Cpu { threads: 1 })
+            .to_pixels()
+            .unwrap();
+        let gpu = fig.backend(Backend::Gpu).to_pixels().unwrap();
+        let (mean, big) = compare(&cpu.rgba, &gpu.rgba);
+        assert!(
+            mean < 3.0 && big < 0.02,
+            "mean {mean}, very different {big}"
+        );
+        let id = |fig: &mut Figure| {
+            fig.axes()
+                .mesh_cache
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|c| c.id())
+        };
+        let first = id(&mut fig);
+        assert!(first.is_some());
+        fig.axes().rotate(Axis3::Z, 30.0);
+        let turned = fig.to_pixels().unwrap();
+        assert_ne!(turned, gpu);
+        assert_eq!(id(&mut fig), first, "turning must keep the mesh");
+        fig.axes()
+            .surface_fn(|x, y| x + y, (-2.0, 2.0), (-2.0, 2.0), 10);
+        fig.to_pixels().unwrap();
+        assert_ne!(id(&mut fig), first, "new data must replace the mesh");
     }
 }

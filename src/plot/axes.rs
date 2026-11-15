@@ -82,6 +82,13 @@ pub struct Axes {
     pub(crate) range_slider: bool,
     /// Camera and settings of the 3D scene.
     pub(crate) view3d: super::series::three_d::View3d,
+    /// Changes of the series (added, changed, shown or hidden): keys the
+    /// GPU mesh cache.
+    pub(crate) revision: u64,
+    /// Build 3D scenes of opaque faces as GPU meshes (set while rendering
+    /// with the GPU back end).
+    pub(crate) gpu_mesh: bool,
+    pub(crate) mesh_cache: std::sync::Mutex<Option<super::series::three_d::MeshCache>>,
 }
 
 /// Limits of x, y and the secondary y-axis.
@@ -132,6 +139,9 @@ impl Axes {
             frame: true,
             range_slider: false,
             view3d: Default::default(),
+            revision: 0,
+            gpu_mesh: false,
+            mesh_cache: std::sync::Mutex::new(None),
         }
     }
 
@@ -278,6 +288,7 @@ impl Axes {
     /// Adds any series (including custom [`Series`] implementations) and
     /// returns it for further configuration.
     pub fn add<S: Series>(&mut self, series: S) -> &mut S {
+        self.revision += 1;
         self.series.push(Box::new(series));
         self.series
             .last_mut()
@@ -287,6 +298,7 @@ impl Axes {
 
     /// The last `n` series, which must all be of type `S`.
     pub(crate) fn last_n<S: Series>(&mut self, n: usize) -> Vec<&mut S> {
+        self.revision += 1;
         let len = self.series.len();
         self.series[len - n..]
             .iter_mut()
@@ -308,6 +320,7 @@ impl Axes {
 
     /// The `index`-th series if it has type `S` (e.g. to update data).
     pub fn series_mut<S: Series>(&mut self, index: usize) -> Option<&mut S> {
+        self.revision += 1;
         self.series.get_mut(index)?.as_any_mut().downcast_mut::<S>()
     }
 
@@ -320,6 +333,7 @@ impl Axes {
     /// does not count for the automatic limits, and its legend row is
     /// dimmed (clicking a legend row in a window toggles this).
     pub fn set_visible(&mut self, index: usize, visible: bool) -> &mut Self {
+        self.revision += 1;
         if self.hidden.len() <= index {
             self.hidden.resize(index + 1, false);
         }
@@ -1784,6 +1798,7 @@ fn anchor_points(nodes: &[Node]) -> Vec<(f64, f64)> {
                 }
             }
             Node::Circle { cx, cy, .. } => v.push((*cx, *cy)),
+            Node::Mesh3d(_) => {}
             Node::Tube { segs, .. } => {
                 for (a, b) in segs {
                     v.push(*a);
