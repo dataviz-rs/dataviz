@@ -38,6 +38,8 @@ pub(crate) mod render;
 pub mod scale;
 pub mod scene;
 pub mod series;
+#[cfg(feature = "spec")]
+pub mod spec;
 pub mod stats;
 pub mod style;
 pub mod terminal;

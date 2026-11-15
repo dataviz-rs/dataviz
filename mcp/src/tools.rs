@@ -1,7 +1,7 @@
 //! The MCP tools: definitions (JSON Schema) and calls.
 
 use crate::data::{self, Table};
-use crate::spec::{self, CHART_TYPES};
+use dataviz::plot::spec::{self, CHART_TYPES};
 use dataviz::prelude::*;
 use serde_json::{json, Value};
 
@@ -99,7 +99,9 @@ pub fn list() -> Value {
 
 pub fn call(name: &str, args: &Value) -> Value {
     let result = match name {
-        "plot" => spec::figure(args).and_then(|f| finish(f, args)),
+        "plot" => resolve_pdb_ids(args)
+            .and_then(|a| spec::figure(&a))
+            .and_then(|f| finish(f, args)),
         "plot_file" => plot_file(args).and_then(|f| finish(f, args)),
         "molecule" => molecule(args).and_then(|f| finish(f, args)),
         "chart_types" => Ok(vec![json!({ "type": "text", "text": chart_types() })]),
@@ -111,11 +113,38 @@ pub fn call(name: &str, args: &Value) -> Value {
     }
 }
 
+/// Molecule panels with a `pdb_id`: downloaded here (the library does not
+/// use the network).
+fn resolve_pdb_ids(args: &Value) -> Result<Value, String> {
+    let mut a = args.clone();
+    let fix = |p: &mut Value| -> Result<(), String> {
+        if p.get("pdb_id").is_some() && p.get("pdb").is_none() {
+            let text = data::pdb_text(p)?;
+            p["pdb"] = Value::String(text);
+        }
+        Ok(())
+    };
+    if let Some(panels) = a.get_mut("panels").and_then(Value::as_array_mut) {
+        for p in panels {
+            fix(p)?;
+            if let Some(ls) = p.get_mut("layers").and_then(Value::as_array_mut) {
+                for l in ls {
+                    fix(l)?;
+                }
+            }
+        }
+    } else {
+        fix(&mut a)?;
+    }
+    Ok(a)
+}
+
 fn chart_types() -> String {
     let mut s = String::from("Panel types of `plot` (fields; all panels also take title, x_label, y_label, z_label, x_limits, y_limits, x_log, y_log, legend, camera, rotate):\n\n");
     for (t, fields, what) in CHART_TYPES {
         s.push_str(&format!("- {t}: {fields} — {what}\n"));
     }
+    s.push_str("\nmolecule panels also take pdb_id (downloaded from the PDB). Several chart types on one axes: {\"layers\": [{type, …}, …]} as a panel.");
     s.push_str("\nExample: {\"panels\": [{\"type\": \"line\", \"series\": [{\"name\": \"a\", \"x\": [1,2,3], \"y\": [2,4,3]}], \"title\": \"Sales\"}]}");
     s
 }

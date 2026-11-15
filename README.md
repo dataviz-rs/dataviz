@@ -9,6 +9,9 @@
 <a href="https://docs.rs/dataviz">
     <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
 </a>
+<a href="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml">
+    <img style="display: inline!important" src="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml/badge.svg"></img>
+</a>
 
 **Fast, pure-Rust plotting: 120+ chart types, interactive windows, live
 data, animations, maps, math and every language — with the least CPU and
@@ -90,6 +93,20 @@ fn main() -> Result<(), Error> {
 Every chart type has a runnable example with code and output in
 [dataviz-examples](https://github.com/dataviz-rs/dataviz-examples) — see
 the [gallery](#gallery).
+
+## Your data, as it is
+
+Any iterable of numbers works — `Vec`, slices, ranges, iterators and arrays
+from other crates, without conversion or features:
+
+```rust ignore
+ax.line(&x, &y);                                   // Vec<f64>, &[f32], i64, …
+ax.line(&array1, &array1.mapv(f64::sin));          // ndarray
+ax.line(&times, polars_df.column("price")?.f64()?); // Polars (nulls become gaps)
+ax.scatter(arrow_x.values(), &arrow_y);            // Arrow Float64Array
+let t = dataviz::plot::data::Table::read("data.csv")?;   // CSV/TSV, quoted fields
+ax.line(t.time_column("date").unwrap(), t.column("close").unwrap());
+```
 
 ## Features
 
@@ -482,6 +499,19 @@ Every image links to its example in
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_dark.png" alt="Theme: dark" width="100%"><br><sub>Theme: dark</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_ggplot.png" alt="Theme: ggplot" width="100%"><br><sub>Theme: ggplot</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_seaborn.png" alt="Theme: seaborn" width="100%"><br><sub>Theme: seaborn</sub></a></td></tr>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_minimal.png" alt="Theme: minimal" width="100%"><br><sub>Theme: minimal</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_publication.png" alt="Theme: publication" width="100%"><br><sub>Theme: publication</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_solarized.png" alt="Theme: solarized" width="100%"><br><sub>Theme: solarized</sub></a></td></tr>
 </table>
+
+## Python
+
+The same renderer for Python ([`python/`](python)): NumPy, pandas and
+Polars data, Jupyter display, 5–22× faster than matplotlib.
+
+```python
+import numpy as np, dataviz as dv
+x = np.linspace(0, 10, 100_000)
+fig = dv.Figure(900, 500, title="Signal")
+fig.axes().line(x, np.sin(x), label="sin").set(x_label="t [s]")
+fig.save("signal.png")
+```
 
 ## Use it from Claude
 

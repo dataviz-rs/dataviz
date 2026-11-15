@@ -1,8 +1,25 @@
-//! Figures from a JSON spec: a grid of panels, each one chart type with
-//! its data and options.
+//! Figures from a JSON spec (feature `spec`): a grid of panels, each one
+//! chart type (or several `layers` on the same axes) with its data and
+//! options. Used by the MCP server and the Python bindings; handy for
+//! charts described in configuration files or sent over a network.
+//!
+//! ```
+//! # #[cfg(feature = "spec")] {
+//! let spec = serde_json::json!({
+//!     "title": "Sales",
+//!     "panels": [
+//!         {"type": "bar", "categories": ["Q1", "Q2"], "values": [3, 5]},
+//!         {"layers": [{"type": "scatter", "x": [1, 2, 3], "y": [2, 4, 3]},
+//!                     {"type": "line", "x": [1, 3], "y": [2, 3.5]}]}
+//!     ]
+//! });
+//! let mut fig = dataviz::plot::spec::figure(&spec).unwrap();
+//! let png = fig.encode(dataviz::plot::Format::Png).unwrap();
+//! # }
+//! ```
 
-use dataviz::plot::geo::Projection;
-use dataviz::prelude::*;
+use crate::plot::geo::Projection;
+use crate::prelude::*;
 use serde_json::Value;
 
 /// Chart types of a panel's `type`, with their fields (shown by the
@@ -48,6 +65,11 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
         "Contour lines or bands of a grid.",
     ),
     ("pie", "labels, values, donut? (0..1 hole)", "Pie or donut."),
+    (
+        "radar",
+        "labels (axes), series: {name: [values]}",
+        "Radar (spider) chart.",
+    ),
     ("funnel", "labels, values", "Funnel."),
     ("waffle", "labels, values", "Shares as a 10×10 grid."),
     (
@@ -141,6 +163,7 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Errors are messages naming the panel and the field.
 pub type Result<T> = std::result::Result<T, String>;
 
 fn nums(v: &Value, key: &str) -> Result<Vec<f64>> {
@@ -262,7 +285,8 @@ fn groups(v: &Value, key: &str) -> Result<Vec<(String, Vec<f64>)>> {
     }
 }
 
-fn colormap(name: &str) -> Colormap {
+/// A colormap by name (viridis, plasma, coolwarm, rdbu, …; default viridis).
+pub fn colormap(name: &str) -> Colormap {
     match name.to_lowercase().as_str() {
         "plasma" => Colormap::Plasma,
         "inferno" => Colormap::Inferno,
@@ -281,6 +305,8 @@ fn colormap(name: &str) -> Colormap {
     }
 }
 
+/// A theme by name (light, dark, minimal, ggplot, seaborn, publication,
+/// solarized).
 pub fn theme(name: &str) -> Theme {
     match name.to_lowercase().as_str() {
         "dark" => Theme::dark(),
@@ -293,7 +319,8 @@ pub fn theme(name: &str) -> Theme {
     }
 }
 
-fn legend(name: &str) -> LegendPosition {
+/// A legend position by name (upper_right, outside_bottom, hidden, …).
+pub fn legend(name: &str) -> LegendPosition {
     match name.to_lowercase().replace(['-', '_', ' '], "").as_str() {
         "upperright" | "topright" => LegendPosition::UpperRight,
         "upperleft" | "topleft" => LegendPosition::UpperLeft,
@@ -351,8 +378,13 @@ pub fn figure(spec: &Value) -> Result<Figure> {
         } else {
             fig.axes()
         };
-        panel(ax, p)
-            .map_err(|e| format!("panel {} ({}): {e}", i + 1, s(p, "type").unwrap_or("?")))?;
+        apply(ax, p).map_err(|e| {
+            format!(
+                "panel {} ({}): {e}",
+                i + 1,
+                s(p, "type").unwrap_or("layers")
+            )
+        })?;
     }
     Ok(fig)
 }
@@ -365,8 +397,25 @@ fn each_series(p: &Value) -> Vec<&Value> {
     }
 }
 
-fn panel(ax: &mut Axes, p: &Value) -> Result<()> {
-    let kind = s(p, "type").ok_or("missing `type`")?.to_lowercase();
+/// Draws one panel (a `type` with its fields, or `layers` of them) into an
+/// axes, then applies the panel's options (titles, limits, camera, …).
+pub fn apply(ax: &mut Axes, p: &Value) -> Result<()> {
+    match p.get("layers").and_then(Value::as_array) {
+        Some(layers) => {
+            for l in layers {
+                chart(ax, l)?;
+            }
+        }
+        None => chart(ax, p)?,
+    }
+    common(ax, p);
+    Ok(())
+}
+
+fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
+    let kind = s(p, "type")
+        .ok_or("missing `type` (or `layers`)")?
+        .to_lowercase();
     match kind.as_str() {
         "line" | "scatter" | "area" => {
             for sr in each_series(p) {
@@ -496,6 +545,10 @@ fn panel(ax: &mut Axes, p: &Value) -> Result<()> {
             if kind == "donut" || f(p, "donut").is_some() {
                 pie.donut(f(p, "donut").unwrap_or(0.5));
             }
+        }
+        "radar" | "spider" => {
+            let axes = names_any(p, NAMES)?;
+            ax.radar(axes, groups(p, "series")?);
         }
         "funnel" => {
             ax.funnel(names_any(p, NAMES)?, nums_any(p, VALUES)?);
@@ -711,7 +764,13 @@ fn panel(ax: &mut Axes, p: &Value) -> Result<()> {
             }
         }
         "molecule" => {
-            let pdb = crate::data::pdb_text(p)?;
+            let pdb = match (s(p, "pdb"), s(p, "pdb_path")) {
+                (Some(t), _) => t.to_string(),
+                (None, Some(path)) => {
+                    std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?
+                }
+                _ => return Err("give `pdb` (text) or `pdb_path`".into()),
+            };
             let mol = Molecule::from_pdb(&pdb);
             if mol.atoms.is_empty() {
                 return Err("no ATOM/HETATM records in the PDB text".into());
@@ -720,12 +779,12 @@ fn panel(ax: &mut Axes, p: &Value) -> Result<()> {
             m.style(mol_style(s(p, "style").unwrap_or("ball_and_stick")));
             m.coloring(mol_color(s(p, "coloring").unwrap_or("element")));
         }
-        other => return Err(format!("unknown type `{other}` (see the chart_types tool)")),
+        other => return Err(format!("unknown type `{other}` (see spec::CHART_TYPES)")),
     }
-    common(ax, p);
     Ok(())
 }
 
+/// A molecule style by name (cartoon, ball_and_stick, sticks, …).
 pub fn mol_style(s: &str) -> MolStyle {
     match s.to_lowercase().replace(['-', ' '], "_").as_str() {
         "sticks" => MolStyle::Sticks,
@@ -736,6 +795,7 @@ pub fn mol_style(s: &str) -> MolStyle {
     }
 }
 
+/// A molecule coloring by name (element, chain, rainbow).
 pub fn mol_color(s: &str) -> MolColor {
     match s.to_lowercase().as_str() {
         "chain" => MolColor::Chain,

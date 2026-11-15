@@ -1,0 +1,29 @@
+[build-system]
+requires = ["maturin>=1.7,<2"]
+build-backend = "maturin"
+
+[project]
+name = "dataviz"
+version = "0.1.0"
+description = "Fast charts for Python: 120+ chart types (statistics, ML, finance, genomics, maps, 3D molecules) drawn by a Rust renderer, 8–50× faster than matplotlib."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+dependencies = ["numpy>=1.21"]
+keywords = ["plotting", "charts", "visualization", "matplotlib", "bioinformatics", "finance", "3d"]
+classifiers = [
+    "Programming Language :: Rust",
+    "Programming Language :: Python :: 3",
+    "Framework :: Jupyter",
+    "Topic :: Scientific/Engineering :: Visualization",
+    "License :: OSI Approved :: MIT License",
+]
+
+[project.urls]
+Homepage = "https://github.com/dataviz-rs/dataviz"
+Documentation = "https://github.com/dataviz-rs/dataviz/tree/main/python"
+
+[tool.maturin]
+python-source = "python"
+module-name = "dataviz._dataviz"
+features = ["pyo3/extension-module"]

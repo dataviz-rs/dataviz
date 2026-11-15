@@ -12,7 +12,7 @@ keywords = ["plotting", "chart", "visualization", "plot", "graph"]
 categories = ["visualization", "graphics", "science", "gui", "wasm"]
 readme = "./README.md"
 # The MCP server and the Claude plugin are published on their own.
-exclude = ["mcp/", "claude-plugin/", ".claude-plugin/", "cikti/", "TODO.md", "tests/golden/", "tests/golden.rs"]
+exclude = ["mcp/", "python/", "claude-plugin/", ".claude-plugin/", "cikti/", "TODO.md", "tests/golden/", "tests/golden.rs"]
 
 [dependencies]
 ab_glyph = "0.2.32"
@@ -26,6 +26,7 @@ png = "0.18"
 resvg = "0.50"
 unicode-bidi = "0.3.18"
 svg2pdf = { version = "0.13", optional = true }
+serde_json = { version = "1", optional = true }
 wgpu = { version = "30", optional = true }
 
 [features]
@@ -34,6 +35,8 @@ default = ["window"]
 window = ["dep:minifb"]
 # PDF output (`Figure::save("x.pdf")`).
 pdf = ["dep:svg2pdf"]
+# Figures from JSON specs (`plot::spec`; used by the MCP server and Python).
+spec = ["dep:serde_json"]
 # GPU rasterization (`Backend::Gpu`) via wgpu (Vulkan, Metal, DirectX 12, OpenGL).
 gpu = ["dep:wgpu"]
 
@@ -48,4 +51,4 @@ ndarray = "0.16"
 image = { version = "0.25.6", default-features = false, features = ["png", "gif"] }
 
 [workspace]
-members = [".", "mcp"]
+members = [".", "mcp", "python"]

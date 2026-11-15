@@ -7,7 +7,6 @@
 //! `chart_types` (what `plot` can draw).
 
 mod data;
-mod spec;
 mod tools;
 
 use serde_json::{json, Value};

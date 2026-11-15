@@ -241,8 +241,10 @@ fn charts_match_their_references() {
         let mut diff = vec![255u8; px.rgba.len()];
         for (i, (a, b)) in px
             .rgba
-            .chunks_exact(4)
-            .zip(img.as_raw().chunks_exact(4))
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(img.as_raw().as_chunks::<4>().0)
             .enumerate()
         {
             let d = (0..4).map(|k| a[k].abs_diff(b[k])).max().unwrap();

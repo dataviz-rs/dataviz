@@ -32,7 +32,7 @@ cargo install dataviz-mcp
 
 | Tool | What it does |
 |---|---|
-| `plot` | A figure from a JSON spec: `panels`, each with a `type` (40 types: line, scatter, area, bar, barh, hist, kde, box, violin, swarm, raincloud, ridgeline, regression, heatmap, contour, pie, funnel, waffle, sankey, chord, streamgraph, bullet, dumbbell, slope, pareto, control_chart, candlestick, roc, calibration, confusion, upset, volcano, phylo_tree, choropleth, surface, scatter3d, line3d, dna_helix, molecule) and options (titles, labels, limits, log axes, legend, 3D camera and rotation) |
+| `plot` | A figure from a JSON spec: `panels`, each with a `type` (40 types: line, scatter, area, bar, barh, hist, kde, box, violin, swarm, raincloud, ridgeline, regression, heatmap, contour, pie, radar, funnel, waffle, sankey, chord, streamgraph, bullet, dumbbell, slope, pareto, control_chart, candlestick, roc, calibration, confusion, upset, volcano, phylo_tree, choropleth, surface, scatter3d, line3d, dna_helix, molecule) and options (titles, labels, limits, log axes, legend, 3D camera and rotation) |
 | `plot_file` | A chart of a CSV/TSV/JSON file: auto, line, scatter, bar, hist, box, violin or correlation matrix |
 | `molecule` | A PDB structure (`pdb_id` downloaded from RCSB, `pdb_path` or `pdb` text) as cartoon, ball-and-stick, sticks, space-filling or backbone, optionally with its Ramachandran plot |
 | `chart_types` | The panel types and their fields |

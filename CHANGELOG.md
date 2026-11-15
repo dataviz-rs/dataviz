@@ -101,6 +101,13 @@
   residues, chains, helices, strands, ligands), DNA (length, GC content,
   marked regions), surfaces, meshes, 3D scatter; 3D axis ranges;
   `Series::describe` for custom series.
+- **Python bindings** (`python/`, package `dataviz`, PyO3 + maturin):
+  `Figure` / `Axes` with NumPy arrays read in place (lists, pandas, Polars
+  via `numpy.asarray`), Jupyter display, PNG/SVG/PDF/HTML/arrays, 3D
+  camera, and `Axes.chart(type, …)` for all 40 spec types; wheels workflow.
+- **`plot::spec`** (feature `spec`): figures from JSON specs — 40 chart
+  types, `layers` of several types on one axes; shared by the MCP server and
+  Python. New spec type `radar`.
 - Visual regression tests (`tests/golden.rs`) and CI on Windows and macOS.
 
 ### Changed

@@ -355,6 +355,19 @@ Every image links to its example in
 
 {{GALLERY}}
 
+## Python
+
+The same renderer for Python ([`python/`](python)): NumPy, pandas and
+Polars data, Jupyter display, 5–22× faster than matplotlib.
+
+```python
+import numpy as np, dataviz as dv
+x = np.linspace(0, 10, 100_000)
+fig = dv.Figure(900, 500, title="Signal")
+fig.axes().line(x, np.sin(x), label="sin").set(x_label="t [s]")
+fig.save("signal.png")
+```
+
 ## Use it from Claude
 
 The [Claude Code plugin](claude-plugin) gives Claude all of these charts:
