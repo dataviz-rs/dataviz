@@ -532,7 +532,11 @@ pub struct GeoMap {
 }
 
 impl GeoMap {
-    fn new(shapes: Vec<(String, Arc<Polygons>)>, values: Vec<f64>, projection: Projection) -> Self {
+    pub(crate) fn new(
+        shapes: Vec<(String, Arc<Polygons>)>,
+        values: Vec<f64>,
+        projection: Projection,
+    ) -> Self {
         let mut m = Self {
             shapes,
             values,
@@ -812,7 +816,7 @@ impl Axes {
         self
     }
 
-    fn map_projection(&mut self) -> Projection {
+    pub(crate) fn map_projection(&mut self) -> Projection {
         match self.projection {
             Some(p) => p,
             None => {
@@ -927,7 +931,7 @@ impl Axes {
 
 /// Points along the great circle from `a` to `b` (degrees), split where it
 /// crosses the antimeridian (NaN between).
-fn great_circle(a: (f64, f64), b: (f64, f64), n: usize) -> Vec<(f64, f64)> {
+pub(crate) fn great_circle(a: (f64, f64), b: (f64, f64), n: usize) -> Vec<(f64, f64)> {
     let to_v = |(lon, lat): (f64, f64)| {
         let (l, p) = (lon.to_radians(), lat.to_radians());
         [p.cos() * l.cos(), p.cos() * l.sin(), p.sin()]

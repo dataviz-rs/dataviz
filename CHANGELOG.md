@@ -108,6 +108,13 @@
 - **`plot::spec`** (feature `spec`): figures from JSON specs — 40 chart
   types, `layers` of several types on one axes; shared by the MCP server and
   Python. New spec type `radar`.
+- **Maps** (`plot::geo_more`): states and provinces of every country
+  (feature `regions`, Natural Earth 1:10m admin-1, 0.8 MB compressed;
+  `regions(country)`, `Region::area_km2`, `Axes::region_map` by ISO 3166-2
+  code or name), `Axes::geo_flows` (flow maps along great circles, width
+  and color by value, arrows), `Axes::geo_hexbin` (density maps),
+  `Axes::basemap` (web-map tiles from any source, e.g. `tile_dir`;
+  `tile_range`). `Anchor` and `Baseline` in the prelude.
 - Visual regression tests (`tests/golden.rs`) and CI on Windows and macOS.
 
 ### Changed

@@ -26,6 +26,7 @@ pub mod data;
 pub mod facet;
 pub mod figure;
 pub mod geo;
+pub mod geo_more;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu;
 pub mod html;

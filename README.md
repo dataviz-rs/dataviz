@@ -151,7 +151,7 @@ and click work in your own GUI or web page through
 | Finance & trading | candlestick, OHLC, Heikin-Ashi, Renko, footprint (order flow), market profile (TPO), liquidity heatmap, option payoff (Black–Scholes), implied volatility surface, Bollinger bands, Ichimoku cloud, VWAP, RSI, MACD, Stochastic, ATR, volume profile, order book depth, drawdown, trading-day axis |
 | Grids & fields | heatmap, correlation matrix, calendar heatmap, image, contour lines and fills, quiver |
 | 3D | surface, wireframe, scatter, line, spheres, meshes, ellipsoids, isosurfaces, vectors, bars, text; one shared scene per plot with depth sorting, lighting, perspective and free rotation around x, y and z |
-| Maps | built-in world map, choropleth by ISO code or name, points and great-circle routes, GeoJSON shapes; Robinson, Natural Earth, equirectangular, Mercator |
+| Maps | built-in world map and the states/provinces of every country, choropleth by ISO code or name, points, great-circle routes and flow maps, hexbin density maps, web-map tile basemaps (OpenStreetMap), GeoJSON shapes; Robinson, Natural Earth, equirectangular, Mercator |
 | Parts of a whole | pie, donut, treemap, sunburst, waffle, marimekko (mosaic), funnel, gauge |
 | Polar | polar line/scatter, radar, rose / wind rose |
 | Relations & flows | sankey, chord diagram, network graph (force-directed), parallel coordinates, slope chart, bump chart, ternary diagram |
@@ -296,6 +296,10 @@ ax.map(Projection::Robinson);
 ax.choropleth([("DEU", 83.2), ("TUR", 85.3), ("JP", 124.5), ("Brazil", 203.1)])
     .colorbar("population [M]");
 ax.geo_line([28.98, -74.0], [41.01, 40.7]);    // great circle Istanbul → New York
+ax.region_map("TUR", [("TR-34", 15.7), ("Ankara", 5.8)]);   // states/provinces (feature `regions`)
+ax.geo_flows(&flows, &names);                   // flow map, width by value
+ax.geo_hexbin(&lon, &lat);                      // density of millions of points
+ax.basemap(lon, lat, 12, tile_dir("tiles"), "© OpenStreetMap contributors");
 ```
 
 Country outlines with ISO codes, continent, population and GDP are
@@ -480,7 +484,7 @@ Every image links to its example in
 ### Maps
 
 <table>
-<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/maps.png" alt="Choropleth and flight routes" width="100%"><br><sub>Choropleth and flight routes</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/projections.png" alt="Map projections" width="100%"><br><sub>Map projections</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/maps.png" alt="Choropleth and flight routes" width="100%"><br><sub>Choropleth and flight routes</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/regions.png" alt="States, flows, hexbin, OpenStreetMap basemap" width="100%"><br><sub>States, flows, hexbin, OpenStreetMap basemap</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/projections.png" alt="Map projections" width="100%"><br><sub>Map projections</sub></a></td></tr>
 </table>
 
 ### Parts, flows and polar

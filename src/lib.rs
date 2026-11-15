@@ -31,6 +31,7 @@ pub mod plot;
 pub mod prelude {
     pub use crate::plot::a11y::Cvd;
     pub use crate::plot::anim::Recorder;
+    pub use crate::plot::scene::{Anchor, Baseline};
     pub use crate::plot::series::bar::{BarMode, LabelPosition};
     pub use crate::plot::series::bio3d::{Atom, MolColor, MolStyle, Molecule, SecondaryStructure};
     pub use crate::plot::series::genome::Alteration;

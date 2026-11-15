@@ -67,6 +67,7 @@ SECTIONS = [
     ]),
     ("Maps", [
         ("plot-maps", "maps.png", "Choropleth and flight routes"),
+        ("plot-maps", "regions.png", "States, flows, hexbin, OpenStreetMap basemap"),
         ("plot-maps", "projections.png", "Map projections"),
     ]),
     ("Parts, flows and polar", [
