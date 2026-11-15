@@ -130,9 +130,16 @@
 - Faster 3D: primitives sorted with a radix sort, same-looking spheres
   drawn from one cached sprite, 3D lines drawn in pieces, surface grids
   projected once; small polygons and short strokes take the rasterizer's
-  fast paths (any path length). 3D frames got 2–3× faster (1 M-point 3D
-  scatter 464 → 149 ms, 200² surface 77 → 31 ms, 1BNA molecule
-  18 → 9 ms on one core).
+  fast paths (any path length). Shaded spheres (`Node::Sphere`) are lit
+  per pixel in one pass instead of stacked circles (radial gradients in
+  SVG); strokes up to 1.25 px use a Wu line rasterizer; touching tube
+  segments of the same look are batched. 3D frames got 2–4× faster on one
+  core (1 M-point 3D scatter 464 → 142 ms, 200² surface 77 → 31 ms, 1BNA
+  molecule 18 → 4.5 ms, 100 000-point 3D line 28 → 9.7 ms).
+- GPU backend: convex fills (3D faces) are batched triangle lists instead
+  of one stencil-and-cover pass each, and shaded spheres are drawn
+  analytically; rotation frames 2.5–3× faster (120² surface
+  18.4 → 5.7 ms).
 - 3D: the camera, axis labels (`x_label`, `y_label`, `z_label`) and
   limits belong to the axes instead of each 3D series
   (`Surface::camera` / `labels` and `Points3d::camera` / `labels` are

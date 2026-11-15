@@ -1,7 +1,7 @@
 # Python
 
 ```sh
-pip install dataviz
+pip install dataviz-rs
 ```
 
 ```python

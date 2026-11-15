@@ -38,8 +38,9 @@ memory of the Rust plotting libraries.**
 
 - **Fast and lean.** Its own rasterizer draws straight into the output
   buffer: a 10-million-point line renders in about 0.1 s with a few MB of
-  extra memory, a live chart redraws in 1–2 ms. 8–50× faster than
-  matplotlib, and faster and lighter than plotters, ruviz, kuva and
+  extra memory, a live chart redraws in 1–2 ms. 4–50× faster than
+  matplotlib for typical charts (2× for a 100-million-value histogram,
+  78× for animations), and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
   Optional multi-core and GPU backends.
 - **Everything in one crate.** 120+ chart types — lines, bars, statistics,
@@ -72,7 +73,7 @@ memory of the Rust plotting libraries.**
 
 ```toml
 [dependencies]
-dataviz = "0.15"
+dataviz = "0.16"
 ```
 
 ```rust no_run
@@ -542,9 +543,9 @@ cartoon with its Ramachandran plot"*, or use `/dataviz:plot` and
 
 ```toml
 [dependencies]
-dataviz = "0.15"
-# dataviz = { version = "0.15", features = ["pdf", "gpu"] }
-# dataviz = { version = "0.15", default-features = false }   # headless / wasm32
+dataviz = "0.16"
+# dataviz = { version = "0.16", features = ["pdf", "gpu"] }
+# dataviz = { version = "0.16", default-features = false }   # headless / wasm32
 ```
 
 | Feature | Default | What it adds |

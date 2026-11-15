@@ -89,16 +89,17 @@ markers are cached as bitmaps; histograms use SIMD binning. Animations store
 only the changed part of each frame. On the web the same renderer compiled to
 WebAssembly draws a 960×520 live chart with 2 × 3 000 points in about 1.7 ms.
 
-In 3D dataviz is 36–41× faster than matplotlib for scatter plots, 5–10×
-for surfaces and 1.6–5× for lines, molecules and rotation frames; it draws
-a turning GIF 3.3× faster than plotters and 4.5× faster than PyVista and
-is first (on the CPU or the GPU) for the 60² surface and for scatter plots
+In 3D dataviz is 35–52× faster than matplotlib for scatter plots, 5–23×
+for surfaces and 4–9× for lines, molecules and rotation frames; it draws
+a turning GIF 3.2× faster than plotters and 7.4× faster than PyVista and
+is first (on the CPU or the GPU) for both surfaces and for scatter plots
 up to a million points, with lighting, depth order and anti-aliasing.
-plotters is faster for the large surface, the long 3D line and the
-molecule: it draws 1-pixel lines and flat circles without depth sorting or
-lighting. PyVista (VTK) keeps the scene on the GPU and turns it in 0.7 ms
-per frame against dataviz's 5–8 ms (still 125–200 frames per second), but
-needs 85–115 ms to save an image and about 300 MB of memory.
+plotters is faster for the long 3D line and the molecule: it draws
+1-pixel lines and flat circles without depth sorting or lighting, while
+dataviz shades every atom as a lit sphere. PyVista (VTK) keeps the scene
+on the GPU and turns it in 0.6 ms per frame against dataviz's 2–5 ms
+(still 200–500 frames per second), but needs 80–100 ms to save an image
+and about 280 MB of memory.
 
 Where it is not first: for a tiny live chart (1 000 points) on a single
 thread plotters is 0.1–0.2 ms faster per frame; dataviz on all cores is

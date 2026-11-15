@@ -1,6 +1,6 @@
 """dataviz vs matplotlib from Python: the same charts, 800×600 PNG in memory.
 
-    pip install dataviz matplotlib
+    pip install dataviz-rs matplotlib
     taskset -c 2 python benchmarks/bench_vs_matplotlib.py   # one core
 """
 import time, io, statistics

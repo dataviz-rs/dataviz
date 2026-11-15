@@ -6,8 +6,10 @@ Rust renderer: 5–22× faster than matplotlib for charts saved to PNG, with
 3D surfaces and molecules.
 
 ```sh
-pip install dataviz
+pip install dataviz-rs
 ```
+
+The package is `dataviz-rs` on PyPI and is imported as `dataviz`.
 
 ```python
 import numpy as np

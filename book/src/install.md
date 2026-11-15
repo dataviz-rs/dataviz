@@ -29,7 +29,7 @@ uses X11 or Wayland when present).
 ## Python
 
 ```sh
-pip install dataviz
+pip install dataviz-rs
 ```
 
 See [Python](python.md).
