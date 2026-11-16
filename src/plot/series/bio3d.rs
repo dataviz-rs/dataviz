@@ -482,7 +482,13 @@ impl Molecule {
             for dx in -1..=1 {
                 for dy in -1..=1 {
                     for dz in -1..=1 {
-                        let Some(v) = grid.get(&(kx + dx, ky + dy, kz + dz)) else {
+                        // Wrapping: keys of far-away atoms (1e308) saturate.
+                        let k = (
+                            kx.wrapping_add(dx),
+                            ky.wrapping_add(dy),
+                            kz.wrapping_add(dz),
+                        );
+                        let Some(v) = grid.get(&k) else {
                             continue;
                         };
                         for &j in v {
