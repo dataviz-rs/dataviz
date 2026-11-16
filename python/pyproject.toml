@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "dataviz-rs"
-version = "0.2.0"
+version = "0.3.0"
 description = "Fast charts for Python: 120+ chart types (statistics, ML, finance, genomics, maps, 3D molecules) drawn by a Rust renderer, 5–22× faster than matplotlib."
 readme = "README.md"
 license = { text = "MIT" }

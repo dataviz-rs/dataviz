@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Python
+- 0.3.0: `Axes.volume(array)`, the globe and equal-area projections,
+  arc diagrams and edge bundling through `chart`, `theme="high_contrast"`.
+
 ## 0.18.0
 
 ### Changed

@@ -55,8 +55,9 @@ Same Python process, 800×600 PNG, median of 6 runs on one core
 | `boxplot`, `violin`, `swarm`, `raincloud`, `ridgeline`, `kde` | distributions of `{name: values}` |
 | `heatmap`, `pie`, `candlestick` | matrices, parts of a whole, prices |
 | `surface`, `scatter3d`, `line3d`, `molecule` | 3D (turn with `camera`, `rotate`) |
+| `volume` | volume rendering of a 3D array `[z, y, x]` (composite or `mode="mip"`) |
 | `hline`, `vline`, `text`, `set` | references, labels (TeX math), limits, log axes, legend |
-| `chart(type, **fields)` | any of 40 types: sankey, chord, streamgraph, waffle, bullet, slope, pareto, SPC, ROC, calibration, confusion matrix, UpSet, volcano, phylogenetic tree, choropleth, DNA helix, … (`dv.chart_types()`) |
+| `chart(type, **fields)` | any of 40 types: sankey, chord, streamgraph, waffle, bullet, slope, pareto, SPC, ROC, calibration, confusion matrix, UpSet, volcano, phylogenetic tree, choropleth (also on a globe: `projection="orthographic"`, or equal-area `equalearth`, `mollweide`), arc diagram, edge bundling, DNA helix, … (`dv.chart_types()`) |
 
 ```python
 fig = dv.Figure(1200, 450).grid(1, 3)
@@ -65,6 +66,11 @@ fig.subplot(0, 1).chart("roc", labels=y_true, scores=y_score, name="model")
 fig.subplot(0, 2).molecule("1ubq.pdb", style="cartoon").rotate("y", 30)
 fig.save("report.png")
 ```
+
+Themes: `dv.Figure(theme="high_contrast")` (black on white, larger text,
+dark colors at least 4.5:1 against white), `dark`, `publication`, … HTML
+output (`fig.save("chart.html")`) can be used from the keyboard and with
+screen readers.
 
 ## Interactive in Jupyter
 
