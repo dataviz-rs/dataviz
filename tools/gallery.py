@@ -64,11 +64,14 @@ SECTIONS = [
         ("plot-contour", "contour.png", "Contour plots"),
         ("plot-image", "image.png", "Images"),
         ("plot-three-d", "three_d.png", "3D surface, Lorenz attractor, mesh"),
+        ("plot-three-d", "volume.png", "Volume rendering, maximum intensity"),
     ]),
     ("Maps", [
         ("plot-maps", "maps.png", "Choropleth and flight routes"),
         ("plot-maps", "regions.png", "States, flows, hexbin, OpenStreetMap basemap"),
-        ("plot-maps", "projections.png", "Map projections"),
+        ("plot-maps", "projections.png", "Map projections (incl. equal-area)"),
+        ("plot-maps", "globe.png", "Globe with a great-circle route"),
+        ("plot-maps", "globe_spin.gif", "Spinning globe"),
     ]),
     ("Parts, flows and polar", [
         ("plot-pie-donut", "pie_donut.png", "Pie and donut charts"),
@@ -76,6 +79,7 @@ SECTIONS = [
         ("plot-funnel-gauge", "funnel_gauge.png", "Funnel and gauge"),
         ("plot-sankey", "sankey.png", "Sankey diagram"),
         ("plot-network", "network.png", "Network graph"),
+        ("plot-network", "dependencies.png", "Arc diagram, edge bundling"),
         ("plot-polar-radar", "polar_radar.png", "Polar and radar charts"),
     ]),
     ("Axes, layout, text and style", [
@@ -94,6 +98,7 @@ SECTIONS = [
         ("plot-themes", "theme_minimal.png", "Theme: minimal"),
         ("plot-themes", "theme_publication.png", "Theme: publication"),
         ("plot-themes", "theme_solarized.png", "Theme: solarized"),
+        ("plot-themes", "theme_high_contrast.png", "Theme: high contrast"),
     ]),
 ]
 
