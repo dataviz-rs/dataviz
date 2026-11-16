@@ -12,6 +12,7 @@ pub mod bar;
 pub mod bio;
 pub mod bio3d;
 pub mod contour;
+pub mod density;
 pub mod distribution;
 pub mod engineering;
 pub mod evaluation;

@@ -136,6 +136,73 @@ impl Core {
     }
 }
 
+fn style_density(
+    d: &mut dataviz::plot::series::density::Density,
+    how: Option<String>,
+    colormap: Option<String>,
+    colorbar: Option<String>,
+    bin_pixels: Option<f64>,
+) -> PyResult<()> {
+    match how.as_deref() {
+        None | Some("eq_hist") => {}
+        Some("log") => {
+            d.scale(DensityScale::Log);
+        }
+        Some("linear") => {
+            d.scale(DensityScale::Linear);
+        }
+        Some(o) => {
+            return Err(PyValueError::new_err(format!(
+                "density: how must be eq_hist, log or linear, not {o:?}"
+            )))
+        }
+    }
+    if let Some(c) = colormap {
+        d.colormap(self::colormap(&c));
+    }
+    if let Some(c) = colorbar {
+        d.colorbar(c);
+    }
+    if let Some(p) = bin_pixels {
+        d.bin_pixels(p);
+    }
+    Ok(())
+}
+
+/// Point counts filled chunk by chunk (`dataviz.DensityGrid`).
+#[pyclass(name = "DensityGrid", module = "dataviz")]
+struct Grid(DensityGrid);
+
+#[pymethods]
+impl Grid {
+    #[new]
+    #[pyo3(signature = (x_range, y_range, width=800, height=600))]
+    fn new(x_range: (f64, f64), y_range: (f64, f64), width: usize, height: usize) -> Self {
+        Grid(DensityGrid::new(x_range, y_range, width, height))
+    }
+
+    /// Counts a chunk of points; returns the grid (chainable).
+    fn add<'py>(
+        mut slf: PyRefMut<'py, Self>,
+        x: &Bound<'py, PyAny>,
+        y: &Bound<'py, PyAny>,
+    ) -> PyResult<PyRefMut<'py, Self>> {
+        let (x, y) = (values(x)?, values(y)?);
+        let py = slf.py();
+        let g = &mut slf.0;
+        py.detach(|| {
+            g.add(&x, &y);
+        });
+        Ok(slf)
+    }
+
+    /// Points counted inside the ranges.
+    #[getter]
+    fn total(&self) -> u64 {
+        self.0.total()
+    }
+}
+
 #[pymethods]
 impl Core {
     #[new]
@@ -548,6 +615,52 @@ impl Core {
         Ok(())
     }
 
+    #[pyo3(signature = (cell, x, y, how=None, colormap=None, colorbar=None, bin_pixels=None))]
+    #[allow(clippy::too_many_arguments)]
+    fn density(
+        &mut self,
+        cell: Cell,
+        x: &Bound<'_, PyAny>,
+        y: &Bound<'_, PyAny>,
+        how: Option<String>,
+        colormap: Option<String>,
+        colorbar: Option<String>,
+        bin_pixels: Option<f64>,
+    ) -> PyResult<()> {
+        // Very large float64 arrays: counted in place (no copy, GIL
+        // released) on a grid of about two cells per canvas pixel.
+        if let (Ok(xa), Ok(ya)) = (
+            x.extract::<PyReadonlyArray1<f64>>(),
+            y.extract::<PyReadonlyArray1<f64>>(),
+        ) {
+            if let (Ok(xs), Ok(ys)) = (xa.as_slice(), ya.as_slice()) {
+                if xs.len() > 2_000_000 && bin_pixels.is_none() {
+                    let (w, h) = self.fig.size();
+                    let (w, h) = ((w * 1.5) as usize, (h * 1.5) as usize);
+                    let g = x.py().detach(|| DensityGrid::fit(xs, ys, w, h));
+                    let d = self.ax(cell).density_grid(g);
+                    return style_density(d, how, colormap, colorbar, None);
+                }
+            }
+        }
+        let (x, y) = (values(x)?, values(y)?);
+        let d = self.ax(cell).density(x, y);
+        style_density(d, how, colormap, colorbar, bin_pixels)
+    }
+
+    #[pyo3(signature = (cell, grid, how=None, colormap=None, colorbar=None))]
+    fn density_grid(
+        &mut self,
+        cell: Cell,
+        grid: &Grid,
+        how: Option<String>,
+        colormap: Option<String>,
+        colorbar: Option<String>,
+    ) -> PyResult<()> {
+        let d = self.ax(cell).density_grid(grid.0.clone());
+        style_density(d, how, colormap, colorbar, None)
+    }
+
     #[pyo3(signature = (cell, values, dims, extent=None, colormap=None, opacity=None, threshold=None, mip=false))]
     #[allow(clippy::too_many_arguments)]
     fn volume(
@@ -714,6 +827,7 @@ fn _values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
 #[pymodule]
 fn _dataviz(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Core>()?;
+    m.add_class::<Grid>()?;
     m.add_function(wrap_pyfunction!(_values, m)?)?;
     m.add_function(wrap_pyfunction!(chart_types, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;

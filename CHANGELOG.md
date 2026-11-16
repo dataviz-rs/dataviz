@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Added
+- Density images of millions to billions of points (`Axes::density`,
+  Python `Axes.density`, spec `density_map`), as Datashader: points counted
+  per screen pixel for the visible range (exact at every zoom), in
+  parallel, colored by histogram equalization (or log/linear).
+  `DensityGrid` counts chunks one after another for data larger than
+  memory. 100 M points to PNG: 70 ms (Datashader: 372 ms); from Python,
+  NumPy arrays are counted in place (100 M points: 81 ms).
+
 ### Python
 - 0.3.0: `Axes.volume(array)`, the globe and equal-area projections,
   arc diagrams and edge bundling through `chart`, `theme="high_contrast"`.

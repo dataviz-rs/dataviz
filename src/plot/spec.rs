@@ -155,6 +155,11 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
         "World map colored by value, or a globe (orthographic).",
     ),
     (
+        "density_map",
+        "x, y, how? (eq_hist, log, linear), colormap?, colorbar?",
+        "Density image of millions of points (counted per pixel).",
+    ),
+    (
         "volume",
         "values ([z][y][x] nested, or flat x-fastest with dims: [nx, ny, nz]), x_range?, y_range?, z_range?, colormap?, opacity?, threshold?, mode? (composite, mip)",
         "Volume rendering of a 3D grid (densities, scans).",
@@ -623,6 +628,24 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
         }
         "chord" => {
             ax.chord(names_any(p, NAMES)?, &matrix(p, "matrix")?);
+        }
+        "density_map" | "datashade" => {
+            let d = ax.density(nums(p, "x")?, nums(p, "y")?);
+            match s(p, "how") {
+                Some("log") => {
+                    d.scale(crate::plot::series::density::DensityScale::Log);
+                }
+                Some("linear") => {
+                    d.scale(crate::plot::series::density::DensityScale::Linear);
+                }
+                _ => {}
+            }
+            if let Some(c) = s(p, "colormap") {
+                d.colormap(colormap(c));
+            }
+            if let Some(c) = s(p, "colorbar") {
+                d.colorbar(c);
+            }
         }
         "volume" => {
             let (values, dims) = match p.get("dims").and_then(to_nums) {

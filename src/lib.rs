@@ -34,6 +34,7 @@ pub mod prelude {
     pub use crate::plot::scene::{Anchor, Baseline};
     pub use crate::plot::series::bar::{BarMode, LabelPosition};
     pub use crate::plot::series::bio3d::{Atom, MolColor, MolStyle, Molecule, SecondaryStructure};
+    pub use crate::plot::series::density::{DensityGrid, DensityScale};
     pub use crate::plot::series::genome::Alteration;
     pub use crate::plot::series::line::Step;
     pub use crate::plot::series::three_d::{Axis3, Camera};

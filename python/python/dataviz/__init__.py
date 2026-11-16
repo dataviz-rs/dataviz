@@ -28,10 +28,11 @@ import tempfile as _tempfile
 from typing import Any, Iterable, Mapping, Optional, Sequence, Tuple, Union
 
 from ._dataviz import Core as _Core
+from ._dataviz import DensityGrid
 from ._dataviz import __version__
 from ._dataviz import chart_types as _chart_types
 
-__all__ = ["Figure", "Axes", "chart_types", "from_spec", "__version__"]
+__all__ = ["Figure", "Axes", "DensityGrid", "chart_types", "from_spec", "__version__"]
 
 Groups = Union[Mapping[str, Any], Iterable[Tuple[str, Any]]]
 
@@ -166,6 +167,19 @@ class Axes:
         """3D surface of ``z[row][col]`` over the ranges (turn it with
         :meth:`camera` / :meth:`rotate`)."""
         self._core.surface(self._cell, z, x_range, y_range, colormap)
+        return self
+
+    def density(self, x, y=None, *, how="eq_hist", colormap=None, colorbar=None, bin_pixels=None) -> "Axes":
+        """A density image of many points (millions to billions): points are
+        counted per screen pixel at every zoom and colored — the whole
+        distribution where a scatter would be a blob. ``how``: "eq_hist"
+        (histogram equalization, default), "log" or "linear". ``x`` can also
+        be a :class:`DensityGrid` filled chunk by chunk (data larger than
+        memory)."""
+        if isinstance(x, DensityGrid):
+            self._core.density_grid(self._cell, x, how, colormap, colorbar)
+        else:
+            self._core.density(self._cell, x, y, how, colormap, colorbar, bin_pixels)
         return self
 
     def volume(self, values, *, extent=None, colormap=None, opacity=None, threshold=None, mode="composite") -> "Axes":

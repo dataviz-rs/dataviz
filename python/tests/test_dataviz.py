@@ -174,3 +174,20 @@ def test_volume_globe_and_networks():
     fig.axes().chart("edge_bundling", nodes=["a", "b", "c"], groups=[0, 0, 1],
                      edges=[["a", "c"], ["b", "c", 2]])
     png_ok(fig)
+
+
+def test_density_points_and_streamed_grid():
+    rng = np.random.default_rng(0)
+    x, y = rng.normal(size=200_000), rng.normal(size=200_000)
+    fig = dv.Figure(400, 300)
+    fig.axes().density(x, y, colorbar="points")
+    png_ok(fig)
+    g = dv.DensityGrid((-4, 4), (-4, 4), 200, 150)
+    for k in range(4):
+        g.add(x[k::4], y[k::4])
+    assert 190_000 < g.total <= 200_000
+    fig = dv.Figure(400, 300)
+    fig.axes().density(g, how="log", colormap="inferno")
+    png_ok(fig)
+    with pytest.raises(ValueError):
+        dv.Figure(200, 200).axes().density(x, y, how="nope")
