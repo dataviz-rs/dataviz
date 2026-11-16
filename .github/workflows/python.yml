@@ -28,7 +28,7 @@ jobs:
         working-directory: python
         run: |
           python -m venv .venv
-          .venv/bin/pip install maturin numpy pytest
+          .venv/bin/pip install maturin numpy pytest polars pyarrow
           .venv/bin/maturin develop --release
           .venv/bin/python -m pytest -q tests
 

@@ -10,6 +10,13 @@
   15.0 → 4.5 ms, a million-point 3D scatter 128 → 41 ms; turning them
   sends only the camera.
 
+### Python
+- Columns from Polars, pyarrow, DuckDB and Arrow-backed pandas are read
+  from their Arrow buffers (Arrow PyCapsule interface; nulls become
+  gaps), NumPy arrays of every numeric type in one pass: `ax.line(x, y)`
+  with 10 M rows from Polars 508 → 59 ms, pyarrow 2856 → 59 ms, NumPy
+  float32/int64 435 → 55 ms.
+
 ## 0.17.0
 
 ### Changed

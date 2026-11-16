@@ -12,8 +12,9 @@
     fig.save("signals.png")      # .png .svg .pdf .jpg .webp .html
     fig                          # in Jupyter: shown inline
 
-Numbers can be NumPy arrays (read in place), lists, pandas or Polars
-series — anything ``numpy.asarray`` accepts. Beyond the methods below,
+Numbers can be NumPy arrays of any numeric type (read in place), Polars,
+pyarrow or Arrow-backed pandas columns (read from their Arrow buffers;
+nulls become gaps), lists — anything ``numpy.asarray`` accepts. Beyond the methods below,
 ``Axes.chart(type, **fields)`` draws any of 40 chart types (sankey, chord,
 ROC, UpSet, volcano, phylogenetic trees, choropleth maps, DNA helices, …);
 ``dataviz.chart_types()`` lists them with their fields.

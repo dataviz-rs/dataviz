@@ -4,6 +4,8 @@
 //! arrays (read in place), lists or anything `numpy.asarray` accepts
 //! (pandas and Polars series, ranges, …).
 
+mod arrow;
+
 use dataviz::plot::spec;
 use dataviz::prelude::*;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
@@ -14,12 +16,30 @@ use pyo3::types::PyBytes;
 /// A plot cell: (row, col, rowspan, colspan), or the single plot.
 type Cell = Option<(usize, usize, usize, usize)>;
 
+/// One pass over a NumPy array of any numeric type into `f64`.
+fn numpy_values(obj: &Bound<'_, PyAny>) -> Option<Vec<f64>> {
+    macro_rules! try_type {
+        ($($t:ty),*) => {$(
+            if let Ok(a) = obj.extract::<PyReadonlyArray1<$t>>() {
+                return Some(match a.as_slice() {
+                    Ok(s) => s.iter().map(|&v| v as f64).collect(),
+                    Err(_) => a.as_array().iter().map(|&v| v as f64).collect(),
+                });
+            }
+        )*};
+    }
+    try_type!(f64, f32, i64, i32, i16, i8, u64, u32, u16, u8);
+    None
+}
+
 fn values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
-    if let Ok(a) = obj.extract::<PyReadonlyArray1<f64>>() {
-        return Ok(match a.as_slice() {
-            Ok(s) => s.to_vec(),
-            Err(_) => a.as_array().to_vec(),
-        });
+    if let Some(v) = numpy_values(obj) {
+        return Ok(v);
+    }
+    // Polars, pyarrow, Arrow-backed pandas, …: straight from the Arrow
+    // buffers (anything unexpected falls through to NumPy).
+    if let Ok(Some(v)) = arrow::values(obj) {
+        return Ok(v);
     }
     if let Ok(v) = obj.extract::<Vec<f64>>() {
         return Ok(v);
@@ -647,9 +667,16 @@ fn chart_types() -> Vec<(String, String, String)> {
         .collect()
 }
 
+/// Numbers as the plots read them (for tests of the input paths).
+#[pyfunction]
+fn _values(obj: &Bound<'_, PyAny>) -> PyResult<Vec<f64>> {
+    values(obj)
+}
+
 #[pymodule]
 fn _dataviz(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Core>()?;
+    m.add_function(wrap_pyfunction!(_values, m)?)?;
     m.add_function(wrap_pyfunction!(chart_types, m)?)?;
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
     Ok(())

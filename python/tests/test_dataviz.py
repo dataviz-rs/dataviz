@@ -1,4 +1,5 @@
 import json
+import math
 import os
 
 import numpy as np
@@ -126,3 +127,35 @@ def test_linked_brushing_and_interactive_page():
     page = fig.interactive()
     # anywidget is optional: a widget, or a plain HTML display without it.
     assert hasattr(page, "html") or "srcdoc" in page.data
+
+
+def _same(got, want):
+    return len(got) == len(want) and all(
+        (math.isnan(a) and math.isnan(b)) or a == b for a, b in zip(got, want)
+    )
+
+
+def test_numeric_numpy_types_in_one_pass():
+    from dataviz._dataviz import _values
+
+    assert _values(np.array([1.5, 2, 3], np.float32)) == [1.5, 2.0, 3.0]
+    assert _values(np.array([1, -2], np.int64)) == [1.0, -2.0]
+    assert _values(np.arange(10, dtype=np.uint8)[::3]) == [0.0, 3.0, 6.0, 9.0]
+
+
+def test_arrow_columns_with_nulls_and_chunks():
+    pl = pytest.importorskip("polars")
+    pa = pytest.importorskip("pyarrow")
+    from dataviz._dataviz import _values
+
+    nan = float("nan")
+    assert _same(_values(pl.Series([1.0, None, 3.0])), [1.0, nan, 3.0])
+    chunked = pl.concat([pl.Series([1.0, 2.0]), pl.Series([3.0])], rechunk=False)
+    assert _values(chunked) == [1.0, 2.0, 3.0]
+    assert _values(pl.Series(range(10)).slice(3, 4)) == [3.0, 4.0, 5.0, 6.0]
+    assert _values(pl.Series([True, False])) == [1.0, 0.0]
+    assert _same(_values(pa.array([1, None, 5], pa.int16())), [1.0, nan, 5.0])
+    assert _same(_values(pa.chunked_array([[1.0], [None, 4.0]])), [1.0, nan, 4.0])
+    fig = dv.Figure(300, 200)
+    fig.axes().line(pl.Series([1.0, 2.0, 3.0]), pa.array([3, 1, 2]))
+    png_ok(fig)
