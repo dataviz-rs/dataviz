@@ -115,7 +115,7 @@ impl Axis3 {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Camera {
     /// Data → view rotation (rows: screen right, screen up, towards viewer).
-    m: M3,
+    pub(crate) m: M3,
     /// Magnification (1 = the scene fits the plot).
     pub zoom: f64,
     /// Perspective strength (0 = orthographic, 1 = strong).
@@ -287,16 +287,16 @@ impl Default for View3d {
 #[derive(Clone, Debug)]
 pub struct Projection3d {
     bounds: Bounds3,
-    mid: [f64; 3],
+    pub(crate) mid: [f64; 3],
     /// Data unit → normalized box unit, per axis.
-    k: [f64; 3],
+    pub(crate) k: [f64; 3],
     /// Half sizes of the box in normalized units.
     ext: [f64; 3],
-    cam: Camera,
-    scale: f64,
-    center: (f64, f64),
-    radius: f64,
-    dist: f64,
+    pub(crate) cam: Camera,
+    pub(crate) scale: f64,
+    pub(crate) center: (f64, f64),
+    pub(crate) radius: f64,
+    pub(crate) dist: f64,
 }
 
 impl Projection3d {
@@ -555,6 +555,8 @@ pub struct Scene3d<'a> {
     rec: Option<Rec3>,
     /// Capture of opaque faces for the GPU instead of drawing.
     mesh: Option<MeshCapture>,
+    /// Drawn before the depth-sorted primitives (volume renderings).
+    under: Vec<Node>,
 }
 
 /// GPU mesh of an axes: valid while the series (`revision`) and the
@@ -572,13 +574,13 @@ type GpuGeometry = (std::sync::Arc<Vec<f32>>, std::sync::Arc<Vec<f32>>);
 
 impl MeshCache {
     /// Identity of the cached mesh.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "gpu"))]
     pub(crate) fn id(&self) -> u64 {
         self.id
     }
 
     /// Whether the scene became a GPU mesh.
-    #[cfg(test)]
+    #[cfg(all(test, feature = "gpu"))]
     pub(crate) fn is_mesh(&self) -> bool {
         self.vertices.is_some()
     }
@@ -650,6 +652,32 @@ impl Scene3d<'_> {
     /// The projection of this scene.
     pub fn projection(&self) -> &Projection3d {
         self.proj
+    }
+
+    /// Whether the scene is drawn (not captured for the GPU or recorded
+    /// for HTML).
+    pub(crate) fn drawing(&self) -> bool {
+        self.mesh.is_none() && self.rec.is_none()
+    }
+
+    /// A node drawn behind the depth-sorted primitives (a volume image);
+    /// a scene with one cannot be a GPU mesh.
+    pub(crate) fn backdrop(&mut self, node: Node) {
+        if let Some(m) = &mut self.mesh {
+            m.other = true;
+            return;
+        }
+        if self.rec.is_none() {
+            self.under.push(node);
+        }
+    }
+
+    /// Marks the scene as not capturable for the GPU (it draws something
+    /// only the CPU scene shows).
+    pub(crate) fn needs_cpu(&mut self) {
+        if let Some(m) = &mut self.mesh {
+            m.other = true;
+        }
     }
 
     /// Room for `n` more primitives (large series).
@@ -1249,6 +1277,7 @@ impl Scene3d<'_> {
     }
 
     fn finish(self, fonts: &FontSet, out: &mut Vec<Node>) {
+        out.extend(self.under);
         let keys = radix_sort(self.keys);
         let mut prims = self.prims;
         let idx = |key: u64| (key & 0xFFFF_FFFF) as usize;
@@ -1711,7 +1740,7 @@ fn draw_box(
 }
 
 impl Axes {
-    fn use_3d(&mut self) {
+    pub(crate) fn use_3d(&mut self) {
         self.kind = AxesKind::ThreeD;
     }
 
@@ -1791,6 +1820,7 @@ impl Axes {
             light: self.view3d.light,
             rec: None,
             mesh: None,
+            under: Vec::new(),
         };
         for s in self.shown() {
             s.draw3d(&mut scene);
@@ -1828,6 +1858,7 @@ impl Axes {
                     light: self.view3d.light,
                     rec: None,
                     mesh: Some(MeshCapture::default()),
+                    under: Vec::new(),
                 };
                 for s in self.shown() {
                     s.draw3d(&mut scene);
@@ -1902,6 +1933,7 @@ impl Axes {
             light: self.view3d.light,
             rec: Some(Rec3::default()),
             mesh: None,
+            under: Vec::new(),
         };
         for s in self.shown() {
             s.draw3d(&mut scene);

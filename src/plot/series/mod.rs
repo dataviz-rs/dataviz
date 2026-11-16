@@ -30,6 +30,7 @@ pub mod signal;
 pub mod stats;
 pub mod three_d;
 pub mod trading;
+pub mod volume;
 
 /// Data extent of a series, with "sticky" edges that get no margin
 /// (e.g. the zero baseline of bars).

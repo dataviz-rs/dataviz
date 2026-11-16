@@ -548,6 +548,44 @@ impl Core {
         Ok(())
     }
 
+    #[pyo3(signature = (cell, values, dims, extent=None, colormap=None, opacity=None, threshold=None, mip=false))]
+    #[allow(clippy::too_many_arguments)]
+    fn volume(
+        &mut self,
+        cell: Cell,
+        values: &Bound<'_, PyAny>,
+        dims: [usize; 3],
+        extent: Option<[(f64, f64); 3]>,
+        colormap: Option<String>,
+        opacity: Option<f64>,
+        threshold: Option<f64>,
+        mip: bool,
+    ) -> PyResult<()> {
+        let v = self::values(values)?;
+        if v.len() != dims[0] * dims[1] * dims[2] {
+            return Err(PyValueError::new_err(
+                "volume: values do not match the shape",
+            ));
+        }
+        let vol = self.ax(cell).volume(v, dims);
+        if let Some([x, y, z]) = extent {
+            vol.extent(x, y, z);
+        }
+        if let Some(c) = colormap {
+            vol.colormap(self::colormap(&c));
+        }
+        if let Some(a) = opacity {
+            vol.opacity(a);
+        }
+        if let Some(t) = threshold {
+            vol.threshold(t);
+        }
+        if mip {
+            vol.mode(VolumeMode::MaxIntensity);
+        }
+        Ok(())
+    }
+
     #[pyo3(signature = (cell, x, y, z, line=false, values=None, colormap=None, size=None, color=None, label=None))]
     #[allow(clippy::too_many_arguments)]
     fn xyz(

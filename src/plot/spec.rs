@@ -155,6 +155,11 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
         "World map colored by value, or a globe (orthographic).",
     ),
     (
+        "volume",
+        "values ([z][y][x] nested, or flat x-fastest with dims: [nx, ny, nz]), x_range?, y_range?, z_range?, colormap?, opacity?, threshold?, mode? (composite, mip)",
+        "Volume rendering of a 3D grid (densities, scans).",
+    ),
+    (
         "surface",
         "z (rows), x_range, y_range, colormap?",
         "3D surface (rotatable: camera, rotate).",
@@ -618,6 +623,59 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
         "chord" => {
             ax.chord(names_any(p, NAMES)?, &matrix(p, "matrix")?);
         }
+        "volume" => {
+            let (values, dims) = match p.get("dims").and_then(to_nums) {
+                Some(d) if d.len() == 3 => (
+                    nums(p, "values")?,
+                    [d[0] as usize, d[1] as usize, d[2] as usize],
+                ),
+                _ => {
+                    // Nested [z][y][x].
+                    let zs = p
+                        .get("values")
+                        .and_then(Value::as_array)
+                        .ok_or("`values` must be [z][y][x] or flat with `dims`")?;
+                    let mut flat = Vec::new();
+                    let (mut ny, mut nx) = (0, 0);
+                    for zl in zs {
+                        let rows = zl.as_array().ok_or("`values` must be [z][y][x]")?;
+                        ny = rows.len();
+                        for r in rows {
+                            let r = to_nums(r).ok_or("`values` must hold numbers")?;
+                            nx = r.len();
+                            flat.extend(r);
+                        }
+                    }
+                    if flat.len() != nx * ny * zs.len() {
+                        return Err("`values` rows must all have the same length".into());
+                    }
+                    (flat, [nx, ny, zs.len()])
+                }
+            };
+            let v = ax.volume(values, dims);
+            let r = |k: &str, n: usize| {
+                opt_nums(p, k)
+                    .filter(|r| r.len() == 2)
+                    .map_or((0.0, n.saturating_sub(1) as f64), |r| (r[0], r[1]))
+            };
+            v.extent(
+                r("x_range", dims[0]),
+                r("y_range", dims[1]),
+                r("z_range", dims[2]),
+            );
+            if let Some(c) = s(p, "colormap") {
+                v.colormap(colormap(c));
+            }
+            if let Some(a) = f(p, "opacity") {
+                v.opacity(a);
+            }
+            if let Some(t) = f(p, "threshold") {
+                v.threshold(t);
+            }
+            if matches!(s(p, "mode"), Some("mip" | "max" | "max_intensity")) {
+                v.mode(crate::plot::series::volume::VolumeMode::MaxIntensity);
+            }
+        }
         "arc_diagram" | "edge_bundling" => {
             let nodes = names_any(p, &["nodes", "labels", "names"])?;
             let edges = graph_edges(p, &nodes)?;
@@ -928,6 +986,9 @@ mod network_tests {
             let mut fig = super::figure(&v).unwrap();
             assert!(fig.to_svg().contains("<path"));
         }
+        let vol =
+            serde_json::json!({"type": "volume", "values": [[[0, 1], [1, 2]], [[1, 2], [2, 3]]]});
+        assert!(super::figure(&vol).unwrap().to_pixels().is_ok());
         let bad = serde_json::json!({"type": "arc_diagram", "nodes": ["a"], "edges": [["a", "z"]]});
         let err = super::figure(&bad).err().unwrap_or_default();
         assert!(err.contains("unknown node"), "{err}");

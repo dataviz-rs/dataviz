@@ -38,6 +38,7 @@ pub mod prelude {
     pub use crate::plot::series::line::Step;
     pub use crate::plot::series::three_d::{Axis3, Camera};
     pub use crate::plot::series::trading::{FootprintBar, OptionLeg};
+    pub use crate::plot::series::volume::VolumeMode;
     pub use crate::plot::time::{date, datetime, parse_datetime};
     pub use crate::plot::{
         Axes, AxesKind, Axis, Backend, Color, Colormap, Dash, Error, Figure, Format,

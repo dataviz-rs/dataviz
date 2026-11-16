@@ -21,6 +21,12 @@
   nodes on a circle by group, edges as B-splines through the hierarchy
   with a `tension`); both in the spec (`arc_diagram`, `edge_bundling`
   with node names or indices). 500 nodes and 3000 edges in 37 ms.
+- Volume rendering (`Axes::volume`, Python `Axes.volume(array)`, spec
+  `volume`): rays through a 3D grid with trilinear sampling, colormap
+  transfer function and a transparency `threshold`; composite (emission
+  and absorption) or maximum intensity projection; perspective-correct
+  with the 3D camera, multi-threaded, empty bricks skipped. A 64³ grid in
+  24 ms, 128³ in 72 ms at 800×600.
 
 ### Python
 - Columns from Polars, pyarrow, DuckDB and Arrow-backed pandas are read

@@ -168,6 +168,22 @@ class Axes:
         self._core.surface(self._cell, z, x_range, y_range, colormap)
         return self
 
+    def volume(self, values, *, extent=None, colormap=None, opacity=None, threshold=None, mode="composite") -> "Axes":
+        """Volume rendering of a 3D array ``values[z, y, x]`` (densities,
+        CT/MRI scans, simulation fields). ``extent``: ((x0, x1), (y0, y1),
+        (z0, z1)) in data units; ``opacity`` per grid cell (default 0.25);
+        values below ``threshold`` (fraction of the range, default 0.1) are
+        transparent; ``mode``: "composite" or "mip" (maximum intensity)."""
+        import numpy as _np
+
+        a = _np.asarray(values)
+        if a.ndim != 3:
+            raise ValueError("volume: values must be a 3D array [z, y, x]")
+        nz, ny, nx = a.shape
+        self._core.volume(self._cell, _np.ascontiguousarray(a).ravel(), [nx, ny, nz],
+                          extent, colormap, opacity, threshold, mode in ("mip", "max"))
+        return self
+
     def scatter3d(self, x, y, z, *, values=None, colormap=None, size=None, color=None, label=None) -> "Axes":
         """3D points, colored by ``values`` (or z) with a colormap."""
         self._core.xyz(self._cell, x, y, z, False, values, colormap, size, color, label)

@@ -159,3 +159,18 @@ def test_arrow_columns_with_nulls_and_chunks():
     fig = dv.Figure(300, 200)
     fig.axes().line(pl.Series([1.0, 2.0, 3.0]), pa.array([3, 1, 2]))
     png_ok(fig)
+
+
+def test_volume_globe_and_networks():
+    z, y, x = np.mgrid[-1:1:20j, -1:1:20j, -1:1:20j]
+    fig = dv.Figure(500, 400)
+    fig.axes().volume(np.exp(-(x * x + y * y + z * z) * 4), mode="mip")
+    png_ok(fig)
+    fig = dv.Figure(500, 400)
+    fig.axes().chart("choropleth", values={"TUR": 85, "BRA": 214}, projection="orthographic",
+                     center_lon=30, center_lat=20)
+    png_ok(fig)
+    fig = dv.Figure(500, 400)
+    fig.axes().chart("edge_bundling", nodes=["a", "b", "c"], groups=[0, 0, 1],
+                     edges=[["a", "c"], ["b", "c", 2]])
+    png_ok(fig)

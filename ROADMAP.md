@@ -21,7 +21,8 @@ then breadth. There is no backward-compatibility promise before 1.0.
 
 - [x] Geographic: orthographic globe with rotation, equal-area projections
 - [x] Biology: sequence logos, Manhattan / QQ plots for GWAS, gene structure tracks
-- [ ] 3D: volume rendering (ray-marched slices), point clouds with LOD
+- [x] 3D: volume rendering (ray-marched), maximum intensity projection
+- [ ] 3D: point clouds with level of detail
 - [x] Network: hierarchical edge bundling, arc diagrams
 
 ## Interactivity
