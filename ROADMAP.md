@@ -26,15 +26,15 @@ then breadth. There is no backward-compatibility promise before 1.0.
 
 ## Interactivity
 
-- [ ] Linked brushing between subplots in the window and in HTML output
-- [ ] 2D HTML output with zoom/pan and hover tooltips (3D already rotates)
+- [x] Linked brushing between subplots in the window and in HTML output
+- [x] 2D HTML output with zoom/pan and hover tooltips (3D already rotates)
 - [ ] Animated WebP output (GIF, APNG and video already work)
 
 ## Ecosystem
 
 - [ ] npm package of the WASM build (canvas renderer + `spec` JSON input)
 - [ ] Polars/Arrow column inputs in the Python bindings without copies
-- [ ] Interactive Jupyter widget (rotate 3D, zoom) for the Python `Figure`
+- [x] Interactive Jupyter widget (rotate 3D, zoom) for the Python `Figure`
 
 ## Quality
 

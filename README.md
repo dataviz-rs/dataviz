@@ -402,15 +402,15 @@ Measured against **matplotlib** (Python) and the Rust libraries plotters, ruviz,
 
 | Chart | dataviz | dataviz GPU | plotters | matplotlib | PyVista |
 |---|---:|---:|---:|---:|---:|
-| surface 60² | 6.89 ms | **2.66 ms** | 6.39 ms | 61.8 ms | 95.2 ms |
-| surface 200² | 30.9 ms | **22.0 ms** | 22.4 ms | 170.4 ms | 101.7 ms |
-| scatter 10,000 | 2.84 ms | **1.90 ms** | 3.46 ms | 99.8 ms | 88.6 ms |
-| scatter 1,000,000 | 141.7 ms | **107.0 ms** | 177.6 ms | 5.87 s | 118.0 ms |
-| line 100,000 (Lorenz) | 9.72 ms | 13.4 ms | **8.62 ms** | 62.1 ms | 85.2 ms |
-| molecule 1BNA (486 atoms) | 4.48 ms | 4.95 ms | **1.92 ms** | 38.7 ms | 82.1 ms |
-| rotation frame: surface 60² | 5.08 ms | 2.07 ms | 5.00 ms | 25.0 ms | **0.60 ms** |
-| rotation frame: molecule | 3.01 ms | 3.67 ms | 0.88 ms | 11.4 ms | **0.60 ms** |
-| GIF, 90 frames turning | **885.2 ms, 3949 KB** | 946.8 ms, 3440 KB | 2.80 s, 4544 KB | 7.49 s, 5713 KB | 6.59 s, 3441 KB |
+| surface 60² | 6.09 ms | **2.02 ms** | 6.21 ms | 58.7 ms | 98.0 ms |
+| surface 200² | 30.6 ms | **5.22 ms** | 21.7 ms | 149.7 ms | 104.5 ms |
+| scatter 10,000 | 2.77 ms | **2.50 ms** | 3.21 ms | 97.8 ms | 90.7 ms |
+| scatter 1,000,000 | 139.8 ms | 125.2 ms | 171.1 ms | 5.76 s | **121.3 ms** |
+| line 100,000 (Lorenz) | 9.87 ms | 14.7 ms | **8.57 ms** | 60.5 ms | 89.4 ms |
+| molecule 1BNA (486 atoms) | 3.39 ms | 2.34 ms | **1.93 ms** | 38.3 ms | 84.6 ms |
+| rotation frame: surface 60² | 5.14 ms | **0.49 ms** | 5.01 ms | 25.2 ms | 0.58 ms |
+| rotation frame: molecule | 2.16 ms | 0.88 ms | 0.88 ms | 11.5 ms | **0.63 ms** |
+| GIF, 90 frames turning | 900.9 ms, 3949 KB | **701.9 ms, 3453 KB** | 2.83 s, 4544 KB | 7.43 s, 5713 KB | 4.17 s, 3441 KB |
 
 What makes it fast: the scene is drawn straight into the output buffer by
 dataviz's own anti-aliased rasterizer; dense lines become one pixel-column
