@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.18.0
 
 ### Changed
 - GPU back end: 3D lines, markers, spheres and bonds join the retained
