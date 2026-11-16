@@ -348,7 +348,14 @@ pub fn figure(spec: &Value) -> Result<Figure> {
     // One panel can be given inline (type at the top level).
     let panels: Vec<Value> = match spec.get("panels").and_then(Value::as_array) {
         Some(p) => p.clone(),
-        None if spec.get("type").is_some() => vec![spec.clone()],
+        // The title is the figure's then, not the panel's as well.
+        None if spec.get("type").is_some() => {
+            let mut p = spec.clone();
+            if let Some(o) = p.as_object_mut() {
+                o.remove("title");
+            }
+            vec![p]
+        }
         None => {
             return Err("give `panels: [{type, …}]` (or one panel's fields with `type`)".into())
         }

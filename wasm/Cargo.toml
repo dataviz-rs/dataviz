@@ -1,0 +1,17 @@
+[package]
+name = "dataviz-wasm"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+description = "dataviz compiled to WebAssembly for the `dataviz-rs` npm package."
+license = "MIT"
+repository = "https://github.com/dataviz-rs/dataviz"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# No window, no GPU in the browser; figures come from JSON specs.
+dataviz = { path = "..", default-features = false, features = ["spec"] }
+serde_json = "1"

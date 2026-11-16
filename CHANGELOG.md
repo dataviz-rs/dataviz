@@ -17,6 +17,16 @@
   with 10 M rows from Polars 508 → 59 ms, pyarrow 2856 → 59 ms, NumPy
   float32/int64 435 → 55 ms.
 
+### JavaScript
+- `dataviz-rs` npm package (`wasm/`): charts from a JSON spec in the
+  browser, Node, Deno and Bun — SVG, PNG, HTML, RGBA pixels or a live
+  canvas with zoom, pan, 3D turning, box zoom, legend clicks and hover
+  readouts. WebAssembly with SIMD128, no imports, 1.5 MB gzipped; about
+  1.5× native single-threaded speed.
+
+### Fixed
+- Spec: a single panel given inline no longer shows its title twice.
+
 ## 0.17.0
 
 ### Changed

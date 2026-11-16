@@ -367,6 +367,18 @@ Every image links to its example in
 
 {{GALLERY}}
 
+## JavaScript
+
+The same renderer in WebAssembly ([`wasm/npm`](wasm/npm), npm package
+`dataviz-rs`): charts from a JSON spec in the browser, Node, Deno and Bun;
+SVG, PNG, HTML or a live, interactive canvas.
+
+```js
+import { init, Chart } from "dataviz-rs";
+await init();
+new Chart({ type: "line", x: [0, 1, 2], y: [1, 3, 2] }).mount(canvas);
+```
+
 ## Python
 
 The same renderer for Python ([`python/`](python)): NumPy, pandas and

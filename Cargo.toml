@@ -55,4 +55,13 @@ ndarray = "0.16"
 image = { version = "0.25.6", default-features = false, features = ["png", "gif"] }
 
 [workspace]
-members = [".", "mcp", "python"]
+members = [".", "mcp", "python", "wasm"]
+
+# WebAssembly build of `wasm/` (the npm package): small and fast.
+[profile.wasm]
+inherits = "release"
+opt-level = 3
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

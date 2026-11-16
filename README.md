@@ -513,6 +513,18 @@ Every image links to its example in
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_minimal.png" alt="Theme: minimal" width="100%"><br><sub>Theme: minimal</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_publication.png" alt="Theme: publication" width="100%"><br><sub>Theme: publication</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-themes"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-themes/screenshots/theme_solarized.png" alt="Theme: solarized" width="100%"><br><sub>Theme: solarized</sub></a></td></tr>
 </table>
 
+## JavaScript
+
+The same renderer in WebAssembly ([`wasm/npm`](wasm/npm), npm package
+`dataviz-rs`): charts from a JSON spec in the browser, Node, Deno and Bun;
+SVG, PNG, HTML or a live, interactive canvas.
+
+```js
+import { init, Chart } from "dataviz-rs";
+await init();
+new Chart({ type: "line", x: [0, 1, 2], y: [1, 3, 2] }).mount(canvas);
+```
+
 ## Python
 
 The same renderer for Python ([`python/`](python)): NumPy, pandas and

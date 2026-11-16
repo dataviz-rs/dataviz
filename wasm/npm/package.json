@@ -1,0 +1,29 @@
+{
+  "name": "dataviz-rs",
+  "version": "0.1.0",
+  "description": "Fast charts for JavaScript: 120+ chart types (statistics, finance, genomics, maps, 3D molecules) from a JSON spec, drawn by the dataviz Rust renderer in WebAssembly. SVG, PNG, HTML or a live canvas; no dependencies.",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./dataviz.wasm": "./dataviz.wasm"
+  },
+  "files": ["index.js", "index.d.ts", "dataviz.wasm", "README.md", "LICENSE"],
+  "sideEffects": false,
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test": "node --test test.mjs"
+  },
+  "keywords": ["chart", "charts", "plot", "visualization", "svg", "canvas", "webassembly", "wasm", "3d", "finance", "bioinformatics"],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dataviz-rs/dataviz.git",
+    "directory": "wasm/npm"
+  },
+  "homepage": "https://github.com/dataviz-rs/dataviz/tree/main/wasm/npm"
+}

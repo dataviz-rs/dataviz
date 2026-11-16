@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>dataviz-rs demo</title>
+<style>body{font:14px system-ui,sans-serif;margin:16px;background:#fff}canvas{display:block;margin:8px 0;border:1px solid #ddd}</style>
+<p>dataviz-rs: Rust charts in WebAssembly. Wheel zoom, drag pan / turn 3D, Shift+drag box zoom, double click reset.</p>
+<canvas id="a"></canvas>
+<canvas id="b"></canvas>
+<pre id="t"></pre>
+<script type="module">
+import { init, Chart } from "../index.js";
+await init();
+const t0 = performance.now();
+const n = 100000, x = [], y = [];
+for (let i = 0; i < n; i++) { x.push(i / 1000); y.push(Math.sin(i / 5000) + 0.1 * Math.sin(i / 60)); }
+const a = new Chart({ width: 760, height: 320, title: "100 000 points", type: "line", x, y, label: "signal" });
+a.mount(document.getElementById("a"));
+const b = new Chart({ width: 760, height: 380, type: "surface", z: Array.from({ length: 40 }, (_, i) => Array.from({ length: 40 }, (_, j) => Math.sin(i / 6) * Math.cos(j / 6))), colormap: "viridis" });
+b.mount(document.getElementById("b"));
+const ms = performance.now() - t0;
+const r0 = performance.now(); for (let i = 0; i < 20; i++) { a.pixels(1); } const frame = (performance.now() - r0) / 20;
+document.getElementById("t").textContent = `first draw ${ms.toFixed(1)} ms, frame ${frame.toFixed(2)} ms`;
+document.title = "done " + document.getElementById("t").textContent;
+</script>
