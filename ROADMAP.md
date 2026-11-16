@@ -34,7 +34,7 @@ then breadth. There is no backward-compatibility promise before 1.0.
 ## Ecosystem
 
 - [x] npm package of the WASM build (canvas renderer + `spec` JSON input)
-- [ ] Polars/Arrow column inputs in the Python bindings without copies
+- [x] Polars/Arrow column inputs in the Python bindings without copies
 - [x] Interactive Jupyter widget (rotate 3D, zoom) for the Python `Figure`
 
 ## Quality
