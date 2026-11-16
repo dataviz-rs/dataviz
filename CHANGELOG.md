@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.17.0
 
 ### Changed
 - GPU back end: 3D plots of opaque faces (surfaces, meshes,

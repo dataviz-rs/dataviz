@@ -4,7 +4,7 @@
 
 ```toml
 [dependencies]
-dataviz = "0.16"
+dataviz = "0.17"
 ```
 
 Optional features:
@@ -20,7 +20,7 @@ Optional features:
 Headless servers and WebAssembly: `default-features = false`.
 
 ```toml
-dataviz = { version = "0.16", default-features = false, features = ["pdf"] }
+dataviz = { version = "0.17", default-features = false, features = ["pdf"] }
 ```
 
 No system libraries are needed (the font is built in; on Linux the window
