@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+- GPU back end: 3D lines, markers, spheres and bonds join the retained
+  GPU mesh (one instanced quad each, depth tested, shaded and depth-cued
+  in the shader like the CPU scene; coverage written as MSAA samples so
+  edges never hide what is behind them). A 100 000-point 3D line
+  15.0 → 4.5 ms, a million-point 3D scatter 128 → 41 ms; turning them
+  sends only the camera.
+
 ## 0.17.0
 
 ### Changed

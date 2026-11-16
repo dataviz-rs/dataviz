@@ -164,6 +164,11 @@ pub struct Mesh3d {
     pub(crate) id: u64,
     /// Per vertex: position (3), normal (3), RGBA color 0–1 (4).
     pub(crate) vertices: std::sync::Arc<Vec<f32>>,
+    /// Lines, tubes and balls, 12 floats each: start (3), kind, end (3),
+    /// size, straight RGBA 0–1 (4). Kind 0 line, 1 tube, 2 flat ball,
+    /// 3 shaded ball; size in pixels (before perspective) when positive,
+    /// else minus a radius in normalized box units.
+    pub(crate) prims: std::sync::Arc<Vec<f32>>,
     /// Rotation rows (3 × vec4), then `[scale, centre x, centre y,
     /// distance]`, `[radius, fog, lighting, 0]`, background RGBA and the
     /// clip rectangle `[l, t, r, b]` (canvas units).

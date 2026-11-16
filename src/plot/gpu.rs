@@ -75,6 +75,8 @@ struct Gpu {
     cover: wgpu::RenderPipeline,
     tri: wgpu::RenderPipeline,
     mesh: wgpu::RenderPipeline,
+    /// Lines, tubes and balls of retained 3D meshes (instanced quads).
+    prim3d: wgpu::RenderPipeline,
     mesh_layout: wgpu::BindGroupLayout,
     shape: wgpu::RenderPipeline,
     glyph: wgpu::RenderPipeline,
@@ -98,7 +100,8 @@ struct State {
     atlas: Atlas,
     buffers: [Option<wgpu::Buffer>; 7],
     /// Vertex buffers of retained 3D meshes by id, with vertex counts.
-    meshes: std::collections::HashMap<u64, (wgpu::Buffer, u32)>,
+    /// Per mesh: faces (vertices) and primitives (instances), with counts.
+    meshes: std::collections::HashMap<u64, [Option<(wgpu::Buffer, u32)>; 2]>,
 }
 
 struct Targets {
@@ -147,6 +150,9 @@ impl Atlas {
         Some(at)
     }
 }
+
+/// Faces and primitives of a retained 3D mesh.
+type MeshData = [std::sync::Arc<Vec<f32>>; 2];
 
 static GPU: OnceLock<Result<Gpu, String>> = OnceLock::new();
 
@@ -505,6 +511,47 @@ impl Gpu {
             cache: None,
         });
 
+        let prim_attrs = [a(0, Float32x4, 0), a(1, Float32x4, 16), a(2, Float32x4, 32)];
+        let prim3d = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("prim3d"),
+            layout: Some(&mesh_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: Some("vs_prim3d"),
+                compilation_options: Default::default(),
+                buffers: &[Some(vertex_layout(48, &prim_attrs, true))],
+            },
+            primitive: wgpu::PrimitiveState::default(),
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH,
+                depth_write_enabled: Some(true),
+                depth_compare: Some(wgpu::CompareFunction::Less),
+                stencil: wgpu::StencilState {
+                    front: keep,
+                    back: keep,
+                    read_mask: 0xff,
+                    write_mask: 0,
+                },
+                bias: Default::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: samples,
+                ..Default::default()
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: Some("fs_prim3d"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: COLOR,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+
         let post = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("post"),
             layout: Some(&layout),
@@ -619,6 +666,7 @@ impl Gpu {
             cover,
             tri,
             mesh,
+            prim3d,
             mesh_layout,
             shape,
             glyph,
@@ -751,7 +799,7 @@ struct Frame {
     cover: Vec<f32>,
     tris: Vec<f32>,
     /// Retained meshes: id, vertices, uniform (camera, light, clip, device).
-    meshes: Vec<(u64, std::sync::Arc<Vec<f32>>, [f32; 32])>,
+    meshes: Vec<(u64, MeshData, [f32; 32])>,
     shapes: Vec<f32>,
     glyphs: Vec<f32>,
     images: Vec<f32>,
@@ -1304,7 +1352,9 @@ impl Builder<'_> {
                     b.min(clip[3]),
                 ]);
                 u[28..32].copy_from_slice(&[self.base.sx, self.base.tx, self.base.ty, 0.0]);
-                self.frame.meshes.push((m.id, m.vertices.clone(), u));
+                self.frame
+                    .meshes
+                    .push((m.id, [m.vertices.clone(), m.prims.clone()], u));
                 self.frame.cmds.push(Cmd::Mesh(self.frame.meshes.len() - 1));
             }
             Node::Instances { template, offsets } => self.instances(template, offsets, clip, alpha),
@@ -1698,22 +1748,30 @@ fn render_inner(
         .meshes
         .retain(|id, _| frame.meshes.iter().any(|m| m.0 == *id));
     let mut mesh_binds = Vec::with_capacity(frame.meshes.len());
-    for (id, verts, u) in &frame.meshes {
+    for (id, data, u) in &frame.meshes {
         if !state.meshes.contains_key(id) {
-            let size = std::mem::size_of_val(verts.as_slice()) as u64;
-            if size > gpu.device.limits().max_buffer_size {
-                return Err(Error::Render(
-                    "GPU: 3D mesh exceeds the buffer limit".into(),
-                ));
+            // Faces: 10 floats per vertex; primitives: 12 per instance.
+            let mut bufs = [None, None];
+            for (k, (d, per)) in data.iter().zip([10, 12]).enumerate() {
+                if d.is_empty() {
+                    continue;
+                }
+                let size = std::mem::size_of_val(d.as_slice()) as u64;
+                if size > gpu.device.limits().max_buffer_size {
+                    return Err(Error::Render(
+                        "GPU: 3D mesh exceeds the buffer limit".into(),
+                    ));
+                }
+                let b = gpu.device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("mesh"),
+                    size,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                gpu.queue.write_buffer(&b, 0, bytes(d));
+                bufs[k] = Some((b, (d.len() / per) as u32));
             }
-            let b = gpu.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("mesh"),
-                size: size.max(4),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            gpu.queue.write_buffer(&b, 0, bytes(verts));
-            state.meshes.insert(*id, (b, (verts.len() / 10) as u32));
+            state.meshes.insert(*id, bufs);
         }
         let ub = gpu.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("mesh view"),
@@ -1721,7 +1779,10 @@ fn render_inner(
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
-        gpu.queue.write_buffer(&ub, 0, bytes(u));
+        // Unused slot of the view: whether the target is multisampled.
+        let mut u = *u;
+        u[19] = if gpu.samples > 1 { 1.0 } else { 0.0 };
+        gpu.queue.write_buffer(&ub, 0, bytes(&u));
         mesh_binds.push(gpu.device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: None,
             layout: &gpu.mesh_layout,
@@ -1814,11 +1875,18 @@ fn render_inner(
                 }
                 Cmd::Mesh(i) => {
                     let (id, ..) = &frame.meshes[*i];
-                    if let Some((b, n)) = state.meshes.get(id) {
-                        pass.set_pipeline(&gpu.mesh);
+                    if let Some([faces, prims]) = state.meshes.get(id) {
                         pass.set_bind_group(2, &mesh_binds[*i], &[]);
-                        pass.set_vertex_buffer(0, b.slice(..));
-                        pass.draw(0..*n, 0..1);
+                        if let Some((b, n)) = faces {
+                            pass.set_pipeline(&gpu.mesh);
+                            pass.set_vertex_buffer(0, b.slice(..));
+                            pass.draw(0..*n, 0..1);
+                        }
+                        if let Some((b, n)) = prims {
+                            pass.set_pipeline(&gpu.prim3d);
+                            pass.set_vertex_buffer(0, b.slice(..));
+                            pass.draw(0..6, 0..*n);
+                        }
                     }
                 }
                 Cmd::Tris(r) => {
@@ -2067,6 +2135,49 @@ END
             mean < 1.0 && big < 0.003,
             "mean {mean}, very different {big}"
         );
+    }
+
+    /// 3D lines and markers stay on the GPU as well and look like the CPU's.
+    #[test]
+    fn retained_lines_and_points_match_cpu() {
+        if !Backend::gpu_available() {
+            eprintln!("no GPU adapter: skipped");
+            return;
+        }
+        let t: Vec<f64> = (0..4000).map(|i| i as f64 * 0.01).collect();
+        let (x, y): (Vec<f64>, Vec<f64>) = t.iter().map(|t| (t.cos() * t, t.sin() * t)).unzip();
+        let mut fig = Figure::new(500, 400);
+        fig.axes().line3d(x.clone(), y.clone(), t.clone()).size(1.5);
+        fig.axes()
+            .scatter3d(x[..400].to_vec(), y[..400].to_vec(), t[..400].to_vec())
+            .size(5.0);
+        let cpu = fig
+            .backend(Backend::Cpu { threads: 1 })
+            .to_pixels()
+            .unwrap();
+        let gpu = fig.backend(Backend::Gpu).to_pixels().unwrap();
+        let (mean, big) = compare(&cpu.rgba, &gpu.rgba);
+        assert!(
+            mean < 2.0 && big < 0.01,
+            "mean {mean}, very different {big}"
+        );
+        let cache = |fig: &mut Figure| {
+            fig.axes()
+                .mesh_cache
+                .lock()
+                .unwrap()
+                .as_ref()
+                .map(|c| (c.id(), c.is_mesh()))
+        };
+        let first = cache(&mut fig);
+        assert_eq!(
+            first.map(|c| c.1),
+            Some(true),
+            "lines and markers must be a GPU mesh"
+        );
+        fig.axes().rotate(Axis3::Z, 10.0);
+        fig.to_pixels().unwrap();
+        assert_eq!(cache(&mut fig), first, "turning must keep the mesh");
     }
 
     /// Surfaces stay on the GPU as meshes: the image matches the CPU's,

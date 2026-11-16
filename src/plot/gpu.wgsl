@@ -336,7 +336,7 @@ struct MeshView {
     m2: vec4<f32>,
     // scale, centre x, centre y, perspective distance (canvas units)
     p: vec4<f32>,
-    // radius, fog, lighting (0/1), unused
+    // radius, fog, lighting (0/1), multisampled target (0/1)
     q: vec4<f32>,
     bg: vec4<f32>,
     // clip rectangle in device pixels
@@ -395,4 +395,203 @@ fn vs_mesh(@location(0) p: vec3<f32>, @location(1) n: vec3<f32>, @location(2) c:
 @fragment
 fn fs_mesh(in: MeshOut) -> @location(0) vec4<f32> {
     return in.color * box_cov(in.pos.xy, mv.clip);
+}
+
+// ---- lines, tubes and balls of retained 3D meshes: one quad per instance,
+// shaded like the CPU scene (`fs_shape` kinds 1–3) and depth tested ----
+
+// Canvas → device position, view depth and perspective factor of a point
+// in normalized box coordinates.
+fn mesh_point(p: vec3<f32>) -> vec4<f32> {
+    let v = vec3<f32>(dot(mv.m0.xyz, p), dot(mv.m1.xyz, p), dot(mv.m2.xyz, p));
+    var f = 1.0;
+    if mv.p.w > 0.0 {
+        f = mv.p.w / max(mv.p.w - v.z, mv.q.x * 0.05);
+    }
+    let sx = (mv.p.y + v.x * mv.p.x * f) * mv.dev.x + mv.dev.y;
+    let sy = (mv.p.z - v.y * mv.p.x * f) * mv.dev.x + mv.dev.z;
+    return vec4<f32>(sx, sy, v.z, f);
+}
+
+fn mesh_depth(vz: f32) -> f32 {
+    return clamp(0.5 - vz / (4.0 * max(mv.q.x, 1e-6)), 0.0, 1.0);
+}
+
+fn mesh_persp(vz: f32) -> f32 {
+    if mv.p.w > 0.0 {
+        return mv.p.w / max(mv.p.w - vz, mv.q.x * 0.05);
+    }
+    return 1.0;
+}
+
+struct PrimOut {
+    @builtin(position) pos: vec4<f32>,
+    // segment start and end (device pixels) or ball centre
+    @location(0) seg: vec4<f32>,
+    // radius (device pixels), kind, view depth of the centre, radius in
+    // normalized units (balls)
+    @location(1) r: vec4<f32>,
+    @location(2) color: vec4<f32>,
+};
+
+@vertex
+fn vs_prim3d(@builtin(vertex_index) vi: u32,
+             @location(0) a: vec4<f32>,
+             @location(1) b: vec4<f32>,
+             @location(2) c: vec4<f32>) -> PrimOut {
+    let kind = u32(a.w + 0.5);
+    let p0 = mesh_point(a.xyz);
+    var o: PrimOut;
+    let k = corner(vi, vec4<f32>(0.0, 0.0, 1.0, 1.0));
+    var vz = p0.z;
+    var r = 0.0;
+    var q: vec2<f32>;
+    var z: f32;
+    if kind >= 2u {
+        // Ball: pixels (before perspective) or a normalized radius.
+        if b.w > 0.0 {
+            r = b.w * p0.w;
+        } else {
+            r = -b.w * mv.p.x * p0.w;
+        }
+        r = r * mv.dev.x;
+        let e = r + 1.0;
+        q = p0.xy + vec2<f32>(mix(-e, e, k.x), mix(-e, e, k.y));
+        z = mesh_depth(vz);
+        o.seg = vec4<f32>(p0.xy, p0.xy);
+    } else {
+        let p1 = mesh_point(b.xyz);
+        vz = (p0.z + p1.z) * 0.5;
+        let f = mesh_persp(vz);
+        // Line width in pixels, or a data radius (width 2·r).
+        var w = b.w * f;
+        if b.w < 0.0 {
+            w = -2.0 * b.w * mv.p.x * f;
+        }
+        r = 0.5 * w * mv.dev.x;
+        let d = p1.xy - p0.xy;
+        let len = length(d);
+        var u = vec2<f32>(1.0, 0.0);
+        if len > 1e-6 {
+            u = d / len;
+        }
+        let e = r + 1.0;
+        q = p0.xy + u * mix(-e, len + e, k.x) + vec2<f32>(-u.y, u.x) * mix(-e, e, k.y);
+        z = mesh_depth(mix(p0.z, p1.z, k.x));
+        o.seg = vec4<f32>(p0.xy, p1.xy);
+    }
+    let n = ndc(q);
+    o.pos = vec4<f32>(n.xy, z, 1.0);
+    // Normalized radius of a ball (depth of its surface).
+    o.r = vec4<f32>(r, a.w, vz, r / max(mv.p.x * mv.dev.x * p0.w, 1e-6));
+    var rgb = c.rgb;
+    if mv.q.y > 0.0 {
+        let near = clamp((vz / max(mv.q.x, 1e-6) + 1.0) * 0.5, 0.0, 1.0);
+        rgb = mix(rgb, mv.bg.rgb, mv.q.y * (1.0 - near));
+    }
+    o.color = vec4<f32>(rgb, c.a);
+    return o;
+}
+
+struct PrimFrag {
+    @location(0) color: vec4<f32>,
+    @builtin(frag_depth) depth: f32,
+    @builtin(sample_mask) mask: u32,
+};
+
+@fragment
+fn fs_prim3d(in: PrimOut) -> PrimFrag {
+    let p = in.pos.xy;
+    let r = in.r.x;
+    let kind = u32(in.r.y + 0.5);
+    let lit = mv.q.z > 0.5;
+    let base = in.color;
+    var c: vec4<f32>;
+    var depth = in.pos.z;
+    let l = vec3<f32>(-0.4212, -0.5617, 0.7121);
+    if kind >= 2u {
+        let dv = (p - in.seg.xy) / max(r, 1e-6);
+        let d = length(p - in.seg.xy);
+        let cov = clamp(r + 0.5 - d, 0.0, 1.0);
+        if cov <= 0.0 && !(kind == 2u && r >= 1.6 && d < r + 0.8) {
+            discard;
+        }
+        if kind == 3u && lit && r >= 1.6 {
+            var n = vec3<f32>(dv, sqrt(max(1.0 - dot(dv, dv), 0.0)));
+            if d > r {
+                n = vec3<f32>(dv / length(dv), 0.0);
+            }
+            let lam = max(dot(n, l), 0.0);
+            let h = max(dot(n, vec3<f32>(l.x, l.y, l.z + 1.0) * 0.5404), 0.0);
+            let spec = pow(h, 20.0) * 0.75;
+            let b = base.rgb * (0.5 + 0.5 * pow(min(lam * 1.25, 1.0), 0.8));
+            let rgb = b + (vec3<f32>(1.0) - b) * spec;
+            c = vec4<f32>(rgb * cov, cov);
+            // The surface, not the disc, is depth tested.
+            depth = mesh_depth(in.r.z + n.z * in.r.w);
+        } else if kind == 2u && r >= 1.6 {
+            // Flat marker with a darker 0.6 px outline (as on the CPU).
+            let cs = clamp(1.0 - abs(d - r), 0.0, 1.0) * 0.6;
+            let sc = base.rgb * 0.7;
+            let a = cs + cov * (1.0 - cs);
+            c = vec4<f32>(sc * cs + base.rgb * cov * (1.0 - cs), a);
+        } else {
+            c = vec4<f32>(base.rgb * cov, cov);
+        }
+    } else {
+        let dd = in.seg.zw - in.seg.xy;
+        let len = length(dd);
+        var u = vec2<f32>(1.0, 0.0);
+        if len > 1e-6 {
+            u = dd / len;
+        }
+        let q = p - in.seg.xy;
+        let along = dot(q, u);
+        let lat = q.y * u.x - q.x * u.y;
+        let o = max(max(-along, along - len), 0.0);
+        let d = sqrt(lat * lat + o * o);
+        var cov: f32;
+        if r < 0.5 {
+            // Thinner than a pixel: one pixel wide with less alpha.
+            cov = clamp(1.0 - d, 0.0, 1.0) * 2.0 * r;
+        } else {
+            cov = clamp(r + 0.5 - d, 0.0, 1.0);
+        }
+        if cov <= 0.0 {
+            discard;
+        }
+        if kind == 1u && lit && 2.0 * r >= 2.5 {
+            let t = clamp(lat / r, -1.0, 1.0);
+            let n = vec3<f32>(vec2<f32>(-u.y, u.x) * t, sqrt(max(1.0 - t * t, 0.0)));
+            let lam = max(dot(n, l), 0.0);
+            let h = max(dot(n, vec3<f32>(l.x, l.y, l.z + 1.0) * 0.5404), 0.0);
+            let spec = pow(h, 12.0) * 0.6;
+            let t2 = t * t;
+            let rim = 1.0 - 0.45 * t2 * t2 * t2;
+            let b = base.rgb * (0.5 + 0.5 * pow(min(lam * 1.25, 1.0), 0.8)) * rim;
+            c = vec4<f32>((b + (vec3<f32>(1.0) - b) * spec) * cov, cov);
+        } else {
+            c = vec4<f32>(base.rgb * cov, cov);
+        }
+    }
+    // Opaque: the coverage picks how many of the 4 samples are written
+    // (only those write depth, so nothing behind an edge is lost).
+    let a = c.a * box_cov(p, mv.clip);
+    let rgb = c.rgb / max(c.a, 1e-6);
+    var o: PrimFrag;
+    if mv.q.w > 0.5 {
+        let n = u32(round(a * 4.0));
+        if n == 0u {
+            discard;
+        }
+        o.mask = (1u << n) - 1u;
+    } else {
+        if a < 0.5 {
+            discard;
+        }
+        o.mask = 0xffffffffu;
+    }
+    o.color = vec4<f32>(rgb, 1.0);
+    o.depth = depth;
+    return o;
 }

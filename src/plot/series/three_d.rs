@@ -564,14 +564,23 @@ pub(crate) struct MeshCache {
     revision: u64,
     norm: [u64; 6],
     id: u64,
-    vertices: Option<std::sync::Arc<Vec<f32>>>,
+    vertices: Option<GpuGeometry>,
 }
+
+/// Faces and other primitives of a GPU mesh.
+type GpuGeometry = (std::sync::Arc<Vec<f32>>, std::sync::Arc<Vec<f32>>);
 
 impl MeshCache {
     /// Identity of the cached mesh.
     #[cfg(test)]
     pub(crate) fn id(&self) -> u64 {
         self.id
+    }
+
+    /// Whether the scene became a GPU mesh.
+    #[cfg(test)]
+    pub(crate) fn is_mesh(&self) -> bool {
+        self.vertices.is_some()
     }
 }
 
@@ -591,6 +600,8 @@ fn self_clip(r: Rect) -> [f32; 4] {
 #[derive(Default)]
 struct MeshCapture {
     vertices: Vec<f32>,
+    /// Lines, tubes and balls (see [`crate::plot::scene::Mesh3d::prims`]).
+    prims: Vec<f32>,
     other: bool,
 }
 
@@ -660,6 +671,32 @@ impl Scene3d<'_> {
         self.prims.push(p);
     }
 
+    /// Captures a line, tube or ball for the GPU (`a`, `b` data points);
+    /// translucent ones cannot be part of a mesh. False when not capturing.
+    fn capture(&mut self, a: [f64; 3], b: [f64; 3], kind: f32, size: f64, c: Color) -> bool {
+        if self.mesh.is_none() {
+            return false;
+        }
+        let (na, nb) = (self.proj.norm(a), self.proj.norm(b));
+        let Some(m) = self.mesh.as_mut() else {
+            return false;
+        };
+        if c.a < 0.99 {
+            m.other = true;
+            return true;
+        }
+        if !(na.iter().chain(&nb).all(|v| v.is_finite()) && size.is_finite() && size != 0.0) {
+            return true;
+        }
+        m.prims.extend(na.map(|v| v as f32));
+        m.prims.push(kind);
+        m.prims.extend(nb.map(|v| v as f32));
+        m.prims.push(size as f32);
+        m.prims.extend([c.r, c.g, c.b].map(|v| v as f32 / 255.0));
+        m.prims.push(1.0);
+        true
+    }
+
     /// A line through points (`width` pixels), drawn in pieces that are
     /// sorted by depth with the rest of the scene. `colors` (one per point)
     /// color the pieces; otherwise `color` is used.
@@ -685,6 +722,13 @@ impl Scene3d<'_> {
                 j4(width)
             );
             self.record(item);
+            return;
+        }
+        if self.mesh.is_some() {
+            for (k, w) in pts.windows(2).enumerate() {
+                let c = colors.and_then(|c| c.get(k).copied()).unwrap_or(color);
+                self.capture(w[0], w[1], 0.0, width.max(0.3), c);
+            }
             return;
         }
         // Pieces of up to 64 kept points; steps shorter than a third of a
@@ -906,6 +950,9 @@ impl Scene3d<'_> {
             self.record(item);
             return;
         }
+        if self.capture(c, c, 3.0, -radius * self.proj.k[0], color) {
+            return;
+        }
         let (x, y, d) = self.proj.project(c);
         let r = radius * self.proj.px_per_unit(d);
         self.ball(x, y, d, r, color, true);
@@ -922,6 +969,10 @@ impl Scene3d<'_> {
                 shaded as u8
             );
             self.record(item);
+            return;
+        }
+        let kind = if shaded { 3.0 } else { 2.0 };
+        if self.capture(c, c, kind, size / 2.0, color) {
             return;
         }
         let (x, y, d) = self.proj.project(c);
@@ -1106,6 +1157,16 @@ impl Scene3d<'_> {
             );
             let _ = data;
             self.record(item);
+            return;
+        }
+        // Data widths are radii (line widths 2·r).
+        // Shading follows the lighting of the frame (in the shader).
+        let (kind, size) = match (data, tube) {
+            (true, true) => (1.0, -w * self.proj.k[0]),
+            (true, false) => (0.0, -w * self.proj.k[0]),
+            (false, _) => (0.0, w.max(0.3)),
+        };
+        if self.capture(a, b, kind, size, color) {
             return;
         }
         let (pa, pb) = (self.proj.project(a), self.proj.project(b));
@@ -1754,7 +1815,7 @@ impl Axes {
         let hit = cache
             .as_ref()
             .filter(|c| c.revision == self.revision && c.norm == norm);
-        let (id, vertices) = match hit {
+        let (id, (vertices, prims)) = match hit {
             Some(c) => (c.id, c.vertices.clone()?),
             None => {
                 let mut scene = Scene3d {
@@ -1772,10 +1833,17 @@ impl Axes {
                     s.draw3d(&mut scene);
                 }
                 let m = scene.mesh.take().unwrap_or_default();
-                let ok = !m.other && scene.labels.is_empty() && !m.vertices.is_empty();
+                let ok = !m.other
+                    && scene.labels.is_empty()
+                    && !(m.vertices.is_empty() && m.prims.is_empty());
                 static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
                 let id = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                let vertices = ok.then(|| std::sync::Arc::new(m.vertices));
+                let vertices = ok.then(|| {
+                    (
+                        std::sync::Arc::new(m.vertices),
+                        std::sync::Arc::new(m.prims),
+                    )
+                });
                 *cache = Some(MeshCache {
                     revision: self.revision,
                     norm,
@@ -1815,6 +1883,7 @@ impl Axes {
         Some(Node::Mesh3d(Box::new(crate::plot::scene::Mesh3d {
             id,
             vertices,
+            prims,
             view,
         })))
     }

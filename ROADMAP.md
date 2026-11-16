@@ -10,7 +10,7 @@ then breadth. There is no backward-compatibility promise before 1.0.
 - [x] GPU 3D path for opaque faces: geometry kept in GPU buffers, camera
       as a uniform, depth buffer instead of painter's sort
 - [x] Spheres and tubes as analytic GPU shapes (molecule frame 0.7 ms)
-- [ ] Lines and points retained on the GPU too, so trajectories and
+- [x] Lines and points retained on the GPU too, so trajectories and
       molecules turn without re-projecting on the CPU
 - [ ] Retained 3D geometry on the CPU: re-project and re-sort only when
       the camera moves (cartoons rebuild their splines every frame today)
