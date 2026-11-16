@@ -253,7 +253,8 @@ class Figure:
     """A figure of one or more plots.
 
     ``Figure(width=900, height=600, title=None, theme=None)``; ``theme``:
-    light, dark, minimal, ggplot, seaborn, publication, solarized.
+    light, dark, minimal, ggplot, seaborn, publication, solarized,
+    high_contrast.
     """
 
     def __init__(self, width: int = 900, height: int = 600, *, title: Optional[str] = None,

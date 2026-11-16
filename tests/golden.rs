@@ -182,6 +182,103 @@ fn charts() -> Vec<(&'static str, Build)> {
                 ],
             );
         }),
+        ("globe", |f| {
+            let ax = f.axes();
+            ax.title("Globe").globe(30.0, 35.0);
+            ax.choropleth([
+                ("TUR", 85.0),
+                ("DEU", 83.0),
+                ("EGY", 110.0),
+                ("IND", 1400.0),
+            ])
+            .graticule(30.0);
+        }),
+        ("equal_earth", |f| {
+            let ax = f.axes();
+            ax.title("Equal Earth")
+                .map(dataviz::plot::geo::Projection::EqualEarth);
+            ax.world_map().graticule(30.0);
+        }),
+        ("arc_diagram", |f| {
+            let n: Vec<String> = (0..12).map(|i| format!("n{i}")).collect();
+            let e: Vec<(usize, usize, f64)> = (0..18)
+                .map(|k| (k * 5 % 12, (k * 7 + 3) % 12, 1.0 + (k % 3) as f64))
+                .collect();
+            f.axes()
+                .title("Arc diagram")
+                .arc_diagram(&n, e)
+                .groups((0..12).map(|i| i / 4));
+        }),
+        ("edge_bundling", |f| {
+            let n: Vec<String> = (0..16).map(|i| format!("n{i}")).collect();
+            let e: Vec<(usize, usize, f64)> = (0..30)
+                .map(|k| (k * 5 % 16, (k * 7 + 3) % 16, 1.0))
+                .collect();
+            f.axes()
+                .title("Edge bundling")
+                .edge_bundling(&n, (0..16).map(|i| i / 4), e);
+        }),
+        ("volume", |f| {
+            let n = 20;
+            let mut v = Vec::new();
+            for k in 0..n {
+                for j in 0..n {
+                    for i in 0..n {
+                        let c = |a: usize| a as f64 / (n - 1) as f64 * 2.0 - 1.0;
+                        let r2 = c(i) * c(i) + c(j) * c(j) * 2.0 + c(k) * c(k);
+                        v.push((-r2 * 4.0).exp());
+                    }
+                }
+            }
+            f.axes().title("Volume").volume(v, [n, n, n]).opacity(0.5);
+        }),
+        ("scatter3d_line3d", |f| {
+            let t: Vec<f64> = (0..300).map(|i| i as f64 * 0.05).collect();
+            let ax = f.axes();
+            ax.title("3D points and a line");
+            ax.line3d(
+                t.iter().map(|v| v.cos() * v).collect::<Vec<_>>(),
+                t.iter().map(|v| v.sin() * v).collect::<Vec<_>>(),
+                t.clone(),
+            )
+            .size(1.5);
+            ax.scatter3d(
+                t.iter()
+                    .step_by(10)
+                    .map(|v| v.cos() * v)
+                    .collect::<Vec<_>>(),
+                t.iter()
+                    .step_by(10)
+                    .map(|v| v.sin() * v)
+                    .collect::<Vec<_>>(),
+                t.iter().step_by(10).copied().collect::<Vec<_>>(),
+            )
+            .size(7.0);
+        }),
+        ("molecule", |f| {
+            const PDB: &str = "\
+ATOM      1  N   ALA A   1      11.104   6.134  -6.504  1.00  0.00           N
+ATOM      2  CA  ALA A   1      11.639   6.071  -5.147  1.00  0.00           C
+ATOM      3  C   ALA A   1      13.149   5.856  -5.162  1.00  0.00           C
+ATOM      4  O   ALA A   1      13.691   5.111  -5.981  1.00  0.00           O
+ATOM      5  CB  ALA A   1      11.329   7.371  -4.393  1.00  0.00           C
+ATOM      6  N   GLY A   2      13.817   6.523  -4.236  1.00  0.00           N
+ATOM      7  CA  GLY A   2      15.264   6.410  -4.153  1.00  0.00           C
+END
+";
+            f.axes().title("Molecule").molecule(Molecule::from_pdb(PDB));
+        }),
+        ("high_contrast", |f| {
+            f.theme(Theme::high_contrast());
+            let x: Vec<f64> = (0..40).map(|i| i as f64 / 4.0).collect();
+            let ax = f.axes();
+            ax.title("High contrast");
+            for k in 0..3 {
+                ax.line(&x, x.iter().map(|v| (v + k as f64).sin()))
+                    .label(format!("s{k}"));
+            }
+            ax.legend(LegendPosition::LowerLeft);
+        }),
     ]
 }
 

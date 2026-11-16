@@ -236,6 +236,48 @@ impl Theme {
         }
     }
 
+    /// High contrast for low vision and projectors (WCAG AAA text): black
+    /// on white, heavier lines and frame, larger text, and dark Okabe–Ito
+    /// colors (each at least 4.5:1 against white) that stay apart for
+    /// color-blind readers.
+    pub fn high_contrast() -> Self {
+        Self {
+            background: Color::WHITE,
+            plot_background: Color::WHITE,
+            text: Color::BLACK,
+            axis: Color::BLACK,
+            grid: Color::rgb(150, 150, 150),
+            minor_grid: Color::rgb(205, 205, 205),
+            grid_width: 1.0,
+            axis_width: 1.6,
+            spines: Spines::ALL,
+            tick_length: 6.0,
+            title_size: 24.0,
+            axes_title_size: 19.0,
+            label_size: 17.0,
+            tick_size: 15.0,
+            legend_size: 15.0,
+            annotation_size: 14.0,
+            // Okabe–Ito hues darkened to at least 4.5:1 against white.
+            palette: vec![
+                Color::rgb(0, 90, 160),
+                Color::rgb(190, 75, 0),
+                Color::rgb(0, 120, 90),
+                Color::rgb(160, 60, 125),
+                Color::rgb(0, 0, 0),
+                Color::rgb(125, 95, 0),
+                Color::rgb(80, 60, 150),
+                Color::rgb(90, 90, 90),
+            ],
+            colormap: Colormap::Cividis,
+            line_width: 3.0,
+            marker_size: 9.0,
+            legend_background: Color::WHITE,
+            legend_border: Color::BLACK,
+            ..Self::default()
+        }
+    }
+
     /// Warm beige "solarized light" theme.
     pub fn solarized() -> Self {
         Self {
@@ -271,6 +313,21 @@ impl Theme {
             ("seaborn", Theme::seaborn()),
             ("publication", Theme::publication()),
             ("solarized", Theme::solarized()),
+            ("high_contrast", Theme::high_contrast()),
         ]
+    }
+}
+
+#[cfg(test)]
+mod contrast_tests {
+    use super::*;
+
+    #[test]
+    fn high_contrast_colors_reach_4_5_to_1() {
+        let t = Theme::high_contrast();
+        let ratio = |c: Color| (1.05) / (c.luminance() + 0.05);
+        for c in t.palette.iter().chain([&t.text, &t.axis]) {
+            assert!(ratio(*c) >= 4.5, "{c:?}: {}", ratio(*c));
+        }
     }
 }

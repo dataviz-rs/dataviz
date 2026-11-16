@@ -16,7 +16,7 @@ fn common_props() -> Value {
         "title": { "type": "string", "description": "Figure title." },
         "width": { "type": "number", "description": "Width in pixels (default 900)." },
         "height": { "type": "number", "description": "Height in pixels (default 600)." },
-        "theme": { "type": "string", "enum": ["light", "dark", "minimal", "ggplot", "seaborn", "publication", "solarized"] },
+        "theme": { "type": "string", "enum": ["light", "dark", "minimal", "ggplot", "seaborn", "publication", "solarized", "high_contrast"] },
         "output": { "type": "string", "description": "Also save the chart to this path (.png, .svg, .pdf or .html, interactive)." },
         "image": { "type": "boolean", "description": "Return the image (default true; false returns only the text summary)." }
     })

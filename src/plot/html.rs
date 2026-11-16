@@ -111,8 +111,10 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
 #dv .bar{{position:absolute;top:6px;right:6px;opacity:.35;transition:opacity .2s}}
 #dv:hover .bar{{opacity:1}}
 #dv button{{font:12px system-ui,sans-serif;padding:3px 8px;border:1px solid #bbb;border-radius:4px;background:#fff;cursor:pointer}}
+#dv:focus-visible{{outline:3px solid #005aa0;outline-offset:3px}}
+#dv-live{{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0)}}
 </style></head><body>
-<div id="dv"><div class="bar"><button id="dv-reset" title="Reset zoom (or double click)" style="display:none">Reset</button> <button id="dv-png" title="Save as PNG">PNG</button></div>
+<div id="dv" tabindex="0" role="application" aria-roledescription="chart" aria-label="{}. Arrow keys: data points and series; Page Up and Page Down: plots; plus, minus and 0: zoom; Enter: hide or show a series."><div id="dv-live" aria-live="polite"></div><div class="bar"><button id="dv-reset" title="Reset zoom (or double click)" style="display:none">Reset</button> <button id="dv-png" title="Save as PNG">PNG</button></div>
 {svg}</div>
 <script type="application/json" id="dv-meta">{meta}</script>
 <script>{SCRIPT}</script>
@@ -121,6 +123,7 @@ body{{margin:0;padding:16px;background:#fff;font-family:system-ui,sans-serif}}
 "#,
             super::scene::esc(&title),
             scene.width.round(),
+            super::scene::esc(if title.is_empty() { "Chart" } else { &title }),
         );
         html
     }
@@ -261,9 +264,9 @@ function readout(P,x,y,dots){const lines=[];let head=null;
   el('circle',{cx:kx*s.xy[best]+tx,cy:ky*s.xy[best+1]+ty,r:4,fill:'#fff',stroke:'#1e1e1e','stroke-width':1.5});}
  if(lines.length)tip(x,y,dots?[head].concat(lines):lines,P.rect);}
 svg.addEventListener('mouseleave',()=>ov.replaceChildren());
-svg.addEventListener('click',ev=>{const m=pos(ev);for(const P of M.plots)for(const L of P.legend){const r=L.r;if(m[0]>=r[0]&&m[0]<=r[0]+r[2]&&m[1]>=r[1]&&m[1]<=r[1]+r[3]){
-  const g=document.getElementById(L.id);const off=!hidden.has(L.id);if(off)hidden.add(L.id);else hidden.delete(L.id);if(g)g.style.display=off?'none':'';
-  const k='dim-'+L.id;const old=document.getElementById(k);if(old)old.remove();if(off)el('rect',{id:k,x:r[0],y:r[1],width:r[2],height:r[3],fill:'rgba(255,255,255,.65)'},dims);return;}}});
+function toggle(id,L){const g=document.getElementById(id);const off=!hidden.has(id);if(off)hidden.add(id);else hidden.delete(id);if(g)g.style.display=off?'none':'';
+  const k='dim-'+id;const old=document.getElementById(k);if(old)old.remove();if(off&&L){const r=L.r;el('rect',{id:k,x:r[0],y:r[1],width:r[2],height:r[3],fill:'rgba(255,255,255,.65)'},dims);}}
+svg.addEventListener('click',ev=>{const m=pos(ev);for(const P of M.plots)for(const L of P.legend){const r=L.r;if(m[0]>=r[0]&&m[0]<=r[0]+r[2]&&m[1]>=r[1]&&m[1]<=r[1]+r[3]){toggle(L.id,L);return;}}});
 // ---- zoom and pan: wheel zooms at the cursor (over an axis: that axis
 // only), drag pans, double click resets; ticks and grid are redrawn ----
 const lg=v=>Math.log10(v),F=(a,v)=>a.scale==='log'?lg(v):v,Fi=(a,v)=>a.scale==='log'?Math.pow(10,v):v;
@@ -358,6 +361,33 @@ window.addEventListener('mouseup',()=>{if(!sel)return;const{P,a,b}=sel;sel=null;
  const stop=e=>e.stopImmediatePropagation();svg.addEventListener('click',stop,{capture:true,once:true});setTimeout(()=>svg.removeEventListener('click',stop,{capture:true}),0);});
 svg.addEventListener('dblclick',ev=>{const m=pos(ev),P=M.plots.find(p=>inside(p,m));if(P&&zoomed(P)){ov.replaceChildren();reset(P);}});
 document.getElementById('dv-reset').addEventListener('click',()=>{for(const P of M.plots)if(zoomed(P))reset(P);});
+// ---- keyboard: arrows walk the data points (Shift: 10 at a time) and the
+// series, Page Up/Down the plots, + − 0 zoom, Enter toggles a series ----
+const live=document.getElementById('dv-live');const K={p:0,s:0,i:0,on:false};
+function kseries(P){return P.series.filter(s=>s.xy.length);}
+function kshow(){ov.replaceChildren();const P=M.plots[K.p];if(!P)return;const S=kseries(P);if(!S.length){live.textContent='No data in plot '+(K.p+1);return;}
+ K.s=(K.s+S.length)%S.length;const s=S[K.s],n=s.xy.length/2;K.i=Math.max(0,Math.min(n-1,K.i));
+ const kx=P.kx??1,tx=P.tx??0,ky=P.ky??1,ty=P.ty??0,x=kx*s.xy[2*K.i]+tx,y=ky*s.xy[2*K.i+1]+ty;
+ const[xl,yl]=s.labels[K.i].split('\u001f');
+ if(hidden.has(s.id)){live.textContent=s.name+' (hidden; Enter shows it).';return;}
+ el('circle',{cx:x,cy:y,r:7,fill:'none',stroke:'#005aa0','stroke-width':3});el('circle',{cx:x,cy:y,r:3,fill:'#005aa0'});
+ tip(x,y,[s.name,xl+': '+yl],P.rect);
+ live.textContent=s.name+', '+xl+': '+yl+'. Point '+(K.i+1)+' of '+n+(M.plots.length>1?', plot '+(K.p+1)+' of '+M.plots.length:'')+'.';}
+box.addEventListener('keydown',ev=>{if(!M.plots.length)return;const P=M.plots[K.p],S=kseries(P),s=S[K.s],n=s?s.xy.length/2:0,step=ev.shiftKey?10:1;
+ const c=()=>{if(!s)return[P.rect[0]+P.rect[2]/2,P.rect[1]+P.rect[3]/2];return[(P.kx??1)*s.xy[2*K.i]+(P.tx??0),(P.ky??1)*s.xy[2*K.i+1]+(P.ty??0)];};
+ switch(ev.key){
+  case'ArrowRight':K.i+=step;break;case'ArrowLeft':K.i-=step;break;
+  case'Home':K.i=0;break;case'End':K.i=n-1;break;
+  case'ArrowUp':K.s-=1;break;case'ArrowDown':K.s+=1;break;
+  case'PageDown':K.p=(K.p+1)%M.plots.length;K.s=0;K.i=0;break;case'PageUp':K.p=(K.p-1+M.plots.length)%M.plots.length;K.s=0;K.i=0;break;
+  case'+':case'=':zoomAt(P,c(),0.7,true,true);break;case'-':case'_':zoomAt(P,c(),1/0.7,true,true);break;
+  case'0':reset(P);break;
+  case'Enter':case' ':{if(!s)return;const off=!hidden.has(s.id);toggle(s.id,P.legend.find(l=>l.id===s.id));
+   live.textContent=s.name+(off?' hidden':' shown');ev.preventDefault();return;}
+  case'Escape':ov.replaceChildren();live.textContent='';K.on=false;return;
+  default:return;}
+ ev.preventDefault();K.on=true;kshow();});
+box.addEventListener('focus',()=>{live.textContent=box.getAttribute('aria-label');});
 document.getElementById('dv-png').addEventListener('click',()=>{ov.replaceChildren();const vb=svg.viewBox.baseVal,s=2;const img=new Image();
  img.onload=()=>{const c=document.createElement('canvas');c.width=vb.width*s;c.height=vb.height*s;const x=c.getContext('2d');x.drawImage(img,0,0,c.width,c.height);const a=document.createElement('a');a.download=(document.title||'chart')+'.png';a.href=c.toDataURL('image/png');a.click();};
  img.src='data:image/svg+xml;charset=utf-8,'+encodeURIComponent(new XMLSerializer().serializeToString(svg));});
@@ -478,6 +508,19 @@ mod tests {
             assert!(html.contains(&format!(r#"id="{id}""#)), "{id}");
         }
         assert!(html.contains(r#""pid":"p0","y2":false"#));
+    }
+
+    #[test]
+    fn keyboard_and_screen_reader_support() {
+        let mut fig = Figure::new(400, 300);
+        fig.title("Sales");
+        fig.axes().line([1.0, 2.0, 3.0], [2.0, 1.0, 3.0]).label("a");
+        let html = fig.to_html();
+        assert!(
+            html.contains(r#"tabindex="0""#) && html.contains(r#"aria-label="Sales. Arrow keys"#)
+        );
+        assert!(html.contains(r#"id="dv-live" aria-live="polite""#));
+        assert!(html.contains("addEventListener('keydown'"));
     }
 
     #[test]

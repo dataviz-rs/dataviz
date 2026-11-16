@@ -28,7 +28,7 @@ fig.show("quick start")?;     // a window: zoom, pan, crosshair
 - `fig.grid(rows, cols)` and `fig.at(row, col)` (or `fig.span(row, col,
   rowspan, colspan)`) lay out several plots; `fig.share_x(true)` links them.
 - Themes: `fig.theme(Theme::dark())` (also `minimal`, `ggplot`, `seaborn`,
-  `publication`, `solarized`).
+  `publication`, `solarized`, `high_contrast`).
 - Text takes TeX math between dollars: `ax.y_label(r"$\sigma^2$ [m²]")`.
 
 ## Live data

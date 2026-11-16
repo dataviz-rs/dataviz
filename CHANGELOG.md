@@ -49,7 +49,19 @@
   paths reaching far outside the canvas are clamped. Found by the new
   fuzz tests.
 
+### Accessibility
+- `Theme::high_contrast()` (spec `"high_contrast"`): black on white,
+  heavier lines and frame, larger text, dark Okabe–Ito colors each at
+  least 4.5:1 against white.
+- HTML output can be used from the keyboard: the chart takes focus;
+  ←/→ walk the data points (Shift: 10), ↑/↓ the series, Page Up/Down the
+  plots, Home/End jump, + − 0 zoom and reset, Enter hides or shows a
+  series, Esc clears. Every step is announced to screen readers (an
+  `aria-live` region).
+
 ### Quality
+- More golden images: globe, Equal Earth, arc diagram, edge bundling,
+  volume, 3D points and lines, a molecule, the high-contrast theme.
 - `tests/fuzz.rs`: deterministic mutation fuzzing of the PDB, XYZ,
   Newick, CSV, GeoJSON and color readers and of JSON specs (every chart
   type), on stable Rust in every `cargo test`; `DATAVIZ_FUZZ=<n>` for

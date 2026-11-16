@@ -358,6 +358,7 @@ pub fn theme(name: &str) -> Theme {
         "seaborn" => Theme::seaborn(),
         "publication" => Theme::publication(),
         "solarized" => Theme::solarized(),
+        "high_contrast" | "highcontrast" | "high-contrast" | "contrast" => Theme::high_contrast(),
         _ => Theme::light(),
     }
 }
