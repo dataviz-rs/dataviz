@@ -44,6 +44,16 @@
 
 ### Fixed
 - Spec: a single panel given inline no longer shows its title twice.
+- Paths with infinite or NaN points (e.g. GeoJSON coordinates beyond
+  f64) no longer panic the rasterizer: such points become gaps, and
+  paths reaching far outside the canvas are clamped. Found by the new
+  fuzz tests.
+
+### Quality
+- `tests/fuzz.rs`: deterministic mutation fuzzing of the PDB, XYZ,
+  Newick, CSV, GeoJSON and color readers and of JSON specs (every chart
+  type), on stable Rust in every `cargo test`; `DATAVIZ_FUZZ=<n>` for
+  longer runs.
 
 ## 0.17.0
 

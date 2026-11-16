@@ -40,5 +40,5 @@ then breadth. There is no backward-compatibility promise before 1.0.
 ## Quality
 
 - [ ] More golden image tests (one per chart family, 3D styles included)
-- [ ] Fuzzing of the `spec` JSON parser and the PDB / Newick readers
+- [x] Fuzzing of the `spec` JSON parser and the PDB / Newick readers
 - [ ] Accessibility: keyboard navigation of HTML output, high-contrast theme

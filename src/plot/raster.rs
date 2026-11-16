@@ -170,12 +170,37 @@ pub(crate) fn build_path(cmds: &[PathCmd]) -> Option<sk::Path> {
     let mut pb = PathBuilder::with_capacity(cmds.len(), cmds.len());
     let mut cur = (0.0, 0.0);
     let mut start = (0.0, 0.0);
+    // Points that are not finite (∞ − ∞ from data) would panic tiny-skia's
+    // rasterizer: they become gaps (the next point starts a new piece).
+    let fin = |v: &[f64]| v.iter().all(|c| c.is_finite());
+    let mut gap = false;
     for c in cmds {
         match *c {
             PathCmd::MoveTo(x, y) => {
+                gap = !fin(&[x, y]);
+                if !gap {
+                    pb.move_to(x as f32, y as f32);
+                    cur = (x, y);
+                    start = cur;
+                }
+            }
+            PathCmd::LineTo(x, y) | PathCmd::CubicTo(.., x, y) | PathCmd::ArcTo(.., x, y)
+                if !fin(&[x, y]) =>
+            {
+                gap = true;
+            }
+            PathCmd::CubicTo(a, b, c2, d, ..) if !fin(&[a, b, c2, d]) => gap = true,
+            _ if gap && !matches!(c, PathCmd::Close) => {
+                let (x, y) = match *c {
+                    PathCmd::LineTo(x, y)
+                    | PathCmd::CubicTo(.., x, y)
+                    | PathCmd::ArcTo(.., x, y) => (x, y),
+                    _ => unreachable!(),
+                };
                 pb.move_to(x as f32, y as f32);
                 cur = (x, y);
                 start = cur;
+                gap = false;
             }
             PathCmd::LineTo(x, y) => {
                 pb.line_to(x as f32, y as f32);
@@ -186,11 +211,17 @@ pub(crate) fn build_path(cmds: &[PathCmd]) -> Option<sk::Path> {
                 cur = (x, y);
             }
             PathCmd::ArcTo(rx, ry, large, sweep, x, y) => {
-                arc_to(&mut pb, cur, rx, ry, large, sweep, (x, y));
+                if rx.is_finite() && ry.is_finite() {
+                    arc_to(&mut pb, cur, rx, ry, large, sweep, (x, y));
+                } else {
+                    pb.line_to(x as f32, y as f32);
+                }
                 cur = (x, y);
             }
             PathCmd::Close => {
-                pb.close();
+                if !gap {
+                    pb.close();
+                }
                 cur = start;
             }
         }
@@ -1731,6 +1762,15 @@ fn fill_stroke_path(
     ts: Transform,
     mask: Option<&Mask>,
 ) {
+    let tamed;
+    let path = match tame(path, ts) {
+        Tame::Fine => path,
+        Tame::Skip => return,
+        Tame::Clamped(p) => {
+            tamed = p;
+            &tamed
+        }
+    };
     if let Some(f) = fill.filter(|c| c.is_visible()) {
         pm.fill_path(path, &paint(f), FillRule::Winding, ts, mask);
     }
@@ -1740,6 +1780,117 @@ fn fill_stroke_path(
     {
         pm.stroke_path(path, &paint(s.color), &sk_stroke(s), ts, mask);
     }
+}
+
+/// Paths far outside the canvas (data at 1e300, extreme zoom) overflow
+/// tiny-skia's fixed-point rasterizer; their points are pulled in to this
+/// many device pixels around the canvas.
+const FAR: f32 = 4.0e5;
+
+enum Tame {
+    Fine,
+    Skip,
+    Clamped(sk::Path),
+}
+
+/// Checks a path's device bounds; clamps its points when it reaches
+/// beyond [`FAR`].
+fn tame(path: &sk::Path, ts: Transform) -> Tame {
+    // NaN points (∞ − ∞ in data) slip through tiny-skia's builder and
+    // panic its rasterizer: drop them.
+    if path
+        .points()
+        .iter()
+        .any(|p| !(p.x.is_finite() && p.y.is_finite()))
+    {
+        let ok = |p: &sk::Point| p.x.is_finite() && p.y.is_finite();
+        let mut pb = sk::PathBuilder::new();
+        let mut open = false;
+        for seg in path.segments() {
+            match seg {
+                sk::PathSegment::MoveTo(p) if ok(&p) => {
+                    pb.move_to(p.x, p.y);
+                    open = true;
+                }
+                sk::PathSegment::LineTo(p) if ok(&p) => {
+                    if open {
+                        pb.line_to(p.x, p.y);
+                    } else {
+                        pb.move_to(p.x, p.y);
+                        open = true;
+                    }
+                }
+                sk::PathSegment::QuadTo(a, p) if ok(&a) && ok(&p) && open => {
+                    pb.quad_to(a.x, a.y, p.x, p.y)
+                }
+                sk::PathSegment::CubicTo(a, b, p) if ok(&a) && ok(&b) && ok(&p) && open => {
+                    pb.cubic_to(a.x, a.y, b.x, b.y, p.x, p.y)
+                }
+                sk::PathSegment::Close => {
+                    if open {
+                        pb.close();
+                    }
+                    open = false;
+                }
+                _ => {}
+            }
+        }
+        return match pb.finish() {
+            Some(p) => match tame(&p, ts) {
+                Tame::Fine => Tame::Clamped(p),
+                other => other,
+            },
+            None => Tame::Skip,
+        };
+    }
+    let b = path.bounds();
+    let mut c = [
+        sk::Point::from_xy(b.left(), b.top()),
+        sk::Point::from_xy(b.right(), b.bottom()),
+        sk::Point::from_xy(b.left(), b.bottom()),
+        sk::Point::from_xy(b.right(), b.top()),
+    ];
+    ts.map_points(&mut c);
+    let far = |p: &sk::Point| !(p.x.abs() < FAR && p.y.abs() < FAR);
+    if !c.iter().any(far) {
+        return Tame::Fine;
+    }
+    if c.iter().any(|p| !p.x.is_finite() || !p.y.is_finite()) {
+        return Tame::Skip;
+    }
+    let Some(inv) = ts.invert() else {
+        return Tame::Skip;
+    };
+    let fix = |mut p: sk::Point| {
+        ts.map_point(&mut p);
+        p.x = p.x.clamp(-FAR, FAR);
+        p.y = p.y.clamp(-FAR, FAR);
+        inv.map_point(&mut p);
+        p
+    };
+    let mut pb = sk::PathBuilder::new();
+    for seg in path.segments() {
+        match seg {
+            sk::PathSegment::MoveTo(p) => {
+                let p = fix(p);
+                pb.move_to(p.x, p.y);
+            }
+            sk::PathSegment::LineTo(p) => {
+                let p = fix(p);
+                pb.line_to(p.x, p.y);
+            }
+            sk::PathSegment::QuadTo(a, p) => {
+                let (a, p) = (fix(a), fix(p));
+                pb.quad_to(a.x, a.y, p.x, p.y);
+            }
+            sk::PathSegment::CubicTo(a, b, p) => {
+                let (a, b, p) = (fix(a), fix(b), fix(p));
+                pb.cubic_to(a.x, a.y, b.x, b.y, p.x, p.y);
+            }
+            sk::PathSegment::Close => pb.close(),
+        }
+    }
+    pb.finish().map_or(Tame::Skip, Tame::Clamped)
 }
 
 struct Ctx<'a> {
