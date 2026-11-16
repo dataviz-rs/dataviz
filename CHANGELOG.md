@@ -16,6 +16,11 @@
   far side cut away along the rim, turned by `Axes::globe_center` (a
   spinning globe is a `record` loop). Spec: `projection: "equalearth" |
   "mollweide" | "orthographic"` with `center_lon`, `center_lat`.
+- Networks: `Axes::arc_diagram` (nodes on a line, edges as arcs, groups
+  side by side) and `Axes::edge_bundling` (hierarchical edge bundling:
+  nodes on a circle by group, edges as B-splines through the hierarchy
+  with a `tension`); both in the spec (`arc_diagram`, `edge_bundling`
+  with node names or indices). 500 nodes and 3000 edges in 37 ms.
 
 ### Python
 - Columns from Polars, pyarrow, DuckDB and Arrow-backed pandas are read

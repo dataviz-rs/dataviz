@@ -23,6 +23,7 @@ pub mod grid;
 pub mod line;
 pub mod misc;
 pub mod ml;
+pub mod network;
 pub mod polar;
 pub mod scatter;
 pub mod signal;

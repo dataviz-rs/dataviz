@@ -83,6 +83,16 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
         "Flows between groups around a circle.",
     ),
     (
+        "arc_diagram",
+        "nodes, edges: [[from, to, weight?], …] (names or indices), groups?, group_names?",
+        "Nodes on a line, edges as arcs.",
+    ),
+    (
+        "edge_bundling",
+        "nodes, groups (one per node), edges: [[from, to, weight?], …], group_names?, tension?",
+        "Hierarchical edge bundling: nodes on a circle, edges bundled by group.",
+    ),
+    (
         "streamgraph",
         "x, layers: {name: [values]}",
         "Stacked layers around a moving baseline.",
@@ -180,6 +190,34 @@ fn to_nums(a: &Value) -> Option<Vec<f64>> {
             Value::String(s) => s.trim().parse().ok().or(Some(f64::NAN)),
             Value::Bool(b) => Some(if *b { 1.0 } else { 0.0 }),
             _ => None,
+        })
+        .collect()
+}
+
+/// `edges: [[from, to, weight?], …]` with node names or indices.
+fn graph_edges(v: &Value, nodes: &[String]) -> Result<Vec<(usize, usize, f64)>> {
+    let a = v
+        .get("edges")
+        .and_then(Value::as_array)
+        .ok_or("`edges` must be [[from, to, weight?], …]")?;
+    let node = |x: &Value| match x {
+        Value::Number(n) => n.as_u64().map(|i| i as usize).filter(|&i| i < nodes.len()),
+        other => {
+            let t = text(other);
+            nodes.iter().position(|n| *n == t)
+        }
+    };
+    a.iter()
+        .map(|e| {
+            let e = e.as_array().ok_or("each edge is [from, to, weight?]")?;
+            let (from, to) = (e.first().and_then(node), e.get(1).and_then(node));
+            match (from, to) {
+                (Some(a), Some(b)) => Ok((a, b, e.get(2).and_then(Value::as_f64).unwrap_or(1.0))),
+                _ => Err(format!(
+                    "edge {} names an unknown node",
+                    Value::Array(e.clone())
+                )),
+            }
         })
         .collect()
 }
@@ -580,6 +618,27 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
         "chord" => {
             ax.chord(names_any(p, NAMES)?, &matrix(p, "matrix")?);
         }
+        "arc_diagram" | "edge_bundling" => {
+            let nodes = names_any(p, &["nodes", "labels", "names"])?;
+            let edges = graph_edges(p, &nodes)?;
+            let groups: Vec<usize> = opt_nums(p, "groups")
+                .unwrap_or_default()
+                .iter()
+                .map(|g| g.max(0.0) as usize)
+                .collect();
+            let names = strs(p, "group_names").unwrap_or_default();
+            if kind == "arc_diagram" {
+                ax.arc_diagram(nodes, edges)
+                    .groups(groups)
+                    .group_names(names);
+            } else {
+                let b = ax.edge_bundling(nodes, groups, edges);
+                b.group_names(names);
+                if let Some(v) = f(p, "tension") {
+                    b.tension(v);
+                }
+            }
+        }
         "streamgraph" => {
             let layers = groups(p, "layers")?;
             ax.streamgraph(nums(p, "x")?, &layers);
@@ -856,5 +915,21 @@ fn common(ax: &mut Axes, p: &Value) {
                 ax.rotate(axis, d);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod network_tests {
+    #[test]
+    fn arc_diagram_and_edge_bundling_from_spec() {
+        for t in ["arc_diagram", "edge_bundling"] {
+            let v = serde_json::json!({"type": t, "nodes": ["a", "b", "c"],
+                "groups": [0, 0, 1], "edges": [["a", "c", 2], [0, 1]]});
+            let mut fig = super::figure(&v).unwrap();
+            assert!(fig.to_svg().contains("<path"));
+        }
+        let bad = serde_json::json!({"type": "arc_diagram", "nodes": ["a"], "edges": [["a", "z"]]});
+        let err = super::figure(&bad).err().unwrap_or_default();
+        assert!(err.contains("unknown node"), "{err}");
     }
 }
