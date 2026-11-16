@@ -18,9 +18,9 @@ exclude = ["mcp/", "python/", "claude-plugin/", ".claude-plugin/", "cikti/", "RO
 ab_glyph = "0.2.32"
 gif = "0.14"
 # Text shaping and bidi (already used by resvg/usvg).
-harfrust = "0.15"
+harfrust = { version = "0.15", optional = true }
 # Only the codecs used for output (no AVIF/EXR/TIFF/… encoders, no rayon).
-image = { version = "0.25.6", default-features = false, features = ["png", "jpeg", "webp", "bmp"] }
+image = { version = "0.25.6", default-features = false, features = ["png"] }
 minifb = { version = "0.29", optional = true }
 png = "0.18"
 resvg = "0.50"
@@ -32,7 +32,15 @@ flate2 = { version = "1", optional = true }
 wgpu = { version = "30", optional = true }
 
 [features]
-default = ["window"]
+default = ["window", "formats", "full-font", "shaping"]
+# Text shaping for complex scripts (Arabic, Hebrew, Indic, Thai, …) with
+# HarfRust; without it text is laid out with kerning only (+0.8 MB).
+shaping = ["dep:harfrust"]
+# JPEG, WebP and BMP output (PNG, SVG and PDF need nothing).
+formats = ["image/jpeg", "image/webp", "image/bmp"]
+# The full embedded font (DejaVu Sans, 760 KB); without it a 235 KB subset
+# (Latin, Greek, Cyrillic, math and symbols) is embedded: for WebAssembly.
+full-font = []
 # Interactive windows (`Figure::show`, `Figure::show_live`); disable for headless/WASM builds.
 window = ["dep:minifb"]
 # PDF output (`Figure::save("x.pdf")`).

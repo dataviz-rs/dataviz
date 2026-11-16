@@ -1,6 +1,6 @@
 {
   "name": "dataviz-rs",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Fast charts for JavaScript: 120+ chart types (statistics, finance, genomics, maps, 3D molecules) from a JSON spec, drawn by the dataviz Rust renderer in WebAssembly. SVG, PNG, HTML or a live canvas; no dependencies.",
   "type": "module",
   "main": "./index.js",
@@ -10,20 +10,62 @@
       "types": "./index.d.ts",
       "default": "./index.js"
     },
+    "./react": {
+      "types": "./react.d.ts",
+      "default": "./react.js"
+    },
+    "./svelte": {
+      "types": "./svelte.d.ts",
+      "default": "./svelte.js"
+    },
     "./dataviz.wasm": "./dataviz.wasm"
   },
-  "files": ["index.js", "index.d.ts", "dataviz.wasm", "README.md", "LICENSE"],
+  "files": [
+    "index.js",
+    "index.d.ts",
+    "react.js",
+    "react.d.ts",
+    "svelte.js",
+    "svelte.d.ts",
+    "dataviz.wasm",
+    "README.md",
+    "LICENSE"
+  ],
   "sideEffects": false,
-  "engines": { "node": ">=18" },
+  "engines": {
+    "node": ">=18"
+  },
   "scripts": {
     "test": "node --test test.mjs"
   },
-  "keywords": ["chart", "charts", "plot", "visualization", "svg", "canvas", "webassembly", "wasm", "3d", "finance", "bioinformatics"],
+  "keywords": [
+    "3d",
+    "bioinformatics",
+    "canvas",
+    "chart",
+    "charts",
+    "finance",
+    "plot",
+    "react",
+    "svelte",
+    "svg",
+    "visualization",
+    "wasm",
+    "webassembly"
+  ],
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/dataviz-rs/dataviz.git",
     "directory": "wasm/npm"
   },
-  "homepage": "https://github.com/dataviz-rs/dataviz/tree/main/wasm/npm"
+  "homepage": "https://github.com/dataviz-rs/dataviz/tree/main/wasm/npm",
+  "peerDependencies": {
+    "react": ">=17"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  }
 }

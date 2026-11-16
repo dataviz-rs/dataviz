@@ -1,0 +1,16 @@
+<!doctype html><meta charset="utf-8"><title>pending</title>
+<script type="importmap">{"imports":{"react":"https://esm.sh/react@18.3.1","react-dom/client":"https://esm.sh/react-dom@18.3.1/client"}}</script>
+<div id="r"></div><canvas id="s"></canvas><pre id="out"></pre>
+<script type="module">
+import { createElement } from "react";
+import { createRoot } from "react-dom/client";
+import { DatavizChart } from "../react.js";
+import { dataviz } from "../svelte.js";
+const ink = c => { const d = c.getContext("2d").getImageData(0, 0, c.width, c.height).data; let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i] < 200) n++; return n; };
+createRoot(document.getElementById("r")).render(createElement(DatavizChart, { spec: { width: 300, height: 200, type: "line", y: [1, 3, 2, 4] }, id: "rc" }));
+const act = dataviz(document.getElementById("s"), { width: 300, height: 200, type: "bar", categories: ["a", "b"], values: [2, 3] });
+setTimeout(() => { act.update({ width: 300, height: 200, type: "bar", categories: ["a", "b", "c"], values: [2, 3, 1] });
+  setTimeout(() => { const rc = document.getElementById("rc");
+    document.getElementById("out").textContent = "react ink " + ink(rc) + " size " + rc.width + "x" + rc.height + "; svelte ink " + ink(document.getElementById("s"));
+    act.destroy(); document.title = "done"; }, 500); }, 1500);
+</script>

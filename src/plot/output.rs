@@ -243,8 +243,11 @@ impl Pixels {
 
     /// Encodes the image (PNG, JPEG, WebP or BMP).
     pub fn encode(&self, format: Format) -> Result<Vec<u8>, Error> {
-        use image::{ImageBuffer, ImageFormat, Rgb, Rgba};
+        use image::{ImageBuffer, Rgba};
+        #[cfg(feature = "formats")]
+        use image::{ImageFormat, Rgb};
         let mut out = std::io::Cursor::new(Vec::new());
+        #[cfg_attr(not(feature = "formats"), allow(unused_variables))]
         let rgba: ImageBuffer<Rgba<u8>, &[u8]> =
             ImageBuffer::from_raw(self.width, self.height, &self.rgba[..])
                 .ok_or_else(|| Error::Encode("buffer size mismatch".into()))?;
@@ -279,7 +282,9 @@ impl Pixels {
                         .map_err(enc)?;
                 }
             }
+            #[cfg(feature = "formats")]
             Format::WebP => rgba.write_to(&mut out, ImageFormat::WebP).map_err(enc)?,
+            #[cfg(feature = "formats")]
             Format::Jpeg | Format::Bmp => {
                 // No alpha channel: composite on white.
                 let rgb: ImageBuffer<Rgb<u8>, Vec<u8>> =
@@ -295,6 +300,12 @@ impl Pixels {
                     ImageFormat::Bmp
                 };
                 rgb.write_to(&mut out, f).map_err(enc)?
+            }
+            #[cfg(not(feature = "formats"))]
+            Format::WebP | Format::Jpeg | Format::Bmp => {
+                return Err(Error::UnsupportedFormat(format!(
+                    "{format:?} needs the `formats` cargo feature"
+                )))
             }
             other => {
                 return Err(Error::UnsupportedFormat(format!(

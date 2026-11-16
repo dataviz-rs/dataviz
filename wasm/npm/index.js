@@ -60,15 +60,26 @@ function text(ptr) {
   return dec.decode(new Uint8Array(w.memory.buffer, ptr, w.dv_out_len()));
 }
 
-/** Typed arrays (Float64Array, Int32Array, …) as JSON arrays. */
-function typed(_key, v) {
-  return ArrayBuffer.isView(v) && !(v instanceof DataView) ? Array.from(v) : v;
+/** The spec with typed arrays (Float64Array, …) as plain arrays; arrays of
+ * numbers are passed through untouched (no per-element work). */
+function plain(v) {
+  if (ArrayBuffer.isView(v)) return v instanceof DataView ? v : Array.from(v);
+  if (Array.isArray(v)) {
+    if (v.length === 0 || typeof v[0] !== "object" || v[0] === null) return v;
+    return v.map(plain);
+  }
+  if (v && typeof v === "object") {
+    const o = {};
+    for (const k in v) o[k] = plain(v[k]);
+    return o;
+  }
+  return v;
 }
 
 /** Calls `f(ptr, len)` with a JSON spec copied into WebAssembly memory. */
 function withSpec(spec, f) {
   const w = need();
-  const b = enc.encode(typeof spec === "string" ? spec : JSON.stringify(spec, typed));
+  const b = enc.encode(typeof spec === "string" ? spec : JSON.stringify(plain(spec)));
   const p = w.dv_alloc(b.length);
   new Uint8Array(w.memory.buffer, p, b.length).set(b);
   try {

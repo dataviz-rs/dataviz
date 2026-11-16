@@ -22,10 +22,13 @@ use std::sync::{Arc, Mutex, OnceLock, RwLock};
 /// address is a stable cache key.
 pub(crate) struct Face {
     pub font: FontArc,
+    #[cfg_attr(not(feature = "shaping"), allow(dead_code))]
     data: &'static [u8],
+    #[cfg_attr(not(feature = "shaping"), allow(dead_code))]
     index: u32,
     upem: f32,
     units_to_em: f32,
+    #[cfg(feature = "shaping")]
     shaper: OnceLock<Option<harfrust::Font>>,
 }
 
@@ -40,6 +43,7 @@ impl Face {
             index,
             upem,
             units_to_em,
+            #[cfg(feature = "shaping")]
             shaper: OnceLock::new(),
         })))
     }
@@ -66,6 +70,7 @@ impl Face {
                 || self.font.glyph_raster_image2(id, 128).is_some())
     }
 
+    #[cfg(feature = "shaping")]
     fn shaper(&self) -> Option<&harfrust::Font> {
         self.shaper
             .get_or_init(|| harfrust::Font::new(self.data, self.index))
@@ -310,7 +315,11 @@ fn ttf_has(data: &[u8], index: u32, c: char) -> bool {
 }
 
 /// The embedded default font.
+#[cfg(feature = "full-font")]
 pub(crate) const DEFAULT_FONT: &[u8] = include_bytes!("../../assets/DejaVuSans.ttf");
+/// The embedded default font: Latin, Greek, Cyrillic, math and symbols.
+#[cfg(not(feature = "full-font"))]
+pub(crate) const DEFAULT_FONT: &[u8] = include_bytes!("../../assets/DejaVuSans-subset.ttf");
 /// Family name of [`DEFAULT_FONT`].
 pub(crate) const DEFAULT_FAMILY: &str = "DejaVu Sans";
 
@@ -560,8 +569,22 @@ fn simple_run(
     pen
 }
 
+/// Without the `shaping` feature: no shaping (kerned glyphs instead).
+#[cfg(not(feature = "shaping"))]
+fn shape_run(
+    _face: &'static Face,
+    _s: &str,
+    _size: f64,
+    _right_to_left: bool,
+    _pen: f32,
+    _f: &mut impl FnMut(&'static Face, GlyphId, f32, f32),
+) -> Option<f32> {
+    None
+}
+
 /// Glyphs of `s` in `face` shaped with HarfRust (None if the face cannot
 /// be shaped).
+#[cfg(feature = "shaping")]
 fn shape_run(
     face: &'static Face,
     s: &str,
