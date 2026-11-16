@@ -141,8 +141,8 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
     ),
     (
         "choropleth",
-        "values: {ISO code or country name: value}, projection?, label?",
-        "World map colored by value.",
+        "values: {ISO code or country name: value}, projection? (robinson, naturalearth, equalearth, mollweide, mercator, equirectangular, orthographic: center_lon?, center_lat?), label?",
+        "World map colored by value, or a globe (orthographic).",
     ),
     (
         "surface",
@@ -710,6 +710,12 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                 "mercator" => Projection::Mercator,
                 "equirectangular" | "platecarree" => Projection::Equirectangular,
                 "naturalearth" | "natural_earth" => Projection::NaturalEarth,
+                "equalearth" | "equal_earth" => Projection::EqualEarth,
+                "mollweide" => Projection::Mollweide,
+                "orthographic" | "globe" => Projection::Orthographic {
+                    lon: f(p, "center_lon").unwrap_or(0.0),
+                    lat: f(p, "center_lat").unwrap_or(20.0),
+                },
                 _ => Projection::Robinson,
             };
             ax.map(proj);

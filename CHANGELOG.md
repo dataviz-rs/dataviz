@@ -10,6 +10,13 @@
   15.0 → 4.5 ms, a million-point 3D scatter 128 → 41 ms; turning them
   sends only the camera.
 
+### Added
+- Maps: equal-area `Projection::EqualEarth` and `Projection::Mollweide`;
+  a globe (`Axes::globe(lon, lat)`, `Projection::Orthographic`) with the
+  far side cut away along the rim, turned by `Axes::globe_center` (a
+  spinning globe is a `record` loop). Spec: `projection: "equalearth" |
+  "mollweide" | "orthographic"` with `center_lon`, `center_lat`.
+
 ### Python
 - Columns from Polars, pyarrow, DuckDB and Arrow-backed pandas are read
   from their Arrow buffers (Arrow PyCapsule interface; nulls become

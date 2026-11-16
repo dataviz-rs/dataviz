@@ -19,8 +19,8 @@ then breadth. There is no backward-compatibility promise before 1.0.
 
 ## Charts
 
-- [ ] Geographic: orthographic globe with rotation, equal-area projections
-- [ ] Biology: sequence logos, Manhattan / QQ plots for GWAS, gene structure tracks
+- [x] Geographic: orthographic globe with rotation, equal-area projections
+- [x] Biology: sequence logos, Manhattan / QQ plots for GWAS, gene structure tracks
 - [ ] 3D: volume rendering (ray-marched slices), point clouds with LOD
 - [ ] Network: hierarchical edge bundling, arc diagrams
 

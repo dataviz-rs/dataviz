@@ -40,7 +40,18 @@ pub enum Projection {
     Robinson,
     /// Natural Earth: a compromise for world maps with rounded corners.
     NaturalEarth,
+    /// Equal Earth: equal-area (areas compare truly), pleasing shapes.
+    EqualEarth,
+    /// Mollweide: equal-area ellipse.
+    Mollweide,
+    /// The globe seen from space above (`lon`, `lat`): the far side is
+    /// hidden. Turn it with [`Axes::globe_center`].
+    Orthographic { lon: f64, lat: f64 },
 }
+
+/// Radius of the orthographic globe in plane units (degree-like, as the
+/// other projections).
+const GLOBE_R: f64 = 90.0;
 
 /// Robinson's table: (X, Y) at every 5° of latitude.
 const ROBINSON: [(f64, f64); 19] = [
@@ -94,6 +105,38 @@ impl Projection {
                     (1.3523 * y * lat.signum()).to_degrees(),
                 )
             }
+            Projection::EqualEarth => {
+                const A: [f64; 4] = [1.340264, -0.081106, 0.000893, 0.003796];
+                let p = lat.clamp(-90.0, 90.0).to_radians();
+                let t = (3f64.sqrt() / 2.0 * p.sin()).asin();
+                let (t2, t6) = (t * t, t.powi(6));
+                let x = 2.0 * 3f64.sqrt() * l * t.cos()
+                    / (3.0 * (A[0] + 3.0 * A[1] * t2 + t6 * (7.0 * A[2] + 9.0 * A[3] * t2)));
+                let y = t * (A[0] + A[1] * t2 + t6 * (A[2] + A[3] * t2));
+                (x.to_degrees(), y.to_degrees())
+            }
+            Projection::Mollweide => {
+                let p = lat.clamp(-90.0, 90.0).to_radians();
+                // 2θ + sin 2θ = π sin φ (Newton; θ = φ at the poles).
+                let k = std::f64::consts::PI * p.sin();
+                let mut t = p;
+                if (p.abs() - std::f64::consts::FRAC_PI_2).abs() > 1e-9 {
+                    for _ in 0..12 {
+                        let d = (2.0 * t + (2.0 * t).sin() - k) / (2.0 + 2.0 * (2.0 * t).cos());
+                        t -= d;
+                        if d.abs() < 1e-12 {
+                            break;
+                        }
+                    }
+                }
+                let x = 2.0 * std::f64::consts::SQRT_2 / std::f64::consts::PI * l * t.cos();
+                let y = std::f64::consts::SQRT_2 * t.sin();
+                (x.to_degrees(), y.to_degrees())
+            }
+            Projection::Orthographic { .. } => match self.globe(lon, lat) {
+                [x, y, z] if z >= 0.0 => (x * GLOBE_R, y * GLOBE_R),
+                _ => (f64::NAN, f64::NAN),
+            },
             Projection::NaturalEarth => {
                 let p = lat.clamp(-90.0, 90.0).to_radians();
                 let p2 = p * p;
@@ -109,8 +152,88 @@ impl Projection {
         }
     }
 
+    /// A point on the unit sphere in the globe's view: x right, y up, z
+    /// towards the viewer (only for [`Projection::Orthographic`]).
+    fn globe(self, lon: f64, lat: f64) -> [f64; 3] {
+        let Projection::Orthographic { lon: l0, lat: p0 } = self else {
+            return [0.0; 3];
+        };
+        let (l, p) = ((lon - l0).to_radians(), lat.to_radians());
+        let p0 = p0.to_radians();
+        let (cp, sp, c0, s0) = (p.cos(), p.sin(), p0.cos(), p0.sin());
+        [
+            cp * l.sin(),
+            c0 * sp - s0 * cp * l.cos(),
+            s0 * sp + c0 * cp * l.cos(),
+        ]
+    }
+
+    /// A ring (longitude, latitude) in plane coordinates; on the globe
+    /// the part on the far side is cut away along the rim (no ring when
+    /// nothing is visible).
+    pub(crate) fn project_ring(self, ring: &[(f64, f64)]) -> Option<Vec<(f64, f64)>> {
+        if !matches!(self, Projection::Orthographic { .. }) {
+            return Some(ring.iter().map(|&(a, b)| self.project(a, b)).collect());
+        }
+        let v: Vec<[f64; 3]> = ring.iter().map(|&(a, b)| self.globe(a, b)).collect();
+        if v.iter().all(|p| p[2] >= 0.0) {
+            return Some(v.iter().map(|p| (p[0] * GLOBE_R, p[1] * GLOBE_R)).collect());
+        }
+        // Sutherland–Hodgman against the plane z = 0; points on the rim
+        // are marked so that the edge between two of them follows the rim.
+        let n = v.len();
+        let mut out: Vec<([f64; 3], bool)> = Vec::with_capacity(n + 8);
+        for i in 0..n {
+            let (a, b) = (v[i], v[(i + 1) % n]);
+            let (ia, ib) = (a[2] >= 0.0, b[2] >= 0.0);
+            if ia {
+                out.push((a, false));
+            }
+            if ia != ib {
+                let t = a[2] / (a[2] - b[2]);
+                let c = [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, 0.0];
+                let r = (c[0] * c[0] + c[1] * c[1]).sqrt().max(1e-12);
+                out.push(([c[0] / r, c[1] / r, 0.0], true));
+            }
+        }
+        if out.len() < 3 {
+            return None;
+        }
+        let mut pts = Vec::with_capacity(out.len() * 2);
+        let m = out.len();
+        for i in 0..m {
+            let (p, rim) = out[i];
+            pts.push((p[0] * GLOBE_R, p[1] * GLOBE_R));
+            let (q, rim_q) = out[(i + 1) % m];
+            if rim && rim_q {
+                // Along the rim, the short way round.
+                let (a0, a1) = (p[1].atan2(p[0]), q[1].atan2(q[0]));
+                let mut d = a1 - a0;
+                if d > std::f64::consts::PI {
+                    d -= std::f64::consts::TAU;
+                } else if d < -std::f64::consts::PI {
+                    d += std::f64::consts::TAU;
+                }
+                let k = (d.abs() / 0.05).ceil() as usize;
+                for j in 1..k {
+                    let a = a0 + d * j as f64 / k as f64;
+                    pts.push((a.cos() * GLOBE_R, a.sin() * GLOBE_R));
+                }
+            }
+        }
+        Some(pts)
+    }
+
     /// The outline of the whole globe in this projection.
     fn outline(self) -> Vec<(f64, f64)> {
+        if matches!(self, Projection::Orthographic { .. }) {
+            return (0..=120)
+                .map(|i| {
+                    let a = i as f64 / 120.0 * std::f64::consts::TAU;
+                    (a.cos() * GLOBE_R, a.sin() * GLOBE_R)
+                })
+                .collect();
+        }
         let top = if self == Projection::Mercator {
             85.0
         } else {
@@ -564,11 +687,7 @@ impl GeoMap {
                 polys
                     .iter()
                     .flatten()
-                    .map(|ring| {
-                        ring.iter()
-                            .map(|(lon, lat)| p.project(*lon, *lat))
-                            .collect()
-                    })
+                    .filter_map(|ring| p.project_ring(ring))
                     .collect()
             })
             .collect();
@@ -816,6 +935,31 @@ impl Axes {
         self
     }
 
+    /// A globe seen from above (`lon`, `lat`) (orthographic projection);
+    /// maps added afterwards are drawn on it.
+    pub fn globe(&mut self, lon: f64, lat: f64) -> &mut Self {
+        self.map(Projection::Orthographic { lon, lat });
+        self.x.margin = 0.06;
+        self.y.margin = 0.06;
+        self
+    }
+
+    /// Turns the globe to look at (`lon`, `lat`): the maps on it are
+    /// projected again (points and lines added with `geo_scatter` /
+    /// `geo_line` keep their positions; add them again for a new view).
+    pub fn globe_center(&mut self, lon: f64, lat: f64) -> &mut Self {
+        let p = Projection::Orthographic { lon, lat };
+        self.projection = Some(p);
+        self.revision += 1;
+        for s in &mut self.series {
+            if let Some(m) = s.as_any_mut().downcast_mut::<GeoMap>() {
+                m.projection = p;
+                m.reproject();
+            }
+        }
+        self
+    }
+
     pub(crate) fn map_projection(&mut self) -> Projection {
         match self.projection {
             Some(p) => p,
@@ -970,6 +1114,35 @@ pub(crate) fn great_circle(a: (f64, f64), b: (f64, f64), n: usize) -> Vec<(f64, 
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn equal_area_and_globe_projections() {
+        // Mollweide: poles at y = √2 rad, the equator 2√2 rad wide each way.
+        let (x, y) = Projection::Mollweide.project(0.0, 90.0);
+        assert!(x.abs() < 1e-9 && (y - 2f64.sqrt().to_degrees()).abs() < 1e-6);
+        let (x, _) = Projection::Mollweide.project(180.0, 0.0);
+        assert!((x - (2.0 * 2f64.sqrt()).to_degrees()).abs() < 1e-6);
+        // Equal Earth: symmetric, poles flat (x shrinks but stays > 0).
+        let (a, b) = Projection::EqualEarth.project(-120.0, -40.0);
+        let (c, d) = Projection::EqualEarth.project(120.0, 40.0);
+        assert!((a + c).abs() < 1e-9 && (b + d).abs() < 1e-9);
+        assert!(Projection::EqualEarth.project(180.0, 90.0).0 > 0.0);
+        // Globe: the centre in the middle, the far side hidden, rings cut
+        // at the rim.
+        let g = Projection::Orthographic {
+            lon: 30.0,
+            lat: 10.0,
+        };
+        let (x, y) = g.project(30.0, 10.0);
+        assert!(x.abs() < 1e-9 && y.abs() < 1e-9);
+        assert!(g.project(-150.0, -10.0).0.is_nan());
+        let ring: Vec<(f64, f64)> = (0..=36).map(|i| (-180.0 + i as f64 * 10.0, 0.0)).collect();
+        let cut = g.project_ring(&ring).unwrap();
+        assert!(cut.iter().all(|(x, y)| x.hypot(*y) <= GLOBE_R + 1e-6));
+        let far: Vec<(f64, f64)> = vec![(-150.0, -5.0), (-140.0, -5.0), (-145.0, -15.0)];
+        assert!(g.project_ring(&far).is_none());
+    }
+
     use super::*;
 
     #[test]
