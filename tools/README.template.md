@@ -9,6 +9,9 @@
 <a href="https://docs.rs/dataviz">
     <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
 </a>
+<a href="https://pypi.org/project/dataviz-rs/">
+    <img style="display: inline!important" src="https://img.shields.io/pypi/v/dataviz-rs.svg"></img>
+</a>
 <a href="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml">
     <img style="display: inline!important" src="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml/badge.svg"></img>
 </a>
@@ -367,7 +370,13 @@ Every image links to its example in
 ## Python
 
 The same renderer for Python ([`python/`](python)): NumPy, pandas and
-Polars data, Jupyter display, 5–22× faster than matplotlib.
+Polars data, Jupyter display, 5–22× faster than matplotlib. Wheels for
+Linux, macOS and Windows (Python 3.9+) are on
+[PyPI](https://pypi.org/project/dataviz-rs/):
+
+```sh
+pip install dataviz-rs        # imported as `dataviz`
+```
 
 ```python
 import numpy as np, dataviz as dv

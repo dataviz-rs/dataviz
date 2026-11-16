@@ -5,18 +5,13 @@ What is done lives in the [CHANGELOG](CHANGELOG.md) and the
 next. Priorities: speed and low CPU/GPU use first, then visual quality,
 then breadth. There is no backward-compatibility promise before 1.0.
 
-## Release (0.16)
-
-- [ ] Publish `dataviz` 0.16 to crates.io and tag `v0.16.0`
-- [ ] Publish `dataviz-mcp`, tag `mcp-v0.1.0` (release binaries for the Claude plugin)
-- [ ] Python wheels to PyPI (`py-v0.1.0`, trusted publishing)
-
 ## Performance
 
 - [x] GPU 3D path for opaque faces: geometry kept in GPU buffers, camera
       as a uniform, depth buffer instead of painter's sort
-- [ ] The same for lines, spheres and tubes (instanced), so molecules and
-      trajectories also turn without CPU work
+- [x] Spheres and tubes as analytic GPU shapes (molecule frame 0.7 ms)
+- [ ] Lines and points retained on the GPU too, so trajectories and
+      molecules turn without re-projecting on the CPU
 - [ ] Retained 3D geometry on the CPU: re-project and re-sort only when
       the camera moves (cartoons rebuild their splines every frame today)
 - [ ] SIMD (std::simd once stable) for the rasterizer's coverage and blend loops

@@ -15,6 +15,16 @@
   color-independent shading per size. Molecule rotation frames
   2.8 → 2.1 ms on one core.
 
+- GPU back end: tubes (molecule bonds) are drawn in one pass with the
+  CPU's lighting — a 1BNA rotation frame 3.7 → 0.7 ms (faster than the
+  CPU now). `save`/`encode` to PNG and window frames keep 3D meshes on
+  the GPU as well (200² surface PNG 22.8 → 6.7 ms). The GPU opens with
+  Vulkan/Metal/DX12 first (OpenGL as fallback), without validation in
+  release builds, and starts opening in the background as soon as
+  `Backend::Gpu` is chosen: first image ~400 → ~275 ms.
+- Python package published on PyPI as `dataviz-rs` (`pip install
+  dataviz-rs`, imported as `dataviz`).
+
 ### Added
 - Linked brushing (`Figure::link_brushing`, `brush`, `brush_rows`,
   `brushed`, `clear_brush`): a box selected in one plot (Ctrl+drag in a
