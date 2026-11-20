@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changed
+- Volume rendering is lit from its value gradient: surfaces inside the
+  volume get diffuse shading and a highlight from the viewer's upper
+  left. This costs about 25 % more time; `Volume::shading(false)` turns
+  it off.
 - GPU back end: `DATAVIZ_GPU_POWER=low` picks the integrated GPU. It
   opens in ~90 ms instead of ~260 ms and draws less power, but its frames
   are slower than a discrete GPU's (21 ms against 2.8 ms for a 100 k

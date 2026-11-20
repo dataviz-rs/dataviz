@@ -30,7 +30,8 @@ then breadth. There is no backward-compatibility promise before 1.0.
 - [x] Volume files: NIfTI, VTK structured points, MetaImage
 - [x] DICOM series (a directory of slices) as volumes (uncompressed)
 - [ ] Compressed DICOM (JPEG lossless, JPEG 2000, RLE)
-- [ ] Shaded (gradient-lit) volume rendering, on the GPU
+- [x] Shaded (gradient-lit) volume rendering on the CPU
+- [ ] Volume rendering on the GPU
 
 ## Interactivity
 

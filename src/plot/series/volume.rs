@@ -32,6 +32,7 @@ pub struct Volume {
     opacity: f64,
     threshold: f64,
     mode: VolumeMode,
+    shading: bool,
     colorbar: Option<String>,
     label: Option<String>,
 }
@@ -72,6 +73,13 @@ impl Volume {
     /// Shows a colorbar with this label.
     pub fn colorbar(&mut self, label: impl Into<String>) -> &mut Self {
         self.colorbar = Some(label.into());
+        self
+    }
+    /// Lighting from the value gradient (default on): surfaces inside the
+    /// volume get light and shade from the viewer's upper left, which shows
+    /// their shape. Off: pure emission and absorption.
+    pub fn shading(&mut self, on: bool) -> &mut Self {
+        self.shading = on;
         self
     }
     /// Legend label.
@@ -250,6 +258,18 @@ impl Series for Volume {
         let per_step = |a: f64| 1.0 - (1.0 - (a * op).min(0.999)).powf(step / cell);
         let dist = p.dist;
         let (scale, center) = (p.scale, p.center);
+        // Light from the viewer's upper left, in grid coordinates (the
+        // gradient is taken per grid cell; `gs` turns it into normalized
+        // units so anisotropic voxels shade correctly).
+        let shading = self.shading;
+        let lv = {
+            let l = [-0.35, 0.45, 0.82];
+            let v: [f64; 3] =
+                std::array::from_fn(|i| m[0][i] * l[0] + m[1][i] * l[1] + m[2][i] * l[2]);
+            let n = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-12);
+            v.map(|c| c / n)
+        };
+        let gs: [f64; 3] = std::array::from_fn(|i| (self.dims[i] - 1) as f64 / size[i]);
         let render_row = |row: usize, out: &mut [u8]| {
             let sy = y0 + (row as f64 + 0.5) * h as f64 / ih as f64;
             for col in 0..iw {
@@ -312,8 +332,42 @@ impl Series for Volume {
                             }
                             let c = lut[(tv * 255.0) as usize];
                             let k = (1.0 - alpha) * a;
+                            // Gradient lighting: central differences give
+                            // the surface normal (values rise inwards).
+                            let (lit, spec) = if shading && k > 0.002 {
+                                let d = |i: usize| {
+                                    let (mut ga, mut gb) = (g, g);
+                                    ga[i] += 1.0;
+                                    gb[i] -= 1.0;
+                                    (self.sample(gb) - self.sample(ga)) as f64 * 0.5 * gs[i]
+                                };
+                                let nv = [d(0), d(1), d(2)];
+                                let len = (nv[0] * nv[0] + nv[1] * nv[1] + nv[2] * nv[2]).sqrt();
+                                // Flat regions keep their color unshaded.
+                                let w = (len / span / gs.iter().fold(0.0f64, |a, b| a.max(*b))
+                                    * 6.0)
+                                    .min(1.0);
+                                if len > 1e-12 {
+                                    let nd = (nv[0] * lv[0] + nv[1] * lv[1] + nv[2] * lv[2]) / len;
+                                    let diffuse = 0.4 + 0.6 * nd.abs();
+                                    // Half vector of light and view (view along +z).
+                                    let hv = [lv[0], lv[1], lv[2] + 1.0];
+                                    let hn = (hv[0] * hv[0] + hv[1] * hv[1] + hv[2] * hv[2]).sqrt();
+                                    let vz: [f64; 3] = std::array::from_fn(|i| m[2][i]);
+                                    let h: [f64; 3] =
+                                        std::array::from_fn(|i| (lv[i] + vz[i]) / hn.max(1e-12));
+                                    let sh =
+                                        ((nv[0] * h[0] + nv[1] * h[1] + nv[2] * h[2]) / len).abs();
+                                    let sp = sh.powi(24) * 0.35;
+                                    (1.0 + (diffuse - 1.0) * w, sp * w)
+                                } else {
+                                    (1.0, 0.0)
+                                }
+                            } else {
+                                (1.0, 0.0)
+                            };
                             for j in 0..3 {
-                                acc[j] += k * c[j] as f64;
+                                acc[j] += k * (c[j] as f64 * lit + spec).min(1.0);
                             }
                             alpha += k;
                             if alpha > 0.995 {
@@ -426,6 +480,7 @@ impl Axes {
             opacity: 0.25,
             threshold: 0.1,
             mode: VolumeMode::Composite,
+            shading: true,
             colorbar: None,
             label: None,
         })
