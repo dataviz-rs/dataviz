@@ -6,7 +6,10 @@
 - npm package 1.52 → 0.91 MB gzipped: new default cargo features `formats`
   (JPEG/WebP/BMP), `full-font` and `shaping` (complex scripts) are off in
   the WebAssembly build, which embeds a 235 KB font subset (Latin, Greek,
-  Cyrillic, math, symbols). Typed arrays no longer slow down specs.
+  Cyrillic, math, symbols).
+- npm: numeric arrays of 64+ items (typed or plain) go into WebAssembly
+  memory as binary f64 instead of JSON text. A chart of 1 M points builds
+  in 3 ms instead of 214 ms (Float64Array) or 164 ms (plain arrays).
 - npm: React component (`dataviz-rs/react`) and a Svelte action
   (`dataviz-rs/svelte`).
 

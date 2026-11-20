@@ -64,8 +64,117 @@ unsafe fn text<'a>(ptr: *const u8, len: usize) -> Result<&'a str, String> {
 }
 
 fn figure(json: &str) -> Result<Figure, String> {
+    figure_with(json, &[])
+}
+
+fn figure_with(json: &str, arrays: &[spec::Array<'_>]) -> Result<Figure, String> {
     let v: serde_json::Value = serde_json::from_str(json).map_err(|e| format!("JSON: {e}"))?;
-    spec::figure(&v).map_err(|e| e.to_string())
+    spec::with_arrays(arrays, || spec::figure(&v)).map_err(|e| e.to_string())
+}
+
+/// Arrays described by `n` records of five u32 at `desc`: name pointer,
+/// name length, data pointer (f64, aligned), length, row length.
+///
+/// # Safety
+/// The records and what they point to must be valid memory.
+unsafe fn arrays<'a>(desc: *const u32, n: usize) -> Result<Vec<spec::Array<'a>>, String> {
+    if n == 0 {
+        return Ok(Vec::new());
+    }
+    // SAFETY: the caller's contract.
+    let d = unsafe { std::slice::from_raw_parts(desc, n * 5) };
+    d.as_chunks::<5>()
+        .0
+        .iter()
+        .map(|r| {
+            // SAFETY: the caller's contract.
+            let name = unsafe { text(r[0] as usize as *const u8, r[1] as usize) }?;
+            let p = r[2] as usize as *const f64;
+            if !(p as usize).is_multiple_of(8) {
+                return Err("array data must be 8-byte aligned".into());
+            }
+            // SAFETY: the caller's contract.
+            let data = unsafe { std::slice::from_raw_parts(p, r[3] as usize) };
+            Ok(spec::Array {
+                name,
+                data,
+                cols: r[4] as usize,
+            })
+        })
+        .collect()
+}
+
+/// Like [`dv_new`], with `n` binary arrays (see [`arrays`]) that the spec
+/// names as `"@name"`.
+///
+/// # Safety
+/// As [`dv_new`]; `desc` holds `n` valid records.
+#[no_mangle]
+pub unsafe extern "C" fn dv_new_with(
+    ptr: *const u8,
+    len: usize,
+    desc: *const u32,
+    n: usize,
+) -> u32 {
+    // SAFETY: the caller's contract.
+    let fig = match unsafe { text(ptr, len) }
+        .and_then(|j| figure_with(j, &unsafe { arrays(desc, n) }?))
+    {
+        Ok(f) => f,
+        Err(e) => return fail(e),
+    };
+    add(fig)
+}
+
+/// Like [`dv_update`], with binary arrays as [`dv_new_with`].
+///
+/// # Safety
+/// As [`dv_new_with`].
+#[no_mangle]
+pub unsafe extern "C" fn dv_update_with(
+    h: u32,
+    ptr: *const u8,
+    len: usize,
+    desc: *const u32,
+    n: usize,
+) -> u32 {
+    // SAFETY: the caller's contract.
+    let fig = match unsafe { text(ptr, len) }
+        .and_then(|j| figure_with(j, &unsafe { arrays(desc, n) }?))
+    {
+        Ok(f) => f,
+        Err(e) => return fail(e),
+    };
+    replace(h, fig)
+}
+
+fn add(fig: Figure) -> u32 {
+    state(|s| {
+        let c = Some(Chart {
+            fig,
+            px: Pixels::default(),
+        });
+        match s.charts.iter().position(Option::is_none) {
+            Some(i) => {
+                s.charts[i] = c;
+                i as u32 + 1
+            }
+            None => {
+                s.charts.push(c);
+                s.charts.len() as u32
+            }
+        }
+    })
+}
+
+fn replace(h: u32, fig: Figure) -> u32 {
+    chart(h, |c, _| {
+        let (w, hh) = c.fig.size();
+        c.fig = fig;
+        c.fig.resize(w as u32, hh as u32);
+        1
+    })
+    .unwrap_or(0)
 }
 
 /// `n` bytes for JavaScript to write into (free with [`dv_free`]).
@@ -100,22 +209,7 @@ pub unsafe extern "C" fn dv_new(ptr: *const u8, len: usize) -> u32 {
         Ok(f) => f,
         Err(e) => return fail(e),
     };
-    state(|s| {
-        let c = Some(Chart {
-            fig,
-            px: Pixels::default(),
-        });
-        match s.charts.iter().position(Option::is_none) {
-            Some(i) => {
-                s.charts[i] = c;
-                i as u32 + 1
-            }
-            None => {
-                s.charts.push(c);
-                s.charts.len() as u32
-            }
-        }
-    })
+    add(fig)
 }
 
 /// Replaces the chart's spec, keeping its size; 0 on error.
@@ -129,13 +223,7 @@ pub unsafe extern "C" fn dv_update(h: u32, ptr: *const u8, len: usize) -> u32 {
         Ok(f) => f,
         Err(e) => return fail(e),
     };
-    chart(h, |c, _| {
-        let (w, hh) = c.fig.size();
-        c.fig = fig;
-        c.fig.resize(w as u32, hh as u32);
-        1
-    })
-    .unwrap_or(0)
+    replace(h, fig)
 }
 
 /// Frees a chart.

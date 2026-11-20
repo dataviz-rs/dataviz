@@ -60,32 +60,87 @@ function text(ptr) {
   return dec.decode(new Uint8Array(w.memory.buffer, ptr, w.dv_out_len()));
 }
 
-/** The spec with typed arrays (Float64Array, …) as plain arrays; arrays of
- * numbers are passed through untouched (no per-element work). */
-function plain(v) {
-  if (ArrayBuffer.isView(v)) return v instanceof DataView ? v : Array.from(v);
+/** Arrays at least this long go to WebAssembly memory as binary f64. */
+const BINARY = 64;
+
+const isNumbers = (v) => {
+  for (let i = 0; i < v.length; i++) if (typeof v[i] !== "number") return false;
+  return true;
+};
+
+/**
+ * The spec with long numeric arrays (typed or plain) replaced by `"@k"`
+ * references into `arrays`, so they are copied once as binary instead of
+ * going through JSON text; short typed arrays become plain arrays.
+ */
+function split(v, arrays) {
+  if (ArrayBuffer.isView(v)) {
+    if (v instanceof DataView) return v;
+    const big = typeof v[0] === "bigint";
+    if (v.length >= BINARY && !big) {
+      arrays.push(v);
+      return `@${arrays.length - 1}`;
+    }
+    return Array.from(v, Number);
+  }
   if (Array.isArray(v)) {
-    if (v.length === 0 || typeof v[0] !== "object" || v[0] === null) return v;
-    return v.map(plain);
+    if (v.length === 0) return v;
+    if (typeof v[0] !== "object" || v[0] === null) {
+      if (v.length >= BINARY && typeof v[0] === "number" && isNumbers(v)) {
+        arrays.push(v);
+        return `@${arrays.length - 1}`;
+      }
+      return v;
+    }
+    return v.map((x) => split(x, arrays));
   }
   if (v && typeof v === "object") {
     const o = {};
-    for (const k in v) o[k] = plain(v[k]);
+    for (const k in v) o[k] = split(v[k], arrays);
     return o;
   }
   return v;
 }
 
-/** Calls `f(ptr, len)` with a JSON spec copied into WebAssembly memory. */
+/**
+ * Calls `f(ptr, len, desc, n)` with a spec copied into WebAssembly memory:
+ * JSON text plus its binary arrays, described by `n` records of five u32
+ * at `desc` (name pointer and length, data pointer, length, row length).
+ */
 function withSpec(spec, f) {
   const w = need();
-  const b = enc.encode(typeof spec === "string" ? spec : JSON.stringify(plain(spec)));
-  const p = w.dv_alloc(b.length);
-  new Uint8Array(w.memory.buffer, p, b.length).set(b);
+  const arrays = [];
+  const json =
+    typeof spec === "string" ? spec : JSON.stringify(split(spec, arrays));
+  const b = enc.encode(json);
+  const names = arrays.map((_, i) => enc.encode(String(i)));
+  // One block, 8-aligned: [arrays (f64)] [records (u32)] [names] [json].
+  let data = 0;
+  for (const a of arrays) data += a.length * 8;
+  let text = b.length;
+  for (const n of names) text += n.length;
+  const size = 8 + data + arrays.length * 20 + text;
+  const p = w.dv_alloc(size);
   try {
-    return f(p, b.length);
+    const base = (p + 7) & ~7;
+    const mem = w.memory.buffer;
+    const f64 = new Float64Array(mem);
+    const u8 = new Uint8Array(mem);
+    const descAt = base + data;
+    const desc = new Uint32Array(mem, descAt, arrays.length * 5);
+    let at = base;
+    let nameAt = descAt + arrays.length * 20;
+    arrays.forEach((a, i) => {
+      f64.set(a, at / 8);
+      desc.set([nameAt, names[i].length, at, a.length, 0], i * 5);
+      u8.set(names[i], nameAt);
+      nameAt += names[i].length;
+      at += a.length * 8;
+    });
+    u8.set(b, nameAt);
+    return f(nameAt, b.length, descAt, arrays.length);
   } finally {
-    w.dv_free(p, b.length);
+    w.dv_free(p, size);
   }
 }
 
@@ -98,7 +153,7 @@ const registry =
 export class Chart {
   /** `spec`: an object or JSON string (see `chartTypes()`). */
   constructor(spec) {
-    const h = withSpec(spec, (p, n) => need().dv_new(p, n));
+    const h = withSpec(spec, (p, n, d, k) => need().dv_new_with(p, n, d, k));
     if (!h) throw new Error(`dataviz: ${text(need().dv_error())}`);
     this.handle = h;
     registry?.register(this, h, this);
@@ -106,7 +161,7 @@ export class Chart {
 
   /** Replaces the data and options (the size stays). */
   update(spec) {
-    if (!withSpec(spec, (p, n) => need().dv_update(this.handle, p, n))) {
+    if (!withSpec(spec, (p, n, d, k) => need().dv_update_with(this.handle, p, n, d, k))) {
       throw new Error(`dataviz: ${text(need().dv_error())}`);
     }
     this._redraw?.();

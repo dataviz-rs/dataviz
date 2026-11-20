@@ -323,6 +323,16 @@ const NAMES: &[&str] = &["labels", "categories", "names", "x"];
 const VALUES: &[&str] = &["values", "y", "counts"];
 
 fn strs(v: &Value, key: &str) -> Result<Vec<String>> {
+    if let Some(a) = v.get(key).and_then(|a| {
+        external(a, |d, _| {
+            d.iter()
+                .map(|x| Value::from(*x))
+                .map(|x| text(&x))
+                .collect()
+        })
+    }) {
+        return Ok(a);
+    }
     let a = v
         .get(key)
         .and_then(Value::as_array)
@@ -338,6 +348,12 @@ fn text(x: &Value) -> String {
 }
 
 fn bools(v: &Value, key: &str) -> Result<Vec<bool>> {
+    if let Some(a) = v
+        .get(key)
+        .and_then(|a| external(a, |d, _| d.iter().map(|x| *x != 0.0).collect()))
+    {
+        return Ok(a);
+    }
     let a = v
         .get(key)
         .and_then(Value::as_array)
@@ -894,8 +910,8 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                 .map(|(k, v)| {
                     (
                         k.clone(),
-                        v.as_array()
-                            .map(|a| a.iter().map(text).collect())
+                        external(v, |d, _| d.iter().map(|x| text(&Value::from(*x))).collect())
+                            .or_else(|| v.as_array().map(|a| a.iter().map(text).collect()))
                             .unwrap_or_default(),
                     )
                 })

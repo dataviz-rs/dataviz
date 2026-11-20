@@ -43,3 +43,27 @@ test("errors and helpers", () => {
   assert.match(svg({ type: "pie", labels: ["a", "b"], values: [1, 2] }), /<svg/);
   assert.ok(png({ type: "hist", values: [1, 2, 2, 3] }).length > 100);
 });
+
+test("long arrays go over as binary (typed and plain) in every field kind", () => {
+  const n = 5000;
+  const x = new Float64Array(n).map((_, i) => i);
+  const y = Array.from(x, (v) => Math.sin(v / 100));
+  const labels = Array.from(x, (v) => (v % 3 === 0 ? 1 : 0));
+  const scores = new Float32Array(n).map((_, i) => (i % 3 === 0 ? 0.7 : 0.3) + (i % 7) / 50);
+  const ids = Array.from({ length: 100 }, (_, i) => i);
+  for (const spec of [
+    { type: "line", x, y, name: "binary" },
+    { type: "scatter", x: Int32Array.from(x), y },
+    { type: "roc", labels, scores },
+    { type: "upset", sets: { a: ids, b: ids.slice(50) } },
+    { type: "violin", groups: { a: y, b: x } },
+    { type: "heatmap", z: [Float64Array.of(1, 2), Float64Array.of(3, 4)] },
+  ]) {
+    const c = new Chart({ width: 300, height: 200, ...spec });
+    assert.match(c.svg(), /^<svg/, spec.type);
+    c.free();
+  }
+  const c = new Chart({ type: "line", x, y });
+  c.update({ type: "line", x, y: x });
+  c.free();
+});
