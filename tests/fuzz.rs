@@ -241,6 +241,7 @@ fn fuzz_json_specs() {
         r#"{"type":"sankey","links":[["a","b",3],["b","c",1]]}"#,
         r#"{"type":"surface","z":[[0,1],[1,0]],"x_range":[0,1],"y_range":[0,1]}"#,
         r#"{"type":"density_map","x":[1,2,3,2,1e9],"y":[3,1,2,2,-5],"how":"log"}"#,
+        r#"{"type":"line","x":[1,2,3],"y":[1,3,2],"drawings":[{"type":"fib","from":[1,1],"to":[3,3]},{"type":"ray","from":[1,1],"to":[2,2]},{"type":"level","y":2}]}"#,
         r#"{"type":"volume","values":[[[0,1],[1,2]],[[1,2],[2,3]]]}"#,
         r#"{"type":"arc_diagram","nodes":["a","b","c"],"edges":[["a","c",2],[0,1]]}"#,
         r#"{"type":"edge_bundling","nodes":["a","b","c"],"groups":[0,0,1],"edges":[[0,2]]}"#,

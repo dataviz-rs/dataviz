@@ -1074,6 +1074,29 @@ pub fn mol_color(s: &str) -> MolColor {
 /// Options every panel takes: titles, labels, limits, log scales, legend,
 /// 3D camera.
 fn common(ax: &mut Axes, p: &Value) {
+    // Chart drawings: trend lines, rays, price levels, Fibonacci.
+    if let Some(ds) = p.get("drawings").and_then(Value::as_array) {
+        let pt = |d: &Value, k: &str| {
+            opt_nums(d, k)
+                .filter(|v| v.len() == 2)
+                .map(|v| (v[0], v[1]))
+        };
+        for d in ds {
+            let a = match (s(d, "type").unwrap_or(""), pt(d, "from"), pt(d, "to")) {
+                ("trend" | "trendline" | "line", Some(a), Some(b)) => ax.trendline(a, b),
+                ("ray", Some(a), Some(b)) => ax.ray(a, b),
+                ("fib" | "fibonacci", Some(a), Some(b)) => ax.fib_retracement(a, b),
+                ("level" | "price_level", _, _) => match f(d, "y") {
+                    Some(y) => ax.price_level(y),
+                    None => continue,
+                },
+                _ => continue,
+            };
+            if let Some(c) = s(d, "color") {
+                a.color(c);
+            }
+        }
+    }
     if let Some(t) = s(p, "title") {
         ax.title(t);
     }
@@ -1345,5 +1368,26 @@ mod grammar_tests {
             .contains("no field `nope`"));
         let bad = json!({"data": rows, "mark": "blob"});
         assert!(super::figure(&bad).err().unwrap().contains("unknown mark"));
+    }
+}
+
+#[cfg(test)]
+mod drawing_tests {
+    #[test]
+    fn drawings_on_a_price_chart() {
+        let v = serde_json::json!({"type": "candlestick", "open": [1, 2, 3], "high": [2, 3, 4],
+            "low": [0.5, 1.5, 2.5], "close": [2, 3, 2.8],
+            "drawings": [{"type": "trend", "from": [0, 1], "to": [2, 3]},
+                         {"type": "ray", "from": [0, 1], "to": [1, 2], "color": "orange"},
+                         {"type": "level", "y": 2.5},
+                         {"type": "fib", "from": [0, 0.5], "to": [2, 4]},
+                         {"type": "nonsense"}]});
+        let mut fig = super::figure(&v).unwrap();
+        assert_eq!(fig.axes().series_count(), 5);
+        let svg = fig.to_svg();
+        assert!(
+            svg.contains("61.8 %") && svg.contains(">2.5<"),
+            "fib levels and the level tag"
+        );
     }
 }

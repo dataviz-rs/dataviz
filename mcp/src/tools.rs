@@ -35,7 +35,7 @@ pub fn list() -> Value {
         {
             "name": "plot",
             "title": "Plot data",
-            "description": "Draw a chart (or a grid of charts) from data and return it as an image. Each panel has a `type` (line, scatter, bar, hist, box, violin, heatmap, pie, sankey, chord, candlestick, roc, surface, scatter3d, molecule, … — call chart_types for all types and their fields) and its data fields; common panel options: title, x_label, y_label, z_label, x_limits, y_limits, x_log, y_log, legend, camera [azimuth, elevation], rotate {x, y, z} (degrees, 3D).",
+            "description": "Draw a chart (or a grid of charts) from data and return it as an image. Each panel has a `type` (line, scatter, bar, hist, box, violin, heatmap, pie, sankey, chord, candlestick, roc, surface, scatter3d, molecule, … — call chart_types for all types and their fields) and its data fields; common panel options: title, x_label, y_label, z_label, x_limits, y_limits, x_log, y_log, legend, camera [azimuth, elevation], rotate {x, y, z} (degrees, 3D), drawings [{type: trend|ray|fib (from [x, y], to [x, y]) or level (y), color?}] (chart drawing tools).",
             "inputSchema": {
                 "type": "object",
                 "properties": merge(common_props(), json!({

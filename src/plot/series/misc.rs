@@ -508,7 +508,17 @@ pub enum Annotation {
     Arrow(f64, f64, f64, f64, Option<String>),
     /// Rectangle (x0, y0, x1, y1).
     Rect(f64, f64, f64, f64),
+    /// Trend line from (x0, y0) through (x1, y1); `true`: a ray continuing
+    /// to the edge of the plot.
+    Trend(f64, f64, f64, f64, bool),
+    /// Horizontal price level with its value in a tag at the right edge.
+    Level(f64),
+    /// Fibonacci retracement of the move from (x0, y0) to (x1, y1).
+    Fib(f64, f64, f64, f64),
 }
+
+/// Fibonacci retracement levels (fractions of the move).
+pub const FIB_LEVELS: [f64; 7] = [0.0, 0.236, 0.382, 0.5, 0.618, 0.786, 1.0];
 
 /// An annotation with its style. Created by [`Axes::hline`], [`Axes::text`], …
 #[derive(Clone, Debug)]
@@ -660,6 +670,95 @@ impl Series for Annotate {
                     italic: false,
                 }));
             }
+            Annotation::Trend(a, b, c, d, ray) => {
+                let p0 = ctx.point(*a, *b);
+                let mut p1 = ctx.point(*c, *d);
+                if *ray {
+                    // On to the plot edge in the direction of the second point.
+                    let (dx, dy) = (p1.0 - p0.0, p1.1 - p0.1);
+                    let mut t = f64::INFINITY;
+                    if dx > 1e-9 {
+                        t = t.min((r.right() - p0.0) / dx);
+                    } else if dx < -1e-9 {
+                        t = t.min((r.x - p0.0) / dx);
+                    }
+                    if dy > 1e-9 {
+                        t = t.min((r.bottom() - p0.1) / dy);
+                    } else if dy < -1e-9 {
+                        t = t.min((r.y - p0.1) / dy);
+                    }
+                    if t.is_finite() && t > 1.0 {
+                        p1 = (p0.0 + dx * t, p0.1 + dy * t);
+                    }
+                }
+                ctx.polyline(&[p0, p1], stroke);
+                for p in [p0, ctx.point(*c, *d)] {
+                    ctx.push(Node::Circle {
+                        cx: p.0,
+                        cy: p.1,
+                        r: self.width + 1.5,
+                        fill: Some(ctx.theme.plot_background),
+                        stroke: Some(Stroke::new(self.color, self.width)),
+                    });
+                }
+            }
+            Annotation::Level(y) => {
+                let py = ctx.y.px(*y);
+                ctx.polyline(&[(r.x, py), (r.right(), py)], stroke);
+                price_tag(ctx, r.right(), py, *y, self.color);
+            }
+            Annotation::Fib(a, b, c, d) => {
+                let x0 = ctx.x.px_clamped(a.min(*c)).max(r.x);
+                let size = self.size.unwrap_or(ctx.theme.annotation_size * 0.85);
+                let palette = &ctx.theme.palette;
+                let price = |l: f64| d - (d - b) * l;
+                for (k, w) in FIB_LEVELS.windows(2).enumerate() {
+                    let (ya, yb) = (ctx.y.px_clamped(price(w[0])), ctx.y.px_clamped(price(w[1])));
+                    let c = palette
+                        .get(k % palette.len().max(1))
+                        .copied()
+                        .unwrap_or(self.color);
+                    ctx.rect(x0, ya, r.right(), yb, Some(c.with_alpha(0.08)), None);
+                }
+                for (k, l) in FIB_LEVELS.iter().enumerate() {
+                    let py = ctx.y.px(price(*l));
+                    if !(py >= r.y - 0.5 && py <= r.bottom() + 0.5) {
+                        continue;
+                    }
+                    let c = palette
+                        .get(k.saturating_sub(1) % palette.len().max(1))
+                        .copied()
+                        .unwrap_or(self.color);
+                    let c = if *l == 0.0 || *l == 1.0 {
+                        ctx.theme.text.with_alpha(0.6)
+                    } else {
+                        c
+                    };
+                    ctx.polyline(&[(x0, py), (r.right(), py)], Stroke::new(c, 1.0));
+                    ctx.push(Node::Text(TextNode {
+                        x: x0 + 4.0,
+                        y: py - 2.0,
+                        text: format!(
+                            "{} %  {}",
+                            super::short((l * 1000.0).round() / 10.0),
+                            super::short(price(*l))
+                        ),
+                        size,
+                        color: c.with_alpha(1.0),
+                        anchor: Anchor::Start,
+                        baseline: Baseline::Bottom,
+                        rotate: 0.0,
+                        bold: false,
+                        italic: false,
+                    }));
+                }
+                ctx.polyline(
+                    &[ctx.point(*a, *b), ctx.point(*c, *d)],
+                    self.dash
+                        .stroke(ctx.theme.text.with_alpha(0.45), 1.0)
+                        .dashed(vec![4.0, 3.0]),
+                );
+            }
             Annotation::Arrow(a, b, c, d, t) => {
                 let p0 = ctx.point(*a, *b);
                 let p1 = ctx.point(*c, *d);
@@ -714,6 +813,35 @@ impl Series for Annotate {
     fn as_any_mut(&mut self) -> &mut dyn Any {
         self
     }
+}
+
+/// The value of `y` in a filled tag left of `x` (price axes).
+fn price_tag(ctx: &mut Context, x: f64, py: f64, y: f64, color: Color) {
+    let size = ctx.theme.annotation_size * 0.85;
+    let t = super::short(y);
+    let w = ctx.text_width(&t, size) + 10.0;
+    let h = size * 1.5;
+    ctx.push(Node::Rect {
+        x: x - w,
+        y: py - h / 2.0,
+        w,
+        h,
+        rx: 2.0,
+        fill: Some(color),
+        stroke: None,
+    });
+    ctx.push(Node::Text(TextNode {
+        x: x - w / 2.0,
+        y: py,
+        text: t,
+        size,
+        color: Color::WHITE,
+        anchor: Anchor::Middle,
+        baseline: Baseline::Middle,
+        rotate: 0.0,
+        bold: true,
+        italic: false,
+    }));
 }
 
 impl Axes {
@@ -855,5 +983,31 @@ impl Axes {
     /// Rectangle in data coordinates.
     pub fn rectangle(&mut self, x0: f64, y0: f64, x1: f64, y1: f64) -> &mut Annotate {
         self.annotate(Annotation::Rect(x0, y0, x1, y1))
+    }
+    /// Trend line between two points (chart drawing tool; also drawn with
+    /// `T` in a window). [`Axes::ray`] continues it to the plot edge.
+    pub fn trendline(&mut self, from: (f64, f64), to: (f64, f64)) -> &mut Annotate {
+        let a = self.annotate(Annotation::Trend(from.0, from.1, to.0, to.1, false));
+        a.color = Color::rgb(41, 98, 255);
+        a
+    }
+    /// Trend line from `from` through `to`, continued to the plot edge.
+    pub fn ray(&mut self, from: (f64, f64), to: (f64, f64)) -> &mut Annotate {
+        let a = self.trendline(from, to);
+        a.kind = Annotation::Trend(from.0, from.1, to.0, to.1, true);
+        a
+    }
+    /// Horizontal price level with a value tag at the right edge (support,
+    /// resistance, an order; `L` in a window).
+    pub fn price_level(&mut self, y: f64) -> &mut Annotate {
+        let a = self.annotate(Annotation::Level(y));
+        a.color = Color::rgb(242, 54, 69);
+        a.dash = Dash::Dashed;
+        a
+    }
+    /// Fibonacci retracement (0, 23.6, 38.2, 50, 61.8, 78.6, 100 %) of the
+    /// move from `from` to `to` (`F` in a window).
+    pub fn fib_retracement(&mut self, from: (f64, f64), to: (f64, f64)) -> &mut Annotate {
+        self.annotate(Annotation::Fib(from.0, from.1, to.0, to.1))
     }
 }

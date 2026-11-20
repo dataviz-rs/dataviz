@@ -33,6 +33,17 @@
   (`dataviz-rs/svelte`).
 
 ### Added
+- Chart drawing tools, as in trading platforms:
+  - `Axes::trendline`, `Axes::ray`, `Axes::price_level` (value tag at the
+    right edge) and `Axes::fib_retracement` (0–100 % levels with prices
+    and shaded bands);
+  - in windows: `T`, `L` or `F`, then drag or click on the chart, with a
+    live preview; Backspace takes back the last drawing;
+  - spec field `drawings: [{type: trend|ray|fib|level, …}]` for every
+    panel, and Python `Axes.trendline`, `price_level` and
+    `fib_retracement`.
+
+  Drawings stay at their data positions when you zoom or pan.
 - Animated WebP (`Recorder` / `Figure::record` to `.webp`): lossless, with transparency,
   storing only the changed rectangle per frame. For a 150-frame
   640×360 chart: 73 KB in 40 ms (APNG 139 KB, GIF 41 KB with at most 256

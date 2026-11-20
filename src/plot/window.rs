@@ -208,6 +208,12 @@ impl Figure {
         let mut measure: Option<Measure> = None;
         // Box selection (Ctrl+drag) in progress: plot, start.
         let mut selecting: Option<(usize, (f64, f64))> = None;
+        // Drawing tools (T trend line, L price level, F Fibonacci): the tool
+        // armed, the drag in progress, and what was drawn (plot, series)
+        // for Backspace to take back.
+        let mut tool: Option<Tool> = None;
+        let mut drawing: Option<(usize, (f64, f64))> = None;
+        let mut drawn: Vec<(usize, usize)> = Vec::new();
 
         while window.is_open() && !window.is_key_down(Key::Escape) {
             if last_update.elapsed() >= period {
@@ -251,7 +257,10 @@ impl Figure {
                     last_mouse = (f64::NAN, f64::NAN);
                 }
                 if let Some(m) = mouse {
-                    if let Some((i, k)) = legend_at(&layouts, m) {
+                    if let (Some(_), Some(i)) = (tool, in_axes(m, &layouts)) {
+                        drawing = Some((i, m));
+                        clicked = true;
+                    } else if let Some((i, k)) = legend_at(&layouts, m) {
                         if let Some(a) = self.cell_axes(i) {
                             let on = !a.is_visible(k);
                             a.set_visible(k, on);
@@ -296,6 +305,34 @@ impl Figure {
                 }
             }
             if !down {
+                if let (Some((i, a)), Some(b), Some(t)) = (drawing.take(), mouse, tool) {
+                    let l = &layouts[i];
+                    let p0 = (l.x.value(a.0), l.y.value(a.1));
+                    let p1 = (l.x.value(b.0), l.y.value(b.1));
+                    let moved = (a.0 - b.0).abs() + (a.1 - b.1).abs() > 4.0;
+                    if let Some(ax) = self.cell_axes(i) {
+                        let made = match t {
+                            Tool::Trend if moved => {
+                                ax.trendline(p0, p1);
+                                true
+                            }
+                            Tool::Level => {
+                                ax.price_level(p1.1);
+                                true
+                            }
+                            Tool::Fib if moved => {
+                                ax.fib_retracement(p0, p1);
+                                true
+                            }
+                            _ => false,
+                        };
+                        if made {
+                            drawn.push((i, ax.series_count() - 1));
+                            tool = None;
+                            dirty = true;
+                        }
+                    }
+                }
                 if let (Some((i, a)), Some(b)) = (selecting.take(), mouse) {
                     let l = &layouts[i];
                     let (x0, x1) = (l.x.value(a.0), l.x.value(b.0));
@@ -385,6 +422,46 @@ impl Figure {
                     let under = mouse.and_then(|m| in_axes(m, &layouts));
                     for i in 0..layouts.len() {
                         if under.is_none_or(|u| u == i) && self.rotate_view(i, axis, deg) {
+                            dirty = true;
+                        }
+                    }
+                }
+            }
+            for (key, t, hint) in [
+                (
+                    Key::T,
+                    Tool::Trend,
+                    "Trend line: drag from one point to another",
+                ),
+                (Key::L, Tool::Level, "Price level: click at the price"),
+                (
+                    Key::F,
+                    Tool::Fib,
+                    "Fibonacci retracement: drag from the swing start to its end",
+                ),
+            ] {
+                if window.is_key_pressed(key, KeyRepeat::No) && !ctrl {
+                    tool = if tool == Some(t) { None } else { Some(t) };
+                    let text = if tool.is_some() {
+                        hint
+                    } else {
+                        "Drawing tool off"
+                    };
+                    message = Some((text.to_string(), Instant::now()));
+                    last_mouse = (f64::NAN, f64::NAN);
+                }
+            }
+            if window.is_key_pressed(Key::Backspace, KeyRepeat::No)
+                || window.is_key_pressed(Key::Delete, KeyRepeat::No)
+            {
+                if let Some((i, k)) = drawn.pop() {
+                    if let Some(a) = self.cell_axes(i) {
+                        if k < a.series.len() {
+                            a.series.remove(k);
+                            if k < a.hidden.len() {
+                                a.hidden.remove(k);
+                            }
+                            a.revision += 1;
                             dirty = true;
                         }
                     }
@@ -521,6 +598,7 @@ impl Figure {
             // Overlays (hover tooltip, zoom box, messages) only when needed.
             let m = mouse.unwrap_or((f64::NAN, f64::NAN));
             let overlay_needed = m != last_mouse
+                || drawing.is_some()
                 || box_start.is_some()
                 || message.is_some()
                 || recording.is_some()
@@ -531,6 +609,21 @@ impl Figure {
                 last_mouse = m;
                 let fonts = self.fonts();
                 let mut nodes = Vec::new();
+                if let (Some((i, a)), Some(m)) = (drawing, mouse) {
+                    // Preview of the drawing being made.
+                    let blue = Color::rgb(41, 98, 255);
+                    let (b0, b1) = if tool == Some(Tool::Level) {
+                        let r = layouts[i].plot;
+                        ((r.x, m.1), (r.right(), m.1))
+                    } else {
+                        (a, m)
+                    };
+                    nodes.push(Node::Path {
+                        cmds: vec![PathCmd::MoveTo(b0.0, b0.1), PathCmd::LineTo(b1.0, b1.1)],
+                        fill: None,
+                        stroke: Some(Stroke::new(blue, 1.5).dashed(vec![5.0, 3.0])),
+                    });
+                }
                 if let (Some((x, y, _)), Some(m)) = (box_start, mouse) {
                     nodes.push(Node::Rect {
                         x: x.min(m.0),
@@ -689,6 +782,14 @@ impl Figure {
         }
         Ok(())
     }
+}
+
+/// Chart drawing tools of the window.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Tool {
+    Trend,
+    Level,
+    Fib,
 }
 
 impl Figure {

@@ -136,6 +136,7 @@ fig.show_live("title", 30, |fig| { /* push new points */ true })?;
 | `A`, `R` | auto scale y to the visible data, follow live data again |
 | `S`, Shift+S, Ctrl+C, `V` | save PNG, SVG/PDF, copy to the clipboard, record a GIF |
 | 3D: drag, wheel, `X`/`Y`/`Z` | turn the scene, zoom, rotate 15° around that axis (Shift = reverse) |
+| `T`, `L`, `F`, Backspace | draw a trend line, a price level, a Fibonacci retracement; take back the last drawing |
 
 Live charts keep the view you zoomed to while data arrives (y follows the
 visible data), stream with `Line::push` / `keep_last` / `keep_since`, and

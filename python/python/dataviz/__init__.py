@@ -293,6 +293,26 @@ class Axes:
         self._core.reference(self._cell, "v", x, label, color)
         return self
 
+    def _drawing(self, d: dict) -> "Axes":
+        self._core.chart_json(self._cell, _json.dumps({"layers": [], "drawings": [d]}, default=_plain))
+        return self
+
+    def trendline(self, start, end, *, ray: bool = False, color=None) -> "Axes":
+        """A trend line between two ``(x, y)`` points (``ray=True``: continued
+        to the plot edge). In a window: ``T`` and drag."""
+        return self._drawing({"type": "ray" if ray else "trend", "from": list(start),
+                              "to": list(end), "color": color})
+
+    def price_level(self, y: float, *, color=None) -> "Axes":
+        """A horizontal price level with its value tagged at the right edge
+        (``L`` in a window)."""
+        return self._drawing({"type": "level", "y": y, "color": color})
+
+    def fib_retracement(self, start, end, *, color=None) -> "Axes":
+        """Fibonacci retracement levels of the move from ``start`` to ``end``
+        (``F`` in a window)."""
+        return self._drawing({"type": "fib", "from": list(start), "to": list(end), "color": color})
+
     def text(self, x: float, y: float, text: str, *, size=None, color=None) -> "Axes":
         """Text at a data position (TeX math between $…$ works)."""
         self._core.text(self._cell, x, y, text, size, color)
