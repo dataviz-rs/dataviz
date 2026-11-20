@@ -498,6 +498,54 @@ enum Prim {
     Taken,
 }
 
+/// Drops opaque balls that a nearer opaque ball hides completely: one in
+/// the same quarter-pixel cell with at least the same radius paints over
+/// every pixel of it (same coverage mask, drawn later). Dense point clouds
+/// lose most of their points this way before any drawing.
+fn cull_hidden_balls(keys: &[u64], prims: &mut [Prim]) {
+    let idx = |key: u64| (key & 0xFFFF_FFFF) as usize;
+    let balls = || {
+        prims.iter().filter_map(|p| match p {
+            Prim::Ball { x, y, color, .. }
+                if color.a >= 0.999 && x.is_finite() && y.is_finite() =>
+            {
+                Some((*x, *y))
+            }
+            _ => None,
+        })
+    };
+    if balls().take(20_000).count() < 20_000 {
+        return;
+    }
+    let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
+    for (x, y) in balls() {
+        (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
+    }
+    let (x0, y0) = (x0.floor(), y0.floor());
+    let w = ((x1 - x0) * 4.0) as usize + 1;
+    let h = ((y1 - y0) * 4.0) as usize + 1;
+    if w.saturating_mul(h) > 1 << 28 {
+        return;
+    }
+    // Per cell: radius (× 8) of the nearest ball drawn there; 0 = none.
+    let mut cell = vec![0u16; w * h];
+    for &key in keys.iter().rev() {
+        let i = idx(key);
+        if let Prim::Ball { x, y, r, color, .. } = prims[i] {
+            if color.a < 0.999 || !x.is_finite() || !y.is_finite() {
+                continue;
+            }
+            let c = ((y - y0) * 4.0) as usize * w + ((x - x0) * 4.0) as usize;
+            let rr = (r * 8.0).round().clamp(1.0, 65_535.0) as u16;
+            if cell[c] >= rr {
+                prims[i] = Prim::Taken;
+            } else if cell[c] == 0 {
+                cell[c] = rr;
+            }
+        }
+    }
+}
+
 /// Sorts keys with four 16-bit radix passes (linear time; a million
 /// primitives in a few milliseconds).
 fn radix_sort(mut keys: Vec<u64>) -> Vec<u64> {
@@ -1281,6 +1329,7 @@ impl Scene3d<'_> {
         let keys = radix_sort(self.keys);
         let mut prims = self.prims;
         let idx = |key: u64| (key & 0xFFFF_FFFF) as usize;
+        cull_hidden_balls(&keys, &mut prims);
         let mut k = 0;
         while k < keys.len() {
             let p = std::mem::replace(&mut prims[idx(keys[k])], Prim::Taken);
@@ -3316,6 +3365,46 @@ mod tests {
             "{x},{y} -> {x2},{y2}"
         );
         assert!(fig.axes().current_camera().zoom > 2.0);
+    }
+
+    #[test]
+    fn hidden_balls_are_culled_and_visible_ones_kept() {
+        use super::{cull_hidden_balls, Prim};
+        // 30 000 opaque balls: pairs in the same quarter-pixel cell, the
+        // nearer one (drawn later) at least as large.
+        let mut prims = Vec::new();
+        let mut keys = Vec::new();
+        for i in 0..30_000u32 {
+            let cellx = (i / 2) as f32 * 0.5;
+            prims.push(Prim::Ball {
+                x: cellx % 800.0,
+                y: (cellx / 800.0).floor() * 0.5,
+                r: if i % 2 == 0 { 1.0 } else { 1.2 },
+                color: Color::rgb(1, 2, 3),
+                shaded: false,
+            });
+            // Sorted far to near: even (far) before odd (near).
+            keys.push(((i as u64) << 32) | i as u64);
+        }
+        cull_hidden_balls(&keys, &mut prims);
+        let kept: Vec<usize> = (0..prims.len())
+            .filter(|&i| !matches!(prims[i], Prim::Taken))
+            .collect();
+        assert_eq!(kept.len(), 15_000);
+        assert!(kept.iter().all(|i| i % 2 == 1));
+        // A larger ball behind a smaller one stays.
+        let mut prims = vec![];
+        for i in 0..20_000u32 {
+            prims.push(Prim::Ball {
+                x: (i / 2) as f32,
+                y: 0.0,
+                r: if i % 2 == 0 { 3.0 } else { 1.0 },
+                color: Color::rgb(1, 2, 3),
+                shaded: false,
+            });
+        }
+        cull_hidden_balls(&keys[..20_000], &mut prims);
+        assert!(prims.iter().all(|p| !matches!(p, Prim::Taken)));
     }
 
     #[test]

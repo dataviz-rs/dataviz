@@ -554,6 +554,41 @@ impl SphereShade {
         SphereShade { half, size, rows }
     }
 
+    /// A flat disc: coverage only (no shading), for circles that each have
+    /// their own color (colormapped scatter, 3D point clouds).
+    fn disc(r: f32, qx: u8, qy: u8) -> Self {
+        let half = (r + 1.5).ceil() as i32;
+        let size = 2 * half + 1;
+        let (cx, cy) = (
+            half as f32 + (qx as f32 + 0.5) / 4.0,
+            half as f32 + (qy as f32 + 0.5) / 4.0,
+        );
+        let re = r + 0.5;
+        let rows = (0..size)
+            .map(|py| {
+                let dy = py as f32 + 0.5 - cy;
+                let mut first = -1;
+                let mut px_row = Vec::new();
+                for px in 0..size {
+                    let dx = px as f32 + 0.5 - cx;
+                    let cov = (re - (dx * dx + dy * dy).sqrt()).min(1.0);
+                    if cov <= 0.0 {
+                        if first >= 0 {
+                            break;
+                        }
+                        continue;
+                    }
+                    if first < 0 {
+                        first = px;
+                    }
+                    px_row.push([(cov * 255.0 + 0.5) as u8, 255, 0]);
+                }
+                (first.max(0), px_row)
+            })
+            .collect();
+        SphereShade { half, size, rows }
+    }
+
     /// Draws the sphere in color `c` with its centre in pixel `(ix, iy)`.
     fn draw(&self, pm: &mut PixmapMut<'_>, ix: i32, iy: i32, c: Color, clip: Clip) {
         let (w, h) = (pm.width() as i32, pm.height() as i32);
@@ -1898,6 +1933,8 @@ struct Ctx<'a> {
     base: Transform,
     /// Circle sprites: (r, fill, stroke) → pixmap and its centre offset.
     sprites: Vec<(SpriteKey, Pixmap, f32)>,
+    /// Position of each sprite in `sprites`.
+    sprite_index: HashMap<SpriteKey, usize>,
     /// Index of the last used sprite (markers usually repeat).
     last_sprite: usize,
     /// Last circle key and whether it is drawn as a sprite.
@@ -1910,6 +1947,8 @@ struct Ctx<'a> {
     instance_sprites: Vec<InstanceSprite>,
     /// Sphere shading by (radius × 8, quarter-pixel x, y).
     sphere_shades: HashMap<(u32, u8, u8), SphereShade>,
+    /// Coverage masks of filled circles by (radius × 8, quarter offsets).
+    disc_masks: HashMap<(u32, u8, u8), SphereShade>,
     /// Opaque background while nothing has been drawn yet: a rectangle
     /// filled with it (a plot area on the same background) is skipped.
     pristine: Option<Color>,
@@ -2092,12 +2131,14 @@ impl<'a> Ctx<'a> {
             fonts,
             base,
             sprites: Vec::new(),
+            sprite_index: HashMap::default(),
             last_sprite: 0,
             last_count: None,
             clip: Clip::new(0.0, 0.0, w as f32, h as f32),
             mask: None,
             instance_sprites: Vec::new(),
             sphere_shades: HashMap::default(),
+            disc_masks: HashMap::default(),
             pristine: None,
         }
     }
@@ -2455,6 +2496,26 @@ impl<'a> Ctx<'a> {
                     (None, _) => false,
                 };
                 let scale = ts.sx;
+                // Small filled circles: a coverage mask cached per size and
+                // quarter-pixel offset, tinted per circle (any number of
+                // colors, e.g. colormapped points) instead of a path fill
+                // or a sprite per color.
+                if let (None, Some(c)) = (stroke, fill) {
+                    let rd = *r as f32 * scale;
+                    if rd <= 24.0 && ts.kx == 0.0 && ts.ky == 0.0 && (ts.sx - ts.sy).abs() < 1e-6 {
+                        let gx = *cx as f32 * scale + ts.tx;
+                        let gy = *cy as f32 * scale + ts.ty;
+                        let (ix, iy) = (gx.floor(), gy.floor());
+                        let q = |f: f32| ((f * 4.0) as u8).min(3);
+                        let key = ((rd * 8.0).round() as u32, q(gx - ix), q(gy - iy));
+                        let m = self
+                            .disc_masks
+                            .entry(key)
+                            .or_insert_with(|| SphereShade::disc(key.0 as f32 / 8.0, key.1, key.2));
+                        m.draw(pm, ix as i32, iy as i32, *c, self.clip);
+                        return;
+                    }
+                }
                 if many && ts.kx == 0.0 && ts.ky == 0.0 {
                     let key = key.expect("checked");
                     // Sprites at quarter-pixel offsets keep sub-pixel accuracy.
@@ -2468,7 +2529,7 @@ impl<'a> Ctx<'a> {
                         .get(self.last_sprite)
                         .is_some_and(|s| s.0 == skey);
                     if !hit {
-                        self.last_sprite = match self.sprites.iter().position(|s| s.0 == skey) {
+                        self.last_sprite = match self.sprite_index.get(&skey).copied() {
                             Some(i) => i,
                             None => {
                                 let pad = stroke.as_ref().map_or(0.0, |s| s.width) + 1.0;
@@ -2496,6 +2557,7 @@ impl<'a> Ctx<'a> {
                                     );
                                 }
                                 self.sprites.push((skey, sp, half));
+                                self.sprite_index.insert(skey, self.sprites.len() - 1);
                                 self.sprites.len() - 1
                             }
                         };

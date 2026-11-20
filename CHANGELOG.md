@@ -3,6 +3,17 @@
 ## Unreleased
 
 ### Changed
+- 3D point clouds on the CPU are 13–45× faster:
+  - opaque points hidden behind a nearer point of at least the same size
+    are dropped before drawing (exact: the same quarter-pixel coverage);
+  - small filled circles are stamped from a coverage mask cached by size,
+    tinted per point, instead of a sprite per color. A per-color sprite
+    used to be found by a linear search, so colormapped points spent
+    their time there.
+
+  For 1 M colormapped points a frame takes 73 ms instead of 3.3 s, and
+  for 100 k points 12 ms instead of 210 ms. Colormapped 2D scatter plots
+  gain as well.
 - Windows send a frame only when it changed (plus twice a second):
   an idle window showing a chart uses 0.2–0.7 % of a core instead of 7 %.
   The RGBA copy for overlays is made only while an overlay is drawn.
