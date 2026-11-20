@@ -1,6 +1,6 @@
 [package]
 name = "dataviz"
-version = "0.18.0"
+version = "0.19.0"
 edition = "2021"
 rust-version = "1.89"
 authors = ["Samet Eraslan <absameteraslan@gmail.com>"]
@@ -12,7 +12,7 @@ keywords = ["plotting", "chart", "visualization", "plot", "graph"]
 categories = ["visualization", "graphics", "science", "gui", "wasm"]
 readme = "./README.md"
 # The MCP server and the Claude plugin are published on their own.
-exclude = ["mcp/", "python/", "claude-plugin/", ".claude-plugin/", "cikti/", "ROADMAP.md", "tests/golden/", "tests/golden.rs"]
+exclude = [".vscode/", "mcp/", "python/", "claude-plugin/", ".claude-plugin/", "cikti/", "ROADMAP.md", "tests/golden/", "tests/golden.rs"]
 
 [dependencies]
 ab_glyph = "0.2.32"

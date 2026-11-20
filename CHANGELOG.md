@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.19.0
 
 ### Changed
 - Volume rendering is lit from its value gradient: surfaces inside the

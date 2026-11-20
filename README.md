@@ -76,7 +76,7 @@ memory of the Rust plotting libraries.**
 
 ```toml
 [dependencies]
-dataviz = "0.18"
+dataviz = "0.19"
 ```
 
 ```rust no_run
@@ -611,9 +611,9 @@ cartoon with its Ramachandran plot"*, or use `/dataviz:plot` and
 
 ```toml
 [dependencies]
-dataviz = "0.18"
-# dataviz = { version = "0.18", features = ["pdf", "gpu"] }
-# dataviz = { version = "0.18", default-features = false }   # headless / wasm32
+dataviz = "0.19"
+# dataviz = { version = "0.19", features = ["pdf", "gpu"] }
+# dataviz = { version = "0.19", default-features = false }   # headless / wasm32
 ```
 
 | Feature | Default | What it adds |
