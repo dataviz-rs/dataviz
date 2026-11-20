@@ -530,8 +530,16 @@ impl Axes {
     ) -> &mut EdgeBundling {
         self.kind = AxesKind::Frameless;
         self.equal_aspect = true;
-        let groups: Vec<usize> = groups.into_iter().collect();
-        let ng = groups.iter().copied().max().map_or(1, |m| m + 1);
+        // Group numbers made dense (0, 1, 2, … in increasing order), so
+        // that any numbering works.
+        let mut groups: Vec<usize> = groups.into_iter().collect();
+        let mut ids = groups.clone();
+        ids.sort_unstable();
+        ids.dedup();
+        for g in &mut groups {
+            *g = ids.binary_search(g).unwrap_or(0);
+        }
+        let ng = ids.len().max(1);
         let colors = (0..ng.max(1)).map(|_| self.next_color()).collect();
         self.add(EdgeBundling {
             nodes: nodes.into_labels(),

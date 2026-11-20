@@ -144,6 +144,29 @@ and click work in your own GUI or web page through
 `fig.zoom_at`, `pan_by`, `hover`, `click` ([egui](https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-egui),
 [WebAssembly](https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-wasm)).
 
+### Grammar of graphics
+
+Charts can also be described the way Vega-Lite, ggplot2 and Altair do it:
+data, a mark (point, line, area, bar, rect, boxplot) and encodings. The
+color groups, legends, aggregation, histograms, stacking and small
+multiples follow from the encodings. This works from Rust, from JSON
+specs, from Python, JavaScript and C, and through the MCP server:
+
+```rust ignore
+use dataviz::plot::grammar::{Chart, Data, Field, Aggregate, Mark};
+let data = Data::new().text("species", &species).num("mass", &mass).text("island", &island);
+Chart::new(data, Mark::Bar)
+    .x("island")
+    .y(Field::new("mass").aggregate(Aggregate::Mean))
+    .color("species")
+    .draw(&mut fig)?;
+```
+
+```json
+{"data": [{"species": "Adelie", "mass": 3750, "island": "Biscoe"}, …],
+ "mark": "point", "encoding": {"x": "flipper", "y": "mass", "color": "species", "facet": "island"}}
+```
+
 ### Chart types
 
 | Category | Charts |

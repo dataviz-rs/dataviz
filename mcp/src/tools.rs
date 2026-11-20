@@ -44,8 +44,11 @@ pub fn list() -> Value {
                         "description": "Charts, laid out in a grid (rows/cols automatic unless given).",
                         "items": {
                             "type": "object",
-                            "properties": { "type": { "type": "string", "enum": types } },
-                            "required": ["type"],
+                            "properties": {
+                                "type": { "type": "string", "enum": types },
+                                "mark": { "type": "string", "description": "Grammar of graphics instead of `type` (with data and encoding; see chart_types)." }
+                            },
+                            "anyOf": [{ "required": ["type"] }, { "required": ["mark"] }],
                             "additionalProperties": true
                         }
                     },
@@ -144,6 +147,8 @@ fn chart_types() -> String {
     for (t, fields, what) in CHART_TYPES {
         s.push_str(&format!("- {t}: {fields} — {what}\n"));
     }
+    let (fields, what) = spec::GRAMMAR;
+    s.push_str(&format!("- mark (instead of type): {fields} — {what}\n"));
     s.push_str("\nmolecule panels also take pdb_id (downloaded from the PDB). Several chart types on one axes: {\"layers\": [{type, …}, …]} as a panel.");
     s.push_str("\nExample: {\"panels\": [{\"type\": \"line\", \"series\": [{\"name\": \"a\", \"x\": [1,2,3], \"y\": [2,4,3]}], \"title\": \"Sales\"}]}");
     s

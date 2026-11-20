@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changed
+- Axes left with one or two ticks after rounding the step up (a range of
+  22 with room for 4 ticks used to show only 40 and 50) take the next
+  smaller nice step.
 - npm package 1.52 → 0.91 MB gzipped: new default cargo features `formats`
   (JPEG/WebP/BMP), `full-font` and `shaping` (complex scripts) are off in
   the WebAssembly build, which embeds a 235 KB font subset (Latin, Greek,
@@ -14,6 +17,18 @@
   (`dataviz-rs/svelte`).
 
 ### Added
+- Grammar of graphics (`plot::grammar`, spec `mark` + `encoding`, as in
+  Vega-Lite and ggplot2):
+  - data as columns, rows or `{"values": rows}`;
+  - marks: point, line, area, bar, rect and boxplot;
+  - channels: x, y, color, size and facet, each with a type,
+    aggregation (count, sum, mean, median, min, max), binning, a title
+    and a log scale;
+  - stacked, grouped or percent bars.
+
+  Color groups keep the same colors in every facet, and the figure gets
+  one legend. Histograms of all groups share their bin edges. 1 M rows in
+  3 color groups build in 22 ms.
 - C and C++ API (`capi/`): `dataviz.h` and a header-only C++17 wrapper
   `dataviz.hpp`, CMake support (shared or static), tested on Linux, macOS
   and Windows; static libraries for iOS and Android. It has direct
@@ -33,6 +48,10 @@
   `DensityGrid` counts chunks one after another for data larger than
   memory. 100 M points to PNG: 70 ms (Datashader: 372 ms); from Python,
   NumPy arrays are counted in place (100 M points: 81 ms).
+
+### Fixed
+- Edge bundling with large group numbers (e.g. 1e308) no longer
+  overflows; group numbers are made dense.
 
 ### Python
 - 0.3.0: `Axes.volume(array)`, the globe and equal-area projections,

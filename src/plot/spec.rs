@@ -19,6 +19,8 @@
 //! ```
 
 use crate::plot::geo::Projection;
+use crate::plot::grammar::{self, Aggregate, Column, Data, Field, Kind, Mark};
+use crate::plot::series::bar::BarMode;
 use crate::prelude::*;
 use serde_json::Value;
 
@@ -182,6 +184,13 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
         "3D molecule (ball_and_stick, sticks, space_filling, backbone, cartoon).",
     ),
 ];
+
+/// The grammar-of-graphics panel (`mark` instead of `type`): fields and
+/// what it does.
+pub const GRAMMAR: (&str, &str) = (
+    "data ({field: [values]} or [{field: value}, …]), mark (point, line, area, bar, rect, boxplot), encoding {x, y, color, size, facet: a field name or {field, type? (quantitative, nominal, ordinal, temporal), aggregate? (count, sum, mean, median, min, max), bin?, title?, scale?: {type: log}}}, columns?, stack? (stacked, grouped, percent)",
+    "Grammar of graphics (Vega-Lite / ggplot style): color groups with a legend, aggregation, histograms (binned x), heatmaps, box plots and small multiples (facet) follow from the encodings.",
+);
 
 /// Errors are messages naming the panel and the field.
 pub type Result<T> = std::result::Result<T, String>;
@@ -489,6 +498,16 @@ pub fn figure(spec: &Value) -> Result<Figure> {
     if let Some(t) = s(spec, "title") {
         fig.title(t);
     }
+    // Grammar of graphics at the top level: facets fill the figure.
+    if spec.get("mark").is_some() && spec.get("panels").is_none() {
+        let mut p = spec.clone();
+        if let Some(o) = p.as_object_mut() {
+            o.remove("title");
+        }
+        grammar_chart(&p)?.draw(&mut fig)?;
+        common(fig.axes(), &p);
+        return Ok(fig);
+    }
     // One panel can be given inline (type at the top level).
     let panels: Vec<Value> = match spec.get("panels").and_then(Value::as_array) {
         Some(p) => p.clone(),
@@ -551,6 +570,11 @@ fn each_series(p: &Value) -> Vec<&Value> {
 /// Draws one panel (a `type` with its fields, or `layers` of them) into an
 /// axes, then applies the panel's options (titles, limits, camera, …).
 pub fn apply(ax: &mut Axes, p: &Value) -> Result<()> {
+    if p.get("mark").is_some() {
+        grammar_chart(p)?.draw_into(ax)?;
+        common(ax, p);
+        return Ok(());
+    }
     match p.get("layers").and_then(Value::as_array) {
         Some(layers) => {
             for l in layers {
@@ -1111,5 +1135,206 @@ mod network_tests {
         let bad = serde_json::json!({"type": "arc_diagram", "nodes": ["a"], "edges": [["a", "z"]]});
         let err = super::figure(&bad).err().unwrap_or_default();
         assert!(err.contains("unknown node"), "{err}");
+    }
+}
+
+/// A column from JSON: numbers (or an `"@name"` array) or text.
+fn json_column(v: &Value) -> Column {
+    if let Some(n) = external(v, |d, _| d.to_vec()) {
+        return Column::Num(n);
+    }
+    let a = v.as_array().map(Vec::as_slice).unwrap_or(&[]);
+    if a.iter().all(|x| x.is_number() || x.is_null()) {
+        Column::Num(to_nums(v).unwrap_or_default())
+    } else {
+        Column::Text(
+            a.iter()
+                .map(|x| if x.is_null() { String::new() } else { text(x) })
+                .collect(),
+        )
+    }
+}
+
+/// `data` as columns `{name: [values]}`, rows `[{name: value}, …]` or
+/// Vega-Lite's `{"values": rows}`.
+fn grammar_data(v: &Value) -> Result<Data> {
+    let rows = match v {
+        Value::Object(m) if m.len() == 1 && m.get("values").is_some_and(Value::is_array) => {
+            m.get("values").and_then(Value::as_array)
+        }
+        Value::Array(a) => Some(a),
+        _ => None,
+    };
+    let mut data = Data::new();
+    match (rows, v) {
+        (Some(rows), _) => {
+            let mut names: Vec<&str> = Vec::new();
+            for r in rows {
+                for k in r.as_object().ok_or("`data` rows must be objects")?.keys() {
+                    if !names.contains(&k.as_str()) {
+                        names.push(k);
+                    }
+                }
+            }
+            for n in names {
+                let col: Vec<Value> = rows
+                    .iter()
+                    .map(|r| r.get(n).cloned().unwrap_or(Value::Null))
+                    .collect();
+                data = data.column(n, json_column(&Value::Array(col)));
+            }
+        }
+        (None, Value::Object(m)) => {
+            for (k, c) in m {
+                data = data.column(k.clone(), json_column(c));
+            }
+        }
+        _ => return Err("`data` must be {field: [values]} or [{field: value}, …]".into()),
+    }
+    Ok(data)
+}
+
+/// An encoding channel: a field name or `{field, type, aggregate, bin,
+/// title, scale: {type: "log"}}`.
+fn grammar_field(v: &Value) -> Option<Field> {
+    if let Some(name) = v.as_str() {
+        return Some(Field::new(name));
+    }
+    let mut fd = Field::new(s(v, "field").unwrap_or(""));
+    fd.kind = s(v, "type").and_then(|t| {
+        Some(match t.to_ascii_lowercase().as_str() {
+            "quantitative" | "q" | "number" => Kind::Quantitative,
+            "nominal" | "n" | "category" => Kind::Nominal,
+            "ordinal" | "o" => Kind::Ordinal,
+            "temporal" | "t" | "time" | "date" => Kind::Temporal,
+            _ => return None,
+        })
+    });
+    fd.aggregate = s(v, "aggregate").and_then(Aggregate::parse);
+    fd.bin = match v.get("bin") {
+        Some(Value::Bool(true)) => Some(0),
+        Some(Value::Number(n)) => n.as_f64().map(|n| n as usize),
+        Some(o @ Value::Object(_)) => Some(f(o, "maxbins").unwrap_or(0.0) as usize),
+        _ => None,
+    };
+    fd.title = s(v, "title").map(str::to_string);
+    fd.log = v
+        .get("scale")
+        .and_then(|sc| s(sc, "type"))
+        .is_some_and(|t| t == "log");
+    (!fd.name.is_empty() || fd.aggregate.is_some()).then_some(fd)
+}
+
+/// A grammar-of-graphics panel: `data`, `mark` and `encoding`.
+fn grammar_chart(p: &Value) -> Result<grammar::Chart> {
+    let data = grammar_data(p.get("data").ok_or("`mark` needs `data`")?)?;
+    let mark_name = match p.get("mark") {
+        Some(Value::String(m)) => m.as_str(),
+        Some(o) => s(o, "type").unwrap_or(""),
+        None => "",
+    };
+    let (mark, marker) =
+        Mark::parse(mark_name).ok_or_else(|| format!("unknown mark `{mark_name}`"))?;
+    let mut c = grammar::Chart::new(data, mark).marker(marker);
+    let e = p.get("encoding").cloned().unwrap_or(Value::Null);
+    let field = |k: &str| e.get(k).and_then(grammar_field);
+    // `{"aggregate": "count"}` without a field: counts (bars).
+    let real = |f: Option<Field>| f.filter(|f| !f.name.is_empty());
+    if let Some(x) = real(field("x")) {
+        c = c.x(x);
+    }
+    if let Some(y) = real(field("y")) {
+        c = c.y(y);
+    }
+    if let Some(col) = real(field("color").or_else(|| field("fill"))) {
+        c = c.color(col);
+    }
+    if let Some(sz) = real(field("size")) {
+        c = c.size(sz);
+    }
+    let facet = field("facet")
+        .or_else(|| field("column"))
+        .or_else(|| field("row"))
+        .or_else(|| p.get("facet").and_then(grammar_field));
+    if let Some(fc) = real(facet) {
+        let cols = f(p, "columns").or_else(|| e.get("facet").and_then(|x| f(x, "columns")));
+        let cols = match (cols, e.get("row").is_some()) {
+            (Some(n), _) => n as usize,
+            (None, true) => 1,
+            _ => 0,
+        };
+        c = c.facet(fc, cols);
+    }
+    if let Some(m) = s(p, "stack").or_else(|| s(&e, "stack")) {
+        c = c.stack(match m {
+            "grouped" | "dodge" | "none" => BarMode::Grouped,
+            "normalize" | "percent" => BarMode::Percent,
+            "overlay" => BarMode::Overlay,
+            _ => BarMode::Stacked,
+        });
+    }
+    if p.get("stack") == Some(&Value::Bool(false)) {
+        c = c.stack(BarMode::Grouped);
+    }
+    if let Some(cm) = s(p, "colormap") {
+        c = c.colormap(colormap(cm));
+    }
+    if let Some(t) = s(p, "title") {
+        c = c.title(t);
+    }
+    Ok(c)
+}
+
+#[cfg(test)]
+mod grammar_tests {
+    use serde_json::json;
+
+    #[test]
+    fn grammar_specs_from_columns_rows_and_arrays() {
+        let rows = json!([
+            {"g": "a", "x": 1, "y": 2}, {"g": "b", "x": 2, "y": 3},
+            {"g": "a", "x": 3, "y": 1}, {"g": "b", "x": 4, "y": 5}
+        ]);
+        for (mark, enc) in [
+            ("point", json!({"x": "x", "y": "y", "color": "g"})),
+            ("line", json!({"x": "x", "y": "y", "color": "g"})),
+            (
+                "bar",
+                json!({"x": "g", "y": {"field": "y", "aggregate": "mean"}}),
+            ),
+            ("bar", json!({"x": {"field": "x", "bin": true}})),
+            ("bar", json!({"x": "g", "y": {"aggregate": "count"}})),
+            ("boxplot", json!({"x": "g", "y": "y"})),
+            (
+                "rect",
+                json!({"x": "g", "y": {"field": "x", "type": "ordinal"}, "color": "y"}),
+            ),
+        ] {
+            let v = json!({"data": rows, "mark": mark, "encoding": enc, "title": "t"});
+            let mut fig = super::figure(&v).unwrap_or_else(|e| panic!("{mark}: {e}"));
+            assert!(fig.to_svg().contains(">t<"), "{mark}");
+        }
+        // Vega-Lite's {"values": rows}, columns, facets and panels.
+        let v = json!({"data": {"values": rows}, "mark": "point",
+            "encoding": {"x": "x", "y": "y", "facet": {"field": "g"}}});
+        assert_eq!(super::figure(&v).unwrap().all_axes().count(), 2);
+        let v = json!({"panels": [{"data": {"x": [1, 2], "y": [3, 4]}, "mark": "line",
+            "encoding": {"x": "x", "y": "y"}}, {"type": "pie", "labels": ["a"], "values": [1]}]});
+        assert!(super::figure(&v).is_ok());
+        let x = [1.0, 2.0, 3.0];
+        let v = json!({"data": {"x": "@x", "y": "@x"}, "mark": "point", "encoding": {"x": "x", "y": "y"}});
+        let arrays = [super::Array {
+            name: "x",
+            data: &x,
+            cols: 0,
+        }];
+        assert!(super::with_arrays(&arrays, || super::figure(&v)).is_ok());
+        let bad = json!({"data": rows, "mark": "point", "encoding": {"x": "nope", "y": "y"}});
+        assert!(super::figure(&bad)
+            .err()
+            .unwrap()
+            .contains("no field `nope`"));
+        let bad = json!({"data": rows, "mark": "blob"});
+        assert!(super::figure(&bad).err().unwrap().contains("unknown mark"));
     }
 }

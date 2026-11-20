@@ -30,6 +30,7 @@ pub mod geo;
 pub mod geo_more;
 #[cfg(feature = "gpu")]
 pub(crate) mod gpu;
+pub mod grammar;
 pub mod html;
 pub mod interact;
 pub mod legend;

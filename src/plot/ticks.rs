@@ -86,8 +86,35 @@ fn multiples(min: f64, max: f64, step: f64) -> Vec<f64> {
 /// Linear ticks: about `target` nice values within `[min, max]`.
 pub(crate) fn linear_ticks(min: f64, max: f64, target: usize) -> (Vec<f64>, f64) {
     let (lo, hi) = (min.min(max), min.max(max));
-    let step = nice_step((hi - lo) / target.max(1) as f64);
-    (multiples(lo, hi, step), step)
+    let target = target.max(1);
+    let step = nice_step((hi - lo) / target as f64);
+    let ticks = multiples(lo, hi, step);
+    // Rounding the step up can leave one or two ticks (a range of 22
+    // with room for 4: step 10); then the next smaller nice step is taken
+    // if it does not crowd the axis.
+    if ticks.len() < 3 {
+        let smaller = smaller_nice(step);
+        let more = multiples(lo, hi, smaller);
+        if more.len() <= target + 1 && more.len() > ticks.len() {
+            return (more, smaller);
+        }
+    }
+    (ticks, step)
+}
+
+/// The nice step below `step`: 10 → 5 → 2 → 1 (× 10ⁿ; 2.5 → 1).
+fn smaller_nice(step: f64) -> f64 {
+    let mag = 10f64.powf(step.log10().floor());
+    let m = (step / mag * 1e6).round() / 1e6;
+    if m <= 1.0 {
+        0.5 * mag
+    } else if m <= 2.5 {
+        mag
+    } else if m <= 5.0 {
+        2.0 * mag
+    } else {
+        5.0 * mag
+    }
 }
 
 /// Minor ticks between linear major ticks.
