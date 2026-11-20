@@ -16,7 +16,7 @@ npm install dataviz-rs
 ```html
 <canvas id="c"></canvas>
 <script type="module">
-  import { init, Chart } from "https://cdn.jsdelivr.net/npm/dataviz-rs@0.1.0/index.js";
+  import { init, Chart } from "https://cdn.jsdelivr.net/npm/dataviz-rs@0.2.0/index.js";
   await init();
   const chart = new Chart({
     width: 800, height: 400, title: "Signal",

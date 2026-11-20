@@ -153,7 +153,7 @@ versioning (see "Stability" in the README).
   overflows; group numbers are made dense.
 
 ### Python
-- 0.4.0 (unreleased):
+- 0.4.0:
   - `dv.plot(data, mark, x=, y=, color=, size=, facet=)` and
     `Axes.encode`: grammar of graphics from pandas or Polars DataFrames,
     dicts or row lists, with Altair shorthand (`"mean(mass)"`,
