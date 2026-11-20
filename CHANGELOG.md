@@ -3,6 +3,9 @@
 ## Unreleased
 
 ### Changed
+- Windows send a frame only when it changed (plus twice a second):
+  an idle window showing a chart uses 0.2–0.7 % of a core instead of 7 %.
+  The RGBA copy for overlays is made only while an overlay is drawn.
 - Axes left with one or two ticks after rounding the step up (a range of
   22 with room for 4 ticks used to show only 40 and 50) take the next
   smaller nice step.

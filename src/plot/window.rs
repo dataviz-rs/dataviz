@@ -184,6 +184,7 @@ impl Figure {
         let mut under: Vec<u32> = Vec::new();
         let mut buffer: Vec<u32> = Vec::new();
         let mut dirty = true;
+        let mut last_present = Instant::now();
         let mut drag: Option<(f64, f64, usize)> = None;
         let mut box_start: Option<(f64, f64, usize)> = None;
         let mut hover = true;
@@ -502,17 +503,17 @@ impl Figure {
                 last_mouse = (f64::NAN, f64::NAN);
             }
 
+            // Only a changed frame goes to the window; otherwise events are
+            // handled without copying pixels (an idle window costs ~0 CPU).
+            let mut present = dirty;
             if dirty {
                 layouts = self.frame(&mut base)?;
                 if let Some(r) = &recording {
                     r.send(&base);
                 }
                 base.write_0rgb(&mut plain);
+                // RGBA for overlays is made from it when one is drawn.
                 under.clear();
-                under.extend(plain.iter().map(|&p| {
-                    // 0RGB → opaque RGBA bytes (overlays draw over these).
-                    u32::from_ne_bytes([(p >> 16) as u8, (p >> 8) as u8, p as u8, 255])
-                }));
                 dirty = false;
                 last_mouse = (f64::NAN, f64::NAN);
             }
@@ -526,6 +527,7 @@ impl Figure {
                 || selecting.is_some()
                 || slider_drag.is_some();
             if overlay_needed {
+                present = true;
                 last_mouse = m;
                 let fonts = self.fonts();
                 let mut nodes = Vec::new();
@@ -646,6 +648,13 @@ impl Figure {
                     buffer.extend_from_slice(&plain);
                 } else {
                     // Draw the overlay straight over a copy of the frame.
+                    if under.len() != plain.len() {
+                        under.clear();
+                        under.extend(plain.iter().map(|&p| {
+                            // 0RGB → opaque RGBA bytes.
+                            u32::from_ne_bytes([(p >> 16) as u8, (p >> 8) as u8, p as u8, 255])
+                        }));
+                    }
                     buffer.extend_from_slice(&under);
                     let mut scene = Scene::new(w as f64, h as f64);
                     scene.background = None;
@@ -661,9 +670,19 @@ impl Figure {
                     super::raster::premul_to_0rgb_in_place(&mut buffer, 1);
                 }
             }
-            window
-                .update_with_buffer(&buffer, w, h)
-                .map_err(|e| Error::Render(e.to_string()))?;
+            // Twice a second anyway: a window uncovered without a
+            // compositor gets its pixels back.
+            if present
+                || buffer.len() != w * h
+                || last_present.elapsed() >= Duration::from_millis(500)
+            {
+                last_present = Instant::now();
+                window
+                    .update_with_buffer(&buffer, w, h)
+                    .map_err(|e| Error::Render(e.to_string()))?;
+            } else {
+                window.update();
+            }
         }
         if let Some(r) = recording {
             r.stop();
