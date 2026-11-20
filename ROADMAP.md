@@ -16,6 +16,8 @@ then breadth. There is no backward-compatibility promise before 1.0.
       the camera moves (cartoons rebuild their splines every frame today)
 - [ ] SIMD (std::simd once stable) for the rasterizer's coverage and blend loops
 - [ ] Incremental redraw of streaming charts (only the plot area that changed)
+- [x] Idle windows send no frames (0.5 % CPU instead of 7 %)
+- [x] GPU: integrated adapter on request (`DATAVIZ_GPU_POWER=low`, opens in ~90 ms)
 
 ## Charts
 
@@ -24,10 +26,16 @@ then breadth. There is no backward-compatibility promise before 1.0.
 - [x] 3D: volume rendering (ray-marched), maximum intensity projection
 - [x] 3D: point clouds: hidden points culled per quarter pixel (1 M points: 73 ms per frame on the CPU)
 - [x] Network: hierarchical edge bundling, arc diagrams
+- [x] Grammar of graphics (data + mark + encodings, facets) in Rust, JSON, Python
+- [x] Volume files: NIfTI, VTK structured points, MetaImage
+- [ ] DICOM series (a directory of slices) as volumes
+- [ ] Shaded (gradient-lit) volume rendering, on the GPU
 
 ## Interactivity
 
 - [x] Linked brushing between subplots in the window and in HTML output
+- [x] Chart drawing tools: trend lines, rays, price levels, Fibonacci (window keys T, L, F)
+- [x] Callbacks: click, hover and view events in HTML, Jupyter widgets, npm, React, Svelte
 - [x] 2D HTML output with zoom/pan and hover tooltips (3D already rotates)
 - [x] Animated WebP output (GIF, APNG and video already work)
 
@@ -36,6 +44,10 @@ then breadth. There is no backward-compatibility promise before 1.0.
 - [x] npm package of the WASM build (canvas renderer + `spec` JSON input)
 - [x] Polars/Arrow column inputs in the Python bindings without copies
 - [x] Interactive Jupyter widget (rotate 3D, zoom) for the Python `Figure`
+- [x] C and C++ API (`capi/`) on Linux, macOS, Windows, iOS, Android
+- [x] matplotlib-style `dataviz.pyplot` and Altair-style `dv.plot` in Python
+- [ ] Prebuilt C/C++ libraries attached to GitHub releases
+- [ ] Release dataviz 0.19, Python 0.4.0, npm 0.2.0
 
 ## Quality
 
