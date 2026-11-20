@@ -379,6 +379,26 @@ await init();
 new Chart({ type: "line", x: [0, 1, 2], y: [1, 3, 2] }).mount(canvas);
 ```
 
+## C and C++
+
+A C library with a header-only C++17 wrapper ([`capi/`](capi)) for Linux,
+macOS and Windows, plus static libraries for iOS and Android. It covers
+every chart type and all outputs, raw pixels for your own UI,
+interactive windows and live data. Large arrays are passed as pointers,
+never as JSON text. With CMake:
+
+```cmake
+add_subdirectory(dataviz/capi dataviz)
+target_link_libraries(app PRIVATE dataviz::dataviz)
+```
+
+```cpp
+#include "dataviz.hpp"
+dataviz::Figure fig(900, 500);
+fig.axes().line(t, v, dataviz::Style().label("signal"));
+fig.save("signal.png");
+```
+
 ## Python
 
 The same renderer for Python ([`python/`](python)): NumPy, pandas and

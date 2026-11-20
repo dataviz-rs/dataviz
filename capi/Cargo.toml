@@ -1,0 +1,26 @@
+[package]
+name = "dataviz-c"
+version = "0.18.0"
+edition = "2021"
+rust-version = "1.89"
+description = "C and C++ API of dataviz (include/dataviz.h, include/dataviz.hpp)."
+license = "MIT"
+repository = "https://github.com/dataviz-rs/dataviz"
+publish = false
+
+[lib]
+name = "dataviz_c"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+[features]
+default = ["window", "pdf"]
+# Interactive windows (`dv_figure_show`); off for iOS/Android and servers.
+window = ["dataviz/window"]
+# PDF output.
+pdf = ["dataviz/pdf"]
+# GPU rendering (`dv_figure_gpu`): Vulkan, Metal, DirectX 12, OpenGL.
+gpu = ["dataviz/gpu"]
+
+[dependencies]
+dataviz = { path = "..", default-features = false, features = ["spec", "formats", "full-font", "shaping"] }
+serde_json = "1"

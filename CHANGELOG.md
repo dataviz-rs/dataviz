@@ -11,6 +11,18 @@
   (`dataviz-rs/svelte`).
 
 ### Added
+- C and C++ API (`capi/`): `dataviz.h` and a header-only C++17 wrapper
+  `dataviz.hpp`, CMake support (shared or static), tested on Linux, macOS
+  and Windows; static libraries for iOS and Android. It has direct
+  functions for lines, scatter, histograms, heatmaps, density, 3D,
+  surfaces and candlesticks, plus `dv_plot` for every chart type of the
+  JSON spec. Raw RGBA rendering and interaction calls let you embed charts
+  in your own UI. Live windows take a per-frame callback.
+- Spec: fields `"@name"` take arrays handed over in memory
+  (`spec::with_arrays`), never as JSON numbers. For a 1 M point line this
+  takes 4 ms instead of 166 ms. Object keys keep their order (e.g. the
+  groups of a violin plot), and line, scatter and bar series accept
+  `label` as well as `name`.
 - Density images of millions to billions of points (`Axes::density`,
   Python `Axes.density`, spec `density_map`), as Datashader: points counted
   per screen pixel for the visible range (exact at every zoom), in

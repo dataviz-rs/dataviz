@@ -27,7 +27,7 @@ use serde_json::Value;
 pub const CHART_TYPES: &[(&str, &str, &str)] = &[
     (
         "line",
-        "x, y (or series: [{name, x, y, color}])",
+        "x, y, name? (or series: [{name, x, y, color}])",
         "Lines; several series via `series`.",
     ),
     (
@@ -191,7 +191,76 @@ fn nums(v: &Value, key: &str) -> Result<Vec<f64>> {
     to_nums(a).ok_or_else(|| format!("`{key}` must be an array of numbers"))
 }
 
+/// Arrays handed over in memory instead of as JSON numbers (see
+/// [`with_arrays`]): a field `"@name"` takes array `name`.
+#[derive(Clone, Copy, Debug)]
+pub struct Array<'a> {
+    /// The name a spec refers to as `"@name"`.
+    pub name: &'a str,
+    /// The values (row-major for matrices).
+    pub data: &'a [f64],
+    /// Row length for matrix fields (`z` of heatmaps, surfaces, …); 0 for
+    /// plain arrays.
+    pub cols: usize,
+}
+
+thread_local! {
+    static ARRAYS: std::cell::RefCell<Vec<(String, *const f64, usize, usize)>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Runs `f` (which builds figures from specs) with `arrays` available to
+/// the specs as `"@name"` fields, so large data never goes through JSON
+/// text or `Value` numbers: one copy from `data` into the chart.
+///
+/// ```
+/// use dataviz::plot::spec::{self, Array};
+/// let x = [1.0, 2.0, 3.0];
+/// let y = [2.0, 1.0, 3.0];
+/// let v = serde_json::json!({"type": "line", "x": "@x", "y": "@y"});
+/// let fig = spec::with_arrays(
+///     &[Array { name: "x", data: &x, cols: 0 }, Array { name: "y", data: &y, cols: 0 }],
+///     || spec::figure(&v),
+/// );
+/// assert!(fig.is_ok());
+/// ```
+pub fn with_arrays<R>(arrays: &[Array<'_>], f: impl FnOnce() -> R) -> R {
+    struct Clear;
+    impl Drop for Clear {
+        fn drop(&mut self) {
+            ARRAYS.with(|a| a.borrow_mut().clear());
+        }
+    }
+    ARRAYS.with(|a| {
+        let mut a = a.borrow_mut();
+        a.clear();
+        a.extend(
+            arrays
+                .iter()
+                .map(|x| (x.name.to_string(), x.data.as_ptr(), x.data.len(), x.cols)),
+        );
+    });
+    let _clear = Clear;
+    f()
+}
+
+/// The array named by a `"@name"` string and its row length.
+fn external<R>(a: &Value, f: impl FnOnce(&[f64], usize) -> R) -> Option<R> {
+    let name = a.as_str()?.strip_prefix('@')?;
+    ARRAYS.with(|arrays| {
+        let arrays = arrays.borrow();
+        let &(_, p, n, cols) = arrays.iter().find(|x| x.0 == name)?;
+        // SAFETY: registered by `with_arrays` from a live slice, and
+        // cleared before that call returns.
+        let data = unsafe { std::slice::from_raw_parts(p, n) };
+        Some(f(data, cols))
+    })
+}
+
 fn to_nums(a: &Value) -> Option<Vec<f64>> {
+    if let Some(v) = external(a, |d, _| d.to_vec()) {
+        return Some(v);
+    }
     a.as_array()?
         .iter()
         .map(|x| match x {
@@ -298,6 +367,16 @@ fn b(v: &Value, key: &str) -> bool {
 }
 
 fn matrix(v: &Value, key: &str) -> Result<Vec<Vec<f64>>> {
+    if let Some(m) = v.get(key).and_then(|a| {
+        external(a, |d, cols| {
+            if cols == 0 {
+                return Err(format!("`{key}` needs a matrix (rows × cols) array"));
+            }
+            Ok(d.chunks_exact(cols).map(<[f64]>::to_vec).collect())
+        })
+    }) {
+        return m;
+    }
     let a = v
         .get(key)
         .and_then(Value::as_array)
@@ -478,7 +557,7 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                 let y = nums(sr, "y")?;
                 let x =
                     opt_nums(sr, "x").unwrap_or_else(|| (0..y.len()).map(|i| i as f64).collect());
-                let name = s(sr, "name").map(str::to_string);
+                let name = s(sr, "name").or(s(sr, "label")).map(str::to_string);
                 let color = s(sr, "color");
                 match kind.as_str() {
                     "scatter" => {
@@ -521,7 +600,7 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                 } else {
                     ax.bar(cats.clone(), v)
                 };
-                if let Some(n) = s(sr, "name") {
+                if let Some(n) = s(sr, "name").or(s(sr, "label")) {
                     bars.label(n);
                 }
                 if let Some(c) = s(sr, "color") {

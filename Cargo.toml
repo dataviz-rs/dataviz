@@ -26,7 +26,7 @@ png = "0.18"
 resvg = "0.50"
 unicode-bidi = "0.3.18"
 svg2pdf = { version = "0.13", optional = true }
-serde_json = { version = "1", optional = true }
+serde_json = { version = "1", optional = true, features = ["preserve_order"] }
 # Decompresses the states/provinces map (already used by png).
 flate2 = { version = "1", optional = true }
 wgpu = { version = "30", optional = true }
@@ -63,7 +63,7 @@ ndarray = "0.16"
 image = { version = "0.25.6", default-features = false, features = ["png", "gif"] }
 
 [workspace]
-members = [".", "mcp", "python", "wasm"]
+members = [".", "capi", "mcp", "python", "wasm"]
 
 # WebAssembly build of `wasm/` (the npm package): small and fast.
 [profile.wasm]

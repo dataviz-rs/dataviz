@@ -36,10 +36,10 @@ jobs:
       - name: Headless build (no default features)
         run: cargo build --no-default-features
 
-      - name: MCP server (clippy, tests)
+      - name: MCP server and C API (clippy, tests)
         run: |
-          cargo clippy -p dataviz-mcp --all-targets -- -D warnings
-          cargo test -p dataviz-mcp
+          cargo clippy -p dataviz-mcp -p dataviz-c --all-targets -- -D warnings
+          cargo test -p dataviz-mcp -p dataviz-c
 
       - name: Docs
         run: cargo doc --no-deps --all-features
@@ -73,3 +73,47 @@ jobs:
         run: |
           cargo test --features pdf
           cargo test -p dataviz-mcp
+
+  # The C and C++ API (capi/) through CMake on every desktop OS, shared and
+  # static, then the mobile targets (static libraries without windows).
+  c-api:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        static: [OFF, ON]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ". -> capi-build/cargo"
+      - name: Configure
+        run: cmake -S capi -B capi-build -DDATAVIZ_TESTS=ON -DDATAVIZ_STATIC=${{ matrix.static }} -DCMAKE_BUILD_TYPE=Release
+      - name: Build
+        run: cmake --build capi-build --config Release
+      - name: Test
+        run: ctest --test-dir capi-build -C Release --output-on-failure
+
+  c-api-mobile:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: aarch64-linux-android
+          - os: macos-latest
+            target: aarch64-apple-ios
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Static library for ${{ matrix.target }}
+        run: cargo rustc -p dataviz-c --release --target ${{ matrix.target }} --no-default-features --crate-type staticlib
