@@ -12,8 +12,10 @@
     their time there.
 
   For 1 M colormapped points a frame takes 73 ms instead of 3.3 s, and
-  for 100 k points 12 ms instead of 210 ms. Colormapped 2D scatter plots
-  gain as well.
+  for 100 k points 12 ms instead of 210 ms.
+- Colormapped 2D scatter plots of more than 20 000 opaque points draw
+  only the last marker per quarter-pixel cell (exact). For 1 M points:
+  128 ms instead of 256 ms.
 - Windows send a frame only when it changed (plus twice a second):
   an idle window showing a chart uses 0.2–0.7 % of a core instead of 7 %.
   The RGBA copy for overlays is made only while an overlay is drawn.

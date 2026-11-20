@@ -266,8 +266,42 @@ impl Series for Scatter {
                 return;
             }
         }
+        // Many opaque colormapped markers of one size: a later marker in the
+        // same quarter-pixel cell paints over every pixel of an earlier one
+        // (same shape, drawn later), so only the last per cell is drawn.
+        let hidden = (!dedupe
+            && self.x.len() > 20_000
+            && self.values.is_some()
+            && self.sizes.is_none()
+            && self.names.is_none()
+            && self.edge.is_none()
+            && base.a >= 1.0)
+            .then(|| {
+                let mut taken = vec![0u64; (gw * gh).div_ceil(64)];
+                let mut hidden = vec![0u64; self.x.len().div_ceil(64)];
+                for i in (0..self.x.len()).rev() {
+                    let (px, py) = ctx.point(self.x[i], self.y[i]);
+                    let (qx, qy) = (((px - gx) * 4.0).floor(), ((py - gy) * 4.0).floor());
+                    if !(qx >= 0.0 && qy >= 0.0 && (qx as usize) < gw && (qy as usize) < gh) {
+                        hidden[i / 64] |= 1 << (i % 64);
+                        continue;
+                    }
+                    let k = qy as usize * gw + qx as usize;
+                    if taken[k / 64] & (1 << (k % 64)) != 0 {
+                        hidden[i / 64] |= 1 << (i % 64);
+                    }
+                    taken[k / 64] |= 1 << (k % 64);
+                }
+                hidden
+            });
         let mut offsets: Vec<(f32, f32)> = Vec::new();
         for i in 0..self.x.len() {
+            if hidden
+                .as_ref()
+                .is_some_and(|h| h[i / 64] & (1 << (i % 64)) != 0)
+            {
+                continue;
+            }
             let (px, py) = ctx.point(self.x[i], self.y[i]);
             if dedupe {
                 let (qx, qy) = (((px - gx) * 4.0).floor(), ((py - gy) * 4.0).floor());
