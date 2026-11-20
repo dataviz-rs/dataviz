@@ -1,8 +1,14 @@
 # Changelog
 
-## Unreleased
+## 0.19.1
 
 ### Fixed
+- 3D scatter plots of a million same-colored points on the CPU took 24 s
+  instead of 0.15 s in 0.19.0. Culling hidden points split the runs of
+  batched sprites, and instance sprites were then found by a linear
+  search. Runs now skip culled points, sprites are looked up in a hash
+  map, and points that are already batched (mostly one look) are not
+  culled.
 - C API: the shared library carries its name (SONAME on Linux and
   Android, `@rpath` install name on macOS and iOS), so programs find it
   through their rpath instead of the build path they linked from.

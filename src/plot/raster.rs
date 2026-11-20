@@ -1945,6 +1945,8 @@ struct Ctx<'a> {
     mask: Option<(Clip, Mask)>,
     /// Sprites of `Node::Instances` templates.
     instance_sprites: Vec<InstanceSprite>,
+    /// Position of each instance sprite by (template, quarter offsets).
+    instance_index: HashMap<(usize, u8, u8), usize>,
     /// Sphere shading by (radius × 8, quarter-pixel x, y).
     sphere_shades: HashMap<(u32, u8, u8), SphereShade>,
     /// Coverage masks of filled circles by (radius × 8, quarter offsets).
@@ -2137,6 +2139,7 @@ impl<'a> Ctx<'a> {
             clip: Clip::new(0.0, 0.0, w as f32, h as f32),
             mask: None,
             instance_sprites: Vec::new(),
+            instance_index: HashMap::default(),
             sphere_shades: HashMap::default(),
             disc_masks: HashMap::default(),
             pristine: None,
@@ -2177,11 +2180,7 @@ impl<'a> Ctx<'a> {
                 .get(last)
                 .is_some_and(|s| s.0 == key && s.1 == qx && s.2 == qy);
             if !hit {
-                last = match self
-                    .instance_sprites
-                    .iter()
-                    .position(|s| s.0 == key && s.1 == qx && s.2 == qy)
-                {
+                last = match self.instance_index.get(&(key, qx, qy)).copied() {
                     Some(i) => i,
                     None => {
                         let Some((sp, ox, oy)) =
@@ -2191,6 +2190,8 @@ impl<'a> Ctx<'a> {
                         };
                         self.instance_sprites
                             .push((key, qx, qy, Sprite::new(sp), ox, oy));
+                        self.instance_index
+                            .insert((key, qx, qy), self.instance_sprites.len() - 1);
                         self.instance_sprites.len() - 1
                     }
                 };

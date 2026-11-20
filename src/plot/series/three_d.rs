@@ -517,6 +517,23 @@ fn cull_hidden_balls(keys: &[u64], prims: &mut [Prim]) {
     if balls().take(20_000).count() < 20_000 {
         return;
     }
+    // Balls that mostly share their look with the next one in drawing
+    // order are drawn as batched sprites, which costs less than culling.
+    let mut prev = None;
+    let (mut changes, mut seen) = (0, 0);
+    for &key in keys.iter().take(8192) {
+        if let Prim::Ball { r, color, .. } = prims[idx(key)] {
+            let look = (r.to_bits(), color);
+            if prev.is_some_and(|p| p != look) {
+                changes += 1;
+            }
+            prev = Some(look);
+            seen += 1;
+        }
+    }
+    if changes * 10 < seen {
+        return;
+    }
     let (mut x0, mut y0, mut x1, mut y1) = (f32::MAX, f32::MAX, f32::MIN, f32::MIN);
     for (x, y) in balls() {
         (x0, y0, x1, y1) = (x0.min(x), y0.min(y), x1.max(x), y1.max(y));
@@ -1365,6 +1382,8 @@ impl Scene3d<'_> {
                     let mut offsets = vec![(x, y)];
                     while let Some(&key) = keys.get(k) {
                         match prims[idx(key)] {
+                            // Culled (hidden) balls do not end the run.
+                            Prim::Taken => k += 1,
                             Prim::Ball {
                                 x: bx,
                                 y: by,
