@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+- C API: the shared library carries its name (SONAME on Linux and
+  Android, `@rpath` install name on macOS and iOS), so programs find it
+  through their rpath instead of the build path they linked from.
+
 ## 0.19.0
 
 ### Changed
