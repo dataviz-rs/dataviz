@@ -12,13 +12,30 @@
 <a href="https://pypi.org/project/dataviz-rs/">
     <img style="display: inline!important" src="https://img.shields.io/pypi/v/dataviz-rs.svg"></img>
 </a>
+<a href="https://www.npmjs.com/package/dataviz-rs">
+    <img style="display: inline!important" src="https://img.shields.io/npm/v/dataviz-rs.svg"></img>
+</a>
+<a href="https://github.com/dataviz-rs/dataviz/stargazers">
+    <img style="display: inline!important" src="https://img.shields.io/github/stars/dataviz-rs/dataviz?style=social"></img>
+</a>
 <a href="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml">
     <img style="display: inline!important" src="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml/badge.svg"></img>
 </a>
 
-**Fast, pure-Rust plotting: 120+ chart types, interactive windows, live
-data, animations, maps, math and every language — with the least CPU and
-memory of the Rust plotting libraries.**
+**Fast plotting for Rust, Python, JavaScript and C/C++: 120+ chart types,
+interactive windows, live data, 3D, maps and a grammar of graphics.
+Up to 50× faster than matplotlib, and the fastest and leanest of the Rust
+plotting libraries.**
+
+```rust ignore
+let mut fig = Figure::new(900, 500);
+fig.axes().line(&x, &y).label("signal");
+fig.save("signal.png")?;          // or fig.show() for a live, zoomable window
+```
+
+```python
+import dataviz.pyplot as plt      # your matplotlib code, many times faster
+```
 
 <table>
 <tr>
@@ -538,4 +555,8 @@ domain).
 ## Contributing
 
 Bug reports, ideas and pull requests are welcome at
-<https://github.com/dataviz-rs/dataviz>.
+<https://github.com/dataviz-rs/dataviz>. Issues labelled
+[good first issue](https://github.com/dataviz-rs/dataviz/labels/good%20first%20issue)
+are a good place to start.
+
+If dataviz saves you time, a ⭐ on GitHub helps others find it.
