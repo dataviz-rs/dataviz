@@ -3,6 +3,10 @@
 ## Unreleased
 
 ### Changed
+- GPU back end: `DATAVIZ_GPU_POWER=low` picks the integrated GPU. It
+  opens in ~90 ms instead of ~260 ms and draws less power, but its frames
+  are slower than a discrete GPU's (21 ms against 2.8 ms for a 100 k
+  point line here). By default the fastest GPU is used.
 - 3D point clouds on the CPU are 13–45× faster:
   - opaque points hidden behind a nearer point of at least the same size
     are dropped before drawing (exact: the same quarter-pixel coverage);

@@ -119,7 +119,11 @@ pub enum Backend {
     },
     /// The GPU (`gpu` feature) through the system's Vulkan, Metal, DirectX 12
     /// or OpenGL driver. Rendering fails with [`Error::Render`] when no GPU
-    /// is available.
+    /// is available. The GPU opens on another thread as soon as this back
+    /// end is chosen. The fastest GPU is used: a discrete GPU draws frames
+    /// several times faster but opens more slowly (~260 ms against ~90 ms)
+    /// and draws more power. Set `DATAVIZ_GPU_POWER=low` to use the
+    /// integrated GPU instead, for one-off images or laptops on battery.
     Gpu,
 }
 

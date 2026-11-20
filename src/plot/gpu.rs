@@ -208,8 +208,18 @@ impl Gpu {
                 wgpu::InstanceFlags::empty()
             };
             let instance = wgpu::Instance::new(desc.with_env());
+            // The discrete GPU draws frames fastest (2.8 ms vs 21 ms for a
+            // 100 k point line here) but takes longer to open (~260 ms vs
+            // ~90 ms) and more power: `DATAVIZ_GPU_POWER=low` picks the
+            // integrated one (one-off images, laptops on battery).
+            let low =
+                std::env::var("DATAVIZ_GPU_POWER").is_ok_and(|v| v.eq_ignore_ascii_case("low"));
             block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-                power_preference: wgpu::PowerPreference::HighPerformance,
+                power_preference: if low {
+                    wgpu::PowerPreference::LowPower
+                } else {
+                    wgpu::PowerPreference::HighPerformance
+                },
                 ..Default::default()
             }))
         };
