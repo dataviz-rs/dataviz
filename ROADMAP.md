@@ -3,7 +3,8 @@
 What is done lives in the [CHANGELOG](CHANGELOG.md) and the
 [guide](https://dataviz-rs.github.io/dataviz/). This file lists what is
 next. Priorities: speed and low CPU/GPU use first, then visual quality,
-then breadth. There is no backward-compatibility promise before 1.0.
+then breadth. From 1.0 on, releases follow semantic versioning (see the
+Stability section of the README): new features in 1.x minor versions.
 
 ## Performance
 
@@ -50,7 +51,7 @@ then breadth. There is no backward-compatibility promise before 1.0.
 - [x] C and C++ API (`capi/`) on Linux, macOS, Windows, iOS, Android
 - [x] matplotlib-style `dataviz.pyplot` and Altair-style `dv.plot` in Python
 - [x] Prebuilt C/C++ libraries attached to GitHub releases (`c-v*` tags; workflow ready, no tag yet)
-- [ ] Release dataviz 0.19, Python 0.4.0, npm 0.2.0
+- [x] Release dataviz 0.19 and 1.0, Python 0.4.0, npm 0.2.0
 
 ## Quality
 

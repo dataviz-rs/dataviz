@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 /// Legend placement.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum LegendPosition {
     /// The inside corner covering the least data (default).
     #[default]

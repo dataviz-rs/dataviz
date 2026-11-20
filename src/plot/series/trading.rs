@@ -363,6 +363,7 @@ impl Series for MarketProfile {
 
 /// One leg of an option strategy.
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum OptionLeg {
     /// Call: strike, premium paid (received when `qty` < 0), quantity.
     Call {

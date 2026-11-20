@@ -9,6 +9,7 @@ use std::path::Path;
 
 /// Errors from rendering or saving a figure.
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum Error {
     /// Reading or writing a file failed.
     Io(std::io::Error),
@@ -158,6 +159,7 @@ impl Backend {
 
 /// Output file formats.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Format {
     /// Scalable vector graphics.
     Svg,

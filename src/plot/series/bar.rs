@@ -9,6 +9,7 @@ use std::any::Any;
 
 /// Where value labels go.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum LabelPosition {
     /// Just outside the end of the bar.
     Outside,
@@ -375,6 +376,7 @@ impl Series for Bars {
 
 /// Bar layout for several series per category.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum BarMode {
     /// Side by side.
     Grouped,

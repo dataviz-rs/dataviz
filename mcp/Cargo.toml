@@ -17,5 +17,5 @@ name = "dataviz-mcp"
 path = "src/main.rs"
 
 [dependencies]
-dataviz = { version = "0.19", path = "..", default-features = false, features = ["pdf", "spec", "formats", "full-font", "shaping", "gzip"] }
+dataviz = { version = "1", path = "..", default-features = false, features = ["pdf", "spec", "formats", "full-font", "shaping", "gzip"] }
 serde_json = "1"

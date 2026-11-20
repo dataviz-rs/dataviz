@@ -493,6 +493,7 @@ impl Series for Gantt {
 
 /// Annotations drawn in data coordinates.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub enum Annotation {
     /// Horizontal line at y.
     HLine(f64),

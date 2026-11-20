@@ -176,6 +176,7 @@ impl Extent {
 
 /// How a series appears in the legend.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum LegendSymbol {
     /// A line sample, optionally with a marker.
     Line {

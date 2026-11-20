@@ -12,6 +12,7 @@ use std::sync::Arc;
 
 /// How the samples along a ray become a pixel.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum VolumeMode {
     /// Emission and absorption front to back: a translucent cloud.
     #[default]

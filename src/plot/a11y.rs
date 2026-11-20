@@ -16,6 +16,7 @@ use super::series::{short, LegendSymbol};
 /// A color vision deficiency (full severity; Machado, Oliveira and
 /// Fernandes 2009, achromatopsia as luminance).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Cvd {
     /// No red cones (about 1 % of men).
     Protanopia,

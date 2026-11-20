@@ -16,6 +16,7 @@ use std::sync::Arc;
 
 /// How counts become colors.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DensityScale {
     /// Histogram equalization: every color covers about as many pixels
     /// (shows structure across orders of magnitude; Datashader's default).

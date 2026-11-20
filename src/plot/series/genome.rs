@@ -648,6 +648,7 @@ impl Series for PhyloTree {
 
 /// Kinds of genomic alterations in an oncoprint.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Alteration {
     /// Copy number gain (full red cell).
     Amplification,

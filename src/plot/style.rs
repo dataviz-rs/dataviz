@@ -5,6 +5,7 @@ use super::scene::{Node, PathCmd, Stroke};
 
 /// Line dash style. Patterns scale with the line width.
 #[derive(Clone, Debug, PartialEq, Default)]
+#[non_exhaustive]
 pub enum Dash {
     /// Continuous line.
     #[default]
@@ -47,6 +48,7 @@ impl Dash {
 
 /// Marker shapes for scatter plots and line markers.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum Marker {
     /// No marker.
     None,

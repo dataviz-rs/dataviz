@@ -17,6 +17,7 @@ use super::ticks;
 
 /// What kind of coordinate frame an axes has.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum AxesKind {
     /// x/y axes (default).
     #[default]

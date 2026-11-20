@@ -5,6 +5,7 @@ use super::ticks::TickFormat;
 
 /// Where ticks go.
 #[derive(Clone, Debug, PartialEq, Default)]
+#[non_exhaustive]
 pub enum TickSpec {
     /// Automatic nice ticks.
     #[default]

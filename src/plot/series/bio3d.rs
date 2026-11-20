@@ -614,6 +614,7 @@ fn element(e: &str) -> ElementInfo {
 
 /// How a molecule is drawn.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum MolStyle {
     /// Atoms as balls, bonds as sticks.
     #[default]
@@ -633,6 +634,7 @@ pub enum MolStyle {
 
 /// How a molecule is colored.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum MolColor {
     /// By element (CPK colors).
     #[default]

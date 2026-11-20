@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 /// How tick values are turned into labels.
 #[derive(Clone, Default)]
+#[non_exhaustive]
 pub enum TickFormat {
     /// Chosen from the scale and tick spacing.
     #[default]

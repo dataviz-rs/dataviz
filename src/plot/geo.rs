@@ -29,6 +29,7 @@ use std::sync::{Arc, LazyLock};
 
 /// A map projection: longitude/latitude in degrees → plane coordinates.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
+#[non_exhaustive]
 pub enum Projection {
     /// Plate carrée: longitude and latitude as they are.
     Equirectangular,

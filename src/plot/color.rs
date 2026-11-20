@@ -384,6 +384,7 @@ fn hex(v: u32) -> Color {
 
 /// Categorical color palettes (color cycles).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Palette {
     /// matplotlib/D3 "category10".
     Tab10,
@@ -443,6 +444,7 @@ impl Palette {
 
 /// Continuous colormaps for heatmaps, contours, scatter coloring, …
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Colormap {
     /// Perceptually uniform, blue → green → yellow (default).
     Viridis,

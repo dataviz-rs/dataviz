@@ -10,6 +10,7 @@ use std::any::Any;
 
 /// Step interpolation for step plots.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Step {
     /// The step happens at the start of the interval (value held until x).
     Pre,

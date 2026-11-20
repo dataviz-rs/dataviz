@@ -297,6 +297,7 @@ fn kde_binned(s: &[f64], h: f64, lo: f64, hi: f64, xs: &[f64], norm: f64) -> Vec
 
 /// How histogram bins are chosen.
 #[derive(Clone, Debug, PartialEq)]
+#[non_exhaustive]
 pub enum Bins {
     /// Freedman–Diaconis, falling back to Sturges (default).
     Auto,

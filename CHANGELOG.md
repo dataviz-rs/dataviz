@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0
+
+dataviz 1.0: the API is stable, and 1.x releases follow semantic
+versioning (see "Stability" in the README).
+
+### Changed
+- Public enums that will grow are `#[non_exhaustive]`: `Projection`,
+  `Colormap`, `Palette`, `Marker`, `Dash`, `Format`, `Error`, `Scale`,
+  `Bins`, `LegendPosition`, `BarMode`, `Mark`, `Aggregate`, `Kind`,
+  `VolumeMode`, `DensityScale` and others. Matches on them need a `_`
+  arm, and new variants in 1.x are not breaking changes.
+
 ## 0.19.1
 
 ### Fixed

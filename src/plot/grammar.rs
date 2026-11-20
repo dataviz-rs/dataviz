@@ -111,6 +111,7 @@ impl Data {
 
 /// How a field's values are read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Kind {
     /// Continuous numbers.
     Quantitative,
@@ -124,6 +125,7 @@ pub enum Kind {
 
 /// Summary of the rows that share a position.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Aggregate {
     /// Number of rows.
     Count,
@@ -265,6 +267,7 @@ impl From<String> for Field {
 
 /// The geometric shape that shows each row (or group of rows).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Mark {
     /// Points (scatter, strip and bubble charts).
     Point,

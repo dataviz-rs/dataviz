@@ -2,6 +2,7 @@
 
 /// The mapping of an axis.
 #[derive(Clone, Debug, PartialEq, Default)]
+#[non_exhaustive]
 pub enum Scale {
     /// Linear.
     #[default]

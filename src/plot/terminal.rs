@@ -6,6 +6,7 @@ use super::output::{Error, Pixels};
 
 /// How a figure is drawn with characters.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Default)]
+#[non_exhaustive]
 pub enum TerminalMode {
     /// `▀` with 24-bit foreground/background colors: 1 × 2 pixels per cell.
     #[default]

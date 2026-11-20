@@ -82,7 +82,7 @@ memory of the Rust plotting libraries.**
 
 ```toml
 [dependencies]
-dataviz = "0.19"
+dataviz = "1"
 ```
 
 ```rust no_run
@@ -485,9 +485,9 @@ cartoon with its Ramachandran plot"*, or use `/dataviz:plot` and
 
 ```toml
 [dependencies]
-dataviz = "0.19"
-# dataviz = { version = "0.19", features = ["pdf", "gpu"] }
-# dataviz = { version = "0.19", default-features = false }   # headless / wasm32
+dataviz = "1"
+# dataviz = { version = "1", features = ["pdf", "gpu"] }
+# dataviz = { version = "1", default-features = false }   # headless / wasm32
 ```
 
 | Feature | Default | What it adds |
@@ -498,6 +498,32 @@ dataviz = "0.19"
 
 Requires Rust 1.89 or newer. On Linux the `window` feature needs the usual
 windowing libraries (`libxkbcommon-dev`, `libwayland-dev`).
+
+## Stability
+
+dataviz follows [semantic versioning](https://semver.org) from 1.0 on:
+code written for 1.0 keeps compiling and working with every 1.x release.
+
+- **Covered:**
+  - the public Rust API, with its cargo features (they are kept);
+  - the JSON spec format (fields keep their meaning; new fields and chart
+    types are added);
+  - the C API in `dataviz.h` (functions keep their signatures; new ones
+    are added).
+- **New things come in minor versions (1.1, 1.2, …).** Enums that grow
+  (chart kinds, projections, colormaps, markers, …) are
+  `#[non_exhaustive]`, so a match on them needs a `_` arm.
+- **Fixes come in patch versions.**
+- **Not covered:**
+  - the exact pixels of a rendering (anti-aliasing, layout and tick
+    choices can improve);
+  - items marked `#[doc(hidden)]`;
+  - performance characteristics.
+- **Minimum Rust version:** raised only in minor versions, and noted in
+  the changelog.
+
+The Python (`dataviz-rs` on PyPI) and npm (`dataviz-rs`) packages have
+their own versions.
 
 ## Changelog
 
