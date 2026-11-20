@@ -183,7 +183,7 @@ Chart::new(data, Mark::Bar)
 | Finance & trading | candlestick, OHLC, Heikin-Ashi, Renko, footprint (order flow), market profile (TPO), liquidity heatmap, option payoff (Black–Scholes), implied volatility surface, Bollinger bands, Ichimoku cloud, VWAP, RSI, MACD, Stochastic, ATR, volume profile, order book depth, drawdown, trading-day axis |
 | Grids & fields | heatmap, correlation matrix, calendar heatmap, image, contour lines and fills, quiver |
 | 3D | surface, wireframe, scatter, line, spheres, meshes, ellipsoids, isosurfaces, vectors, bars, text; one shared scene per plot with depth sorting, lighting, perspective and free rotation around x, y and z |
-| Maps | built-in world map and the states/provinces of every country, choropleth by ISO code or name, points, great-circle routes and flow maps, hexbin density maps, web-map tile basemaps (OpenStreetMap), GeoJSON shapes; Robinson, Natural Earth, equirectangular, Mercator |
+| Maps | built-in world map and the states/provinces of every country, choropleth by ISO code or name, points, great-circle routes and flow maps, hexbin density maps, web-map tile basemaps (OpenStreetMap), GeoJSON shapes; Robinson, Natural Earth, Equal Earth, Mollweide, equirectangular, Mercator, orthographic globe, Albers and Lambert conic, stereographic, azimuthal equal-area |
 | Parts of a whole | pie, donut, treemap, sunburst, waffle, marimekko (mosaic), funnel, gauge |
 | Polar | polar line/scatter, radar, rose / wind rose |
 | Relations & flows | sankey, chord diagram, network graph (force-directed), parallel coordinates, slope chart, bump chart, ternary diagram |

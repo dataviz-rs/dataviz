@@ -47,6 +47,82 @@ pub enum Projection {
     /// The globe seen from space above (`lon`, `lat`): the far side is
     /// hidden. Turn it with [`Axes::globe_center`].
     Orthographic { lon: f64, lat: f64 },
+    /// Albers equal-area conic with standard parallels `lat1`, `lat2`,
+    /// centred on (`lon0`, `lat0`): the usual projection for maps of a
+    /// country or continent (USA: -96, 37.5, 29.5, 45.5).
+    Albers {
+        lon0: f64,
+        lat0: f64,
+        lat1: f64,
+        lat2: f64,
+    },
+    /// Lambert conformal conic (shapes kept; aviation, weather, Europe:
+    /// 10, 52, 35, 65).
+    LambertConformal {
+        lon0: f64,
+        lat0: f64,
+        lat1: f64,
+        lat2: f64,
+    },
+    /// Stereographic, centred on (`lon`, `lat`) (polar maps: lat ±90);
+    /// conformal, the hemisphere around the centre.
+    Stereographic { lon: f64, lat: f64 },
+    /// Lambert azimuthal equal-area, centred on (`lon`, `lat`): the
+    /// hemisphere around the centre with true areas (polar regions,
+    /// continents).
+    AzimuthalEqualArea { lon: f64, lat: f64 },
+}
+
+impl Projection {
+    /// Albers for the contiguous United States.
+    pub const USA: Projection = Projection::Albers {
+        lon0: -96.0,
+        lat0: 37.5,
+        lat1: 29.5,
+        lat2: 45.5,
+    };
+    /// Lambert conformal conic for Europe.
+    pub const EUROPE: Projection = Projection::LambertConformal {
+        lon0: 10.0,
+        lat0: 52.0,
+        lat1: 35.0,
+        lat2: 65.0,
+    };
+
+    /// The centre of an azimuthal projection (globe, stereographic, …).
+    fn center(self) -> Option<(f64, f64)> {
+        match self {
+            Projection::Orthographic { lon, lat }
+            | Projection::Stereographic { lon, lat }
+            | Projection::AzimuthalEqualArea { lon, lat } => Some((lon, lat)),
+            _ => None,
+        }
+    }
+
+    /// Plane position of a point of the visible hemisphere in view
+    /// coordinates (azimuthal projections); the rim maps to radius GLOBE_R.
+    fn plane(self, v: [f64; 3]) -> (f64, f64) {
+        let k = match self {
+            // 2 / (1 + z) at the rim is 2.
+            Projection::Stereographic { .. } => 2.0 / (1.0 + v[2]).max(1e-9) / 2.0,
+            // √(2 / (1 + z)) is √2 at the rim.
+            Projection::AzimuthalEqualArea { .. } => {
+                (2.0 / (1.0 + v[2]).max(1e-9)).sqrt() / std::f64::consts::SQRT_2
+            }
+            _ => 1.0,
+        };
+        (v[0] * k * GLOBE_R, v[1] * k * GLOBE_R)
+    }
+
+    /// The central meridian of a conic projection.
+    fn conic(self) -> Option<f64> {
+        match self {
+            Projection::Albers { lon0, .. } | Projection::LambertConformal { lon0, .. } => {
+                Some(lon0)
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Radius of the orthographic globe in plane units (degree-like, as the
@@ -133,10 +209,64 @@ impl Projection {
                 let y = std::f64::consts::SQRT_2 * t.sin();
                 (x.to_degrees(), y.to_degrees())
             }
-            Projection::Orthographic { .. } => match self.globe(lon, lat) {
-                [x, y, z] if z >= 0.0 => (x * GLOBE_R, y * GLOBE_R),
+            Projection::Orthographic { .. }
+            | Projection::Stereographic { .. }
+            | Projection::AzimuthalEqualArea { .. } => match self.globe(lon, lat) {
+                v if v[2] >= 0.0 => self.plane(v),
                 _ => (f64::NAN, f64::NAN),
             },
+            Projection::Albers {
+                lon0,
+                lat0,
+                lat1,
+                lat2,
+            } => {
+                let r = f64::to_radians;
+                let (p1, p2) = (r(lat1), r(lat2));
+                let mut n = (p1.sin() + p2.sin()) / 2.0;
+                if n.abs() < 1e-9 {
+                    n = 1e-9;
+                }
+                let c = p1.cos().powi(2) + 2.0 * n * p1.sin();
+                let rho = |p: f64| (c - 2.0 * n * p.sin()).max(0.0).sqrt() / n;
+                let t = n * r(wrap180(lon - lon0));
+                let (rh, rh0) = (rho(r(lat.clamp(-90.0, 90.0))), rho(r(lat0)));
+                (
+                    (rh * t.sin()).to_degrees(),
+                    (rh0 - rh * t.cos()).to_degrees(),
+                )
+            }
+            Projection::LambertConformal {
+                lon0,
+                lat0,
+                lat1,
+                lat2,
+            } => {
+                use std::f64::consts::FRAC_PI_4;
+                let r = f64::to_radians;
+                let (p1, p2) = (r(lat1), r(lat2));
+                let tn = |p: f64| (FRAC_PI_4 + p / 2.0).tan();
+                let n = if (lat1 - lat2).abs() < 1e-9 {
+                    p1.sin()
+                } else {
+                    (p1.cos() / p2.cos()).ln() / (tn(p2) / tn(p1)).ln()
+                };
+                let n = if n.abs() < 1e-9 { 1e-9 } else { n };
+                let f = p1.cos() * tn(p1).powf(n) / n;
+                // The pole away from the cone's apex is at infinity.
+                let lim = if n > 0.0 {
+                    (-80.0, 90.0)
+                } else {
+                    (-90.0, 80.0)
+                };
+                let rho = |p: f64| f / tn(p).powf(n);
+                let t = n * r(wrap180(lon - lon0));
+                let (rh, rh0) = (rho(r(lat.clamp(lim.0, lim.1))), rho(r(lat0)));
+                (
+                    (rh * t.sin()).to_degrees(),
+                    (rh0 - rh * t.cos()).to_degrees(),
+                )
+            }
             Projection::NaturalEarth => {
                 let p = lat.clamp(-90.0, 90.0).to_radians();
                 let p2 = p * p;
@@ -155,7 +285,7 @@ impl Projection {
     /// A point on the unit sphere in the globe's view: x right, y up, z
     /// towards the viewer (only for [`Projection::Orthographic`]).
     fn globe(self, lon: f64, lat: f64) -> [f64; 3] {
-        let Projection::Orthographic { lon: l0, lat: p0 } = self else {
+        let Some((l0, p0)) = self.center() else {
             return [0.0; 3];
         };
         let (l, p) = ((lon - l0).to_radians(), lat.to_radians());
@@ -171,13 +301,26 @@ impl Projection {
     /// A ring (longitude, latitude) in plane coordinates; on the globe
     /// the part on the far side is cut away along the rim (no ring when
     /// nothing is visible).
-    pub(crate) fn project_ring(self, ring: &[(f64, f64)]) -> Option<Vec<(f64, f64)>> {
-        if !matches!(self, Projection::Orthographic { .. }) {
-            return Some(ring.iter().map(|&(a, b)| self.project(a, b)).collect());
+    pub(crate) fn project_ring(self, ring: &[(f64, f64)]) -> Vec<Vec<(f64, f64)>> {
+        if let Some(lon0) = self.conic() {
+            // Cut at the meridian opposite the centre, where a conic map
+            // splits.
+            // Long edges (e.g. along a pole) are curves on a cone.
+            return split_at_seam(&densify(ring, 2.0), lon0)
+                .into_iter()
+                .map(|r| r.iter().map(|&(a, b)| self.project(a, b)).collect())
+                .collect();
         }
+        if self.center().is_none() {
+            return vec![ring.iter().map(|&(a, b)| self.project(a, b)).collect()];
+        }
+        self.clip_hemisphere(ring).into_iter().collect()
+    }
+
+    fn clip_hemisphere(self, ring: &[(f64, f64)]) -> Option<Vec<(f64, f64)>> {
         let v: Vec<[f64; 3]> = ring.iter().map(|&(a, b)| self.globe(a, b)).collect();
         if v.iter().all(|p| p[2] >= 0.0) {
-            return Some(v.iter().map(|p| (p[0] * GLOBE_R, p[1] * GLOBE_R)).collect());
+            return Some(v.iter().map(|p| self.plane(*p)).collect());
         }
         // Sutherland–Hodgman against the plane z = 0; points on the rim
         // are marked so that the edge between two of them follows the rim.
@@ -203,7 +346,7 @@ impl Projection {
         let m = out.len();
         for i in 0..m {
             let (p, rim) = out[i];
-            pts.push((p[0] * GLOBE_R, p[1] * GLOBE_R));
+            pts.push(self.plane(p));
             let (q, rim_q) = out[(i + 1) % m];
             if rim && rim_q {
                 // Along the rim, the short way round.
@@ -226,7 +369,32 @@ impl Projection {
 
     /// The outline of the whole globe in this projection.
     fn outline(self) -> Vec<(f64, f64)> {
-        if matches!(self, Projection::Orthographic { .. }) {
+        if let Some(lon0) = self.conic() {
+            // The fan between the seam meridians and the latitude limits.
+            let (lo, hi) = match self {
+                Projection::LambertConformal { lat1, lat2, .. } if lat1 + lat2 < 0.0 => {
+                    (-90.0, 80.0)
+                }
+                Projection::LambertConformal { .. } => (-80.0, 90.0),
+                _ => (-90.0, 90.0),
+            };
+            let e = 179.999;
+            let mut v = Vec::new();
+            for i in 0..=72 {
+                v.push(self.project(lon0 - e + i as f64 * 2.0 * e / 72.0, hi));
+            }
+            for i in 0..=36 {
+                v.push(self.project(lon0 + e, hi - i as f64 * (hi - lo) / 36.0));
+            }
+            for i in 0..=72 {
+                v.push(self.project(lon0 + e - i as f64 * 2.0 * e / 72.0, lo));
+            }
+            for i in 0..=36 {
+                v.push(self.project(lon0 - e, lo + i as f64 * (hi - lo) / 36.0));
+            }
+            return v;
+        }
+        if self.center().is_some() {
             return (0..=120)
                 .map(|i| {
                     let a = i as f64 / 120.0 * std::f64::consts::TAU;
@@ -254,6 +422,100 @@ impl Projection {
         }
         v
     }
+}
+
+/// The ring with points inserted so that no edge is longer than `step`
+/// degrees in longitude or latitude.
+fn densify(ring: &[(f64, f64)], step: f64) -> Vec<(f64, f64)> {
+    let mut out = Vec::with_capacity(ring.len());
+    for (i, &p) in ring.iter().enumerate() {
+        out.push(p);
+        if let Some(&q) = ring.get(i + 1) {
+            let k = ((q.0 - p.0).abs().max((q.1 - p.1).abs()) / step).ceil();
+            if k > 1.0 && k < 1e4 {
+                for j in 1..k as usize {
+                    let t = j as f64 / k;
+                    out.push((p.0 + (q.0 - p.0) * t, p.1 + (q.1 - p.1) * t));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// `v` in [-180, 180).
+fn wrap180(v: f64) -> f64 {
+    (v + 180.0).rem_euclid(360.0) - 180.0
+}
+
+/// A ring cut into pieces that do not cross the meridian opposite `lon0`
+/// (longitudes made continuous, then clipped to each 360° window).
+fn split_at_seam(ring: &[(f64, f64)], lon0: f64) -> Vec<Vec<(f64, f64)>> {
+    if ring.is_empty() {
+        return Vec::new();
+    }
+    // Continuous longitudes relative to the centre.
+    let mut rel = Vec::with_capacity(ring.len());
+    let mut prev = wrap180(ring[0].0 - lon0);
+    for &(lon, lat) in ring {
+        let mut a = wrap180(lon - lon0);
+        while a - prev > 180.0 {
+            a -= 360.0;
+        }
+        while a - prev < -180.0 {
+            a += 360.0;
+        }
+        rel.push((a, lat));
+        prev = a;
+    }
+    let (lo, hi) = rel
+        .iter()
+        .fold((f64::INFINITY, f64::NEG_INFINITY), |(a, b), p| {
+            (a.min(p.0), b.max(p.0))
+        });
+    if lo >= -180.0 && hi <= 180.0 {
+        return vec![ring.to_vec()];
+    }
+    // Each 360° window the ring reaches, clipped to it (Sutherland–Hodgman
+    // with two vertical lines) and shifted back.
+    let mut out = Vec::new();
+    let mut k = ((lo + 180.0) / 360.0).floor() as i64;
+    while (k as f64) * 360.0 - 180.0 < hi {
+        let (a, b) = (
+            k as f64 * 360.0 - 180.0 + 1e-6,
+            k as f64 * 360.0 + 180.0 - 1e-6,
+        );
+        let clip = |pts: &[(f64, f64)], edge: f64, keep_above: bool| -> Vec<(f64, f64)> {
+            let inside = |p: &(f64, f64)| if keep_above { p.0 >= edge } else { p.0 <= edge };
+            let mut r = Vec::new();
+            for i in 0..pts.len() {
+                let (p, q) = (pts[i], pts[(i + 1) % pts.len()]);
+                if inside(&p) {
+                    r.push(p);
+                }
+                if inside(&p) != inside(&q) {
+                    let t = (edge - p.0) / (q.0 - p.0);
+                    r.push((edge, p.1 + (q.1 - p.1) * t));
+                }
+            }
+            r
+        };
+        let piece = clip(&clip(&rel, a, true), b, false);
+        if piece.len() >= 3 {
+            let shift = k as f64 * 360.0;
+            out.push(
+                piece
+                    .into_iter()
+                    .map(|(x, y)| (x - shift + lon0, y))
+                    .collect(),
+            );
+        }
+        k += 1;
+        if out.len() > 4 {
+            break;
+        }
+    }
+    out
 }
 
 /// Polygons of a shape: each a list of rings (the first is the outline,
@@ -687,7 +949,7 @@ impl GeoMap {
                 polys
                     .iter()
                     .flatten()
-                    .filter_map(|ring| p.project_ring(ring))
+                    .flat_map(|ring| p.project_ring(ring))
                     .collect()
             })
             .collect();
@@ -795,11 +1057,13 @@ impl GeoMap {
             );
             lon += step;
         }
+        let c = p.conic().unwrap_or(0.0);
         let mut lat = -top + (top % step);
         while lat <= top + 1e-9 {
             lines.push(
+                // From seam to seam (conic maps split opposite their centre).
                 (0..=72)
-                    .map(|i| p.project(-180.0 + i as f64 * 5.0, lat))
+                    .map(|i| p.project(c - 179.999 + i as f64 * 359.998 / 72.0, lat))
                     .collect(),
             );
             lat += step;
@@ -932,6 +1196,33 @@ impl Axes {
         self.frame = false;
         self.x.margin = 0.01;
         self.y.margin = 0.01;
+        self
+    }
+
+    /// Shows the region between the longitudes `lon` and latitudes `lat`
+    /// (degrees) of the map's projection, e.g. a country on a conic map.
+    pub fn map_bounds(&mut self, lon: (f64, f64), lat: (f64, f64)) -> &mut Self {
+        let p = self.projection.unwrap_or_default();
+        let (mut x0, mut x1, mut y0, mut y1) = (f64::MAX, f64::MIN, f64::MAX, f64::MIN);
+        for i in 0..=40 {
+            let t = i as f64 / 40.0;
+            let a = lon.0 + (lon.1 - lon.0) * t;
+            let b = lat.0 + (lat.1 - lat.0) * t;
+            for (x, y) in [
+                p.project(a, lat.0),
+                p.project(a, lat.1),
+                p.project(lon.0, b),
+                p.project(lon.1, b),
+            ] {
+                if x.is_finite() && y.is_finite() {
+                    (x0, x1, y0, y1) = (x0.min(x), x1.max(x), y0.min(y), y1.max(y));
+                }
+            }
+        }
+        if x1 > x0 && y1 > y0 {
+            self.x.limits(x0, x1);
+            self.y.limits(y0, y1);
+        }
         self
     }
 
@@ -1137,10 +1428,10 @@ mod tests {
         assert!(x.abs() < 1e-9 && y.abs() < 1e-9);
         assert!(g.project(-150.0, -10.0).0.is_nan());
         let ring: Vec<(f64, f64)> = (0..=36).map(|i| (-180.0 + i as f64 * 10.0, 0.0)).collect();
-        let cut = g.project_ring(&ring).unwrap();
+        let cut = g.project_ring(&ring).pop().unwrap();
         assert!(cut.iter().all(|(x, y)| x.hypot(*y) <= GLOBE_R + 1e-6));
         let far: Vec<(f64, f64)> = vec![(-150.0, -5.0), (-140.0, -5.0), (-145.0, -15.0)];
-        assert!(g.project_ring(&far).is_none());
+        assert!(g.project_ring(&far).is_empty());
     }
 
     use super::*;
@@ -1224,5 +1515,82 @@ mod tests {
             .iter()
             .filter(|p| p.0.is_finite())
             .all(|p| p.0.abs() >= 170.0 - 1e-6));
+    }
+}
+
+#[cfg(test)]
+mod projection_tests {
+    use super::*;
+
+    #[test]
+    fn conic_and_azimuthal_projections() {
+        // Centres map to the origin (y of conics at lat0).
+        for p in [
+            Projection::USA,
+            Projection::EUROPE,
+            Projection::Stereographic {
+                lon: 0.0,
+                lat: 90.0,
+            },
+            Projection::AzimuthalEqualArea {
+                lon: 10.0,
+                lat: 50.0,
+            },
+        ] {
+            let (lon, lat) = match p {
+                Projection::Albers { lon0, lat0, .. }
+                | Projection::LambertConformal { lon0, lat0, .. } => (lon0, lat0),
+                Projection::Stereographic { lon, lat }
+                | Projection::AzimuthalEqualArea { lon, lat } => (lon, lat),
+                _ => unreachable!(),
+            };
+            let (x, y) = p.project(lon, lat);
+            assert!(x.abs() < 1e-9 && y.abs() < 1e-9, "{p:?}");
+        }
+        // Polar stereographic: the equator is the rim, the far hemisphere
+        // hidden.
+        let s = Projection::Stereographic {
+            lon: 0.0,
+            lat: 90.0,
+        };
+        let (x, y) = s.project(45.0, 0.0);
+        assert!((x.hypot(y) - GLOBE_R).abs() < 1e-6);
+        assert!(s.project(0.0, -10.0).0.is_nan());
+        // A ring across the seam of a conic map (84°E for the USA map)
+        // becomes two pieces; one away from it stays whole.
+        let across = [(80.0, 50.0), (90.0, 50.0), (90.0, 60.0), (80.0, 60.0)];
+        assert_eq!(Projection::USA.project_ring(&across).len(), 2);
+        let away = [(-100.0, 30.0), (-90.0, 30.0), (-95.0, 40.0)];
+        assert_eq!(Projection::USA.project_ring(&away).len(), 1);
+        // Albers keeps areas: two 1°×1° cells at different longitudes match.
+        let area = |lon: f64| {
+            let r = [
+                (lon, 40.0),
+                (lon + 1.0, 40.0),
+                (lon + 1.0, 41.0),
+                (lon, 41.0),
+            ];
+            let q: Vec<_> = r
+                .iter()
+                .map(|&(a, b)| Projection::USA.project(a, b))
+                .collect();
+            (0..4)
+                .map(|i| q[i].0 * q[(i + 1) % 4].1 - q[(i + 1) % 4].0 * q[i].1)
+                .sum::<f64>()
+                .abs()
+                / 2.0
+        };
+        assert!((area(-120.0) / area(-80.0) - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn map_bounds_frame_the_region() {
+        let mut fig = crate::plot::Figure::new(500, 400);
+        let ax = fig.axes();
+        ax.map(Projection::USA);
+        ax.map_bounds((-126.0, -66.0), (23.0, 50.0));
+        let (x, y) = Projection::USA.project(-96.0, 37.5);
+        assert!(ax.x.min.unwrap() < x && ax.x.max.unwrap() > x);
+        assert!(ax.y.min.unwrap() < y && ax.y.max.unwrap() > y);
     }
 }

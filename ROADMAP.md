@@ -22,6 +22,7 @@ then breadth. There is no backward-compatibility promise before 1.0.
 ## Charts
 
 - [x] Geographic: orthographic globe with rotation, equal-area projections
+- [x] Conic (Albers, Lambert) and azimuthal (stereographic, equal-area) projections, region bounds
 - [x] Biology: sequence logos, Manhattan / QQ plots for GWAS, gene structure tracks
 - [x] 3D: volume rendering (ray-marched), maximum intensity projection
 - [x] 3D: point clouds: hidden points culled per quarter pixel (1 M points: 73 ms per frame on the CPU)

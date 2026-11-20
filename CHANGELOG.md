@@ -41,6 +41,17 @@
   (`dataviz-rs/svelte`).
 
 ### Added
+- Map projections:
+  - Albers equal-area conic and Lambert conformal conic for country and
+    continent maps (`Projection::USA`, `Projection::EUROPE` presets);
+  - stereographic and Lambert azimuthal equal-area for polar and
+    regional maps;
+  - `Axes::map_bounds` frames a longitude/latitude window. In the spec:
+    `projection: usa | europe | albers | lambert | stereographic |
+    azimuthal` and `bounds`.
+
+  Conic maps cut shapes at the meridian opposite their centre, and long
+  edges (along the poles) are drawn as curves.
 - Callbacks for dashboards:
   - HTML output posts `click`, `hover` (throttled) and `view` (after zoom
     or pan) messages to the embedding page.

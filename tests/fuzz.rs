@@ -246,6 +246,7 @@ fn fuzz_json_specs() {
         r#"{"type":"arc_diagram","nodes":["a","b","c"],"edges":[["a","c",2],[0,1]]}"#,
         r#"{"type":"edge_bundling","nodes":["a","b","c"],"groups":[0,0,1],"edges":[[0,2]]}"#,
         r#"{"type":"choropleth","values":{"TUR":1,"BRA":2},"projection":"orthographic"}"#,
+        r#"{"type":"choropleth","values":{"USA":1,"RUS":2,"ATA":3},"projection":"lambert","center_lon":-96,"bounds":[-130,-60,20,55]}"#,
         r#"{"panels":[{"type":"scatter","x":[1,2],"y":[2,1]},{"type":"box","groups":{"a":[1,2,3]}}]}"#,
         r#"{"data":[{"g":"a","x":1,"y":2},{"g":"b","x":2,"y":3}],"mark":"bar","encoding":{"x":"g","y":{"field":"y","aggregate":"mean"},"color":"g","facet":"g"}}"#,
     ];

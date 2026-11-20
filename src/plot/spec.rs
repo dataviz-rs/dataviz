@@ -153,7 +153,7 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
     ),
     (
         "choropleth",
-        "values: {ISO code or country name: value}, projection? (robinson, naturalearth, equalearth, mollweide, mercator, equirectangular, orthographic: center_lon?, center_lat?), label?",
+        "values: {ISO code or country name: value}, projection? (robinson, naturalearth, equalearth, mollweide, mercator, equirectangular, orthographic, stereographic, azimuthal, albers, lambert: center_lon?, center_lat?, parallel1?, parallel2?; usa, europe), bounds? [lon0, lon1, lat0, lat1], label?",
         "World map colored by value, or a globe (orthographic).",
     ),
     (
@@ -970,9 +970,38 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                     lon: f(p, "center_lon").unwrap_or(0.0),
                     lat: f(p, "center_lat").unwrap_or(20.0),
                 },
+                "usa" | "albersusa" => Projection::USA,
+                "europe" => Projection::EUROPE,
+                "albers" => Projection::Albers {
+                    lon0: f(p, "center_lon").unwrap_or(0.0),
+                    lat0: f(p, "center_lat").unwrap_or(40.0),
+                    lat1: f(p, "parallel1").unwrap_or(20.0),
+                    lat2: f(p, "parallel2").unwrap_or(60.0),
+                },
+                "lambert" | "lambertconformal" | "lcc" => Projection::LambertConformal {
+                    lon0: f(p, "center_lon").unwrap_or(0.0),
+                    lat0: f(p, "center_lat").unwrap_or(45.0),
+                    lat1: f(p, "parallel1").unwrap_or(33.0),
+                    lat2: f(p, "parallel2").unwrap_or(60.0),
+                },
+                "stereographic" | "polar" => Projection::Stereographic {
+                    lon: f(p, "center_lon").unwrap_or(0.0),
+                    lat: f(p, "center_lat").unwrap_or(90.0),
+                },
+                "azimuthal" | "azimuthalequalarea" | "laea" => Projection::AzimuthalEqualArea {
+                    lon: f(p, "center_lon").unwrap_or(0.0),
+                    lat: f(p, "center_lat").unwrap_or(90.0),
+                },
                 _ => Projection::Robinson,
             };
             ax.map(proj);
+            let bounds = opt_nums(p, "bounds").filter(|b| b.len() == 4).or_else(|| {
+                match s(p, "projection").map(str::to_lowercase).as_deref() {
+                    Some("usa" | "albersusa") => Some(vec![-126.0, -66.0, 23.0, 50.0]),
+                    Some("europe") => Some(vec![-25.0, 45.0, 34.0, 71.0]),
+                    _ => None,
+                }
+            });
             let vals = p
                 .get("values")
                 .and_then(Value::as_object)
@@ -981,6 +1010,9 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                 .iter()
                 .filter_map(|(k, x)| Some((k.clone(), x.as_f64()?)))
                 .collect();
+            if let Some(b) = bounds {
+                ax.map_bounds((b[0], b[1]), (b[2], b[3]));
+            }
             let g = ax.choropleth(v);
             if let Some(cm) = s(p, "colormap") {
                 g.colormap(colormap(cm));
