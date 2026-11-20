@@ -20,8 +20,7 @@
   (`dataviz-rs/svelte`).
 
 ### Added
-- Animated WebP (`Recorder` / `Figure::record` to `.webp`; also `V` in
-  windows records what the extension says): lossless, with transparency,
+- Animated WebP (`Recorder` / `Figure::record` to `.webp`): lossless, with transparency,
   storing only the changed rectangle per frame. For a 150-frame
   640×360 chart: 73 KB in 40 ms (APNG 139 KB, GIF 41 KB with at most 256
   colors).
