@@ -32,7 +32,7 @@ from ._dataviz import DensityGrid
 from ._dataviz import __version__
 from ._dataviz import chart_types as _chart_types
 
-__all__ = ["Figure", "Axes", "DensityGrid", "chart_types", "from_spec", "__version__"]
+__all__ = ["Figure", "Axes", "DensityGrid", "chart_types", "from_spec", "plot", "__version__"]
 
 Groups = Union[Mapping[str, Any], Iterable[Tuple[str, Any]]]
 
@@ -40,6 +40,42 @@ Groups = Union[Mapping[str, Any], Iterable[Tuple[str, Any]]]
 def chart_types() -> list:
     """The chart types of :meth:`Axes.chart`: ``(name, fields, description)``."""
     return _chart_types()
+
+
+_BINARY = 64  # numeric arrays at least this long skip JSON
+
+
+def _numeric(o: Any) -> bool:
+    """A long numeric array (NumPy, pandas, Polars, pyarrow, array.array)."""
+    if isinstance(o, (str, bytes, dict)) or not hasattr(o, "__len__"):
+        return False
+    dtype = getattr(o, "dtype", None)
+    if dtype is None:
+        return False
+    try:
+        if len(o) < _BINARY:
+            return False
+    except TypeError:
+        return False
+    kind = getattr(dtype, "kind", None)
+    if kind is not None:
+        return kind in "iufb"
+    name = str(dtype).lower()
+    return any(t in name for t in ("int", "float", "bool", "uint"))
+
+
+def _split(o: Any, arrays: dict) -> Any:
+    """The spec with long numeric arrays replaced by ``"@k"`` references
+    into ``arrays`` (read from their buffers instead of as JSON text)."""
+    if _numeric(o):
+        name = str(len(arrays))
+        arrays[name] = o
+        return "@" + name
+    if isinstance(o, Mapping):
+        return {k: _split(v, arrays) for k, v in o.items()}
+    if isinstance(o, (list, tuple)):
+        return [_split(v, arrays) for v in o]
+    return o
 
 
 def _plain(o: Any) -> Any:
@@ -50,6 +86,9 @@ def _plain(o: Any) -> Any:
         return o.to_list()
     if isinstance(o, (set, tuple, range)):
         return list(o)
+    if hasattr(o, "isoformat"):
+        # datetime, date, pandas Timestamp.
+        return o.isoformat()
     raise TypeError(f"cannot convert {type(o).__name__} to chart data")
 
 
@@ -77,9 +116,14 @@ class Axes:
         self._core.xy(self._cell, "line", x, y, label, color, width, None, dash, marker, None)
         return self
 
-    def scatter(self, x, y, *, label=None, color=None, size=None, marker=None, opacity=None) -> "Axes":
-        """Points at ``(x, y)``; ``size`` in pixels. Millions of points are fine."""
+    def scatter(self, x, y, *, label=None, color=None, size=None, marker=None, opacity=None,
+                values=None, colormap=None, colorbar=None) -> "Axes":
+        """Points at ``(x, y)``; ``size`` in pixels. Millions of points are
+        fine. ``values`` color the points through ``colormap`` (default
+        viridis) with a ``colorbar`` title."""
         self._core.xy(self._cell, "scatter", x, y, label, color, None, size, None, marker, opacity)
+        if values is not None:
+            self._core.color_by(self._cell, values, colormap, colorbar)
         return self
 
     def area(self, x, y=None, *, label=None, color=None) -> "Axes":
@@ -259,7 +303,18 @@ class Axes:
         ``ax.chart("sankey", links=[["coal", "power", 30], ["power", "homes", 25]])``
         or ``ax.chart("roc", labels=y_true, scores=y_score)``. See
         :func:`chart_types` for the types and their fields."""
-        self._core.chart_json(self._cell, _json.dumps({"type": type, **fields}, default=_plain))
+        arrays: dict = {}
+        spec = _split({"type": type, **fields}, arrays)
+        self._core.chart_json(self._cell, _json.dumps(spec, default=_plain), arrays)
+        return self
+
+    def encode(self, data: Any, mark: str = "point", **encoding: Any) -> "Axes":
+        """Grammar of graphics into this plot: ``data`` (pandas or Polars
+        DataFrame, ``{column: values}`` or a list of row dicts), a ``mark``
+        (point, line, area, bar, rect, boxplot) and channels x, y, color,
+        size, facet — see :func:`plot`."""
+        spec, arrays = _grammar(data, mark, encoding)
+        self._core.chart_json(self._cell, _json.dumps(spec, default=_plain), arrays)
         return self
 
 
@@ -460,6 +515,128 @@ export default { render({ model, el }) {
 def from_spec(spec: Union[Mapping[str, Any], str]) -> Figure:
     """A figure from a JSON spec (dict or string): ``{"title": …,
     "panels": [{"type": "line", "x": […], "y": […]}, …]}`` — the format of the
-    dataviz MCP server."""
-    text = spec if isinstance(spec, str) else _json.dumps(spec, default=_plain)
-    return Figure(_core=_Core.from_json(text))
+    dataviz MCP server. Long NumPy/pandas/Polars arrays in the dict are
+    read from their buffers, not converted to JSON."""
+    if isinstance(spec, str):
+        return Figure(_core=_Core.from_json(spec))
+    arrays: dict = {}
+    text = _json.dumps(_split(spec, arrays), default=_plain)
+    return Figure(_core=_Core.from_json(text, arrays))
+
+
+# ----- grammar of graphics -----------------------------------------------------
+
+_AGGREGATES = ("count", "sum", "mean", "average", "median", "min", "max")
+_TYPES = {"Q": "quantitative", "N": "nominal", "O": "ordinal", "T": "temporal"}
+
+
+def _channel(v: Any) -> Any:
+    """A channel from a field name, Altair-style shorthand (``"mean(mass)"``,
+    ``"species:N"``, ``"count()"``) or a dict."""
+    if not isinstance(v, str):
+        return v
+    out: dict = {}
+    name = v
+    if ":" in name and name.rsplit(":", 1)[1] in _TYPES:
+        name, t = name.rsplit(":", 1)
+        out["type"] = _TYPES[t]
+    if name.endswith(")") and "(" in name:
+        agg, inner = name[:-1].split("(", 1)
+        if agg.lower() in _AGGREGATES:
+            out["aggregate"] = agg.lower()
+            name = inner
+    if name:
+        out["field"] = name
+    return out if len(out) > 1 or "field" not in out else name
+
+
+def _columns(data: Any) -> Tuple[Any, set]:
+    """``{column: values}`` (or rows as given) and the datetime columns."""
+    import numpy as _np
+
+    if isinstance(data, list):
+        return data, set()
+    if hasattr(data, "to_dict") and hasattr(data, "columns") and hasattr(data, "dtypes"):
+        # pandas or Polars DataFrame.
+        cols = {str(c): data[c] for c in data.columns}
+    elif isinstance(data, Mapping):
+        cols = dict(data)
+    else:
+        raise TypeError("data: a DataFrame, a dict of columns or a list of row dicts")
+    out: dict = {}
+    dates: set = set()
+    for k, v in cols.items():
+        dtype = getattr(v, "dtype", None)
+        kind = getattr(dtype, "kind", None)
+        name = str(dtype).lower() if dtype is not None else ""
+        if kind == "M" or name.startswith("datetime"):
+            # Seconds since 1970 (temporal axes).
+            a = _np.asarray(v, dtype="datetime64[ns]")
+            secs = a.astype("int64").astype("float64") / 1e9
+            secs[_np.isnat(a)] = _np.nan
+            out[k] = secs
+            dates.add(k)
+        elif _numeric(v) or (kind is not None and kind in "iufb"):
+            out[k] = v
+        elif hasattr(v, "dtype") or hasattr(v, "to_list") or hasattr(v, "tolist"):
+            out[k] = [None if x is None else str(x) for x in _plain(v)]
+        else:
+            out[k] = list(v)
+    return out, dates
+
+
+def _grammar(data: Any, mark: str, encoding: Mapping[str, Any]) -> Tuple[dict, dict]:
+    options = {k: encoding[k] for k in ("columns", "stack", "colormap", "title") if k in encoding}
+    channels = {k: _channel(v) for k, v in encoding.items() if k not in options and v is not None}
+    cols, dates = _columns(data)
+    for k, ch in list(channels.items()):
+        field = ch if isinstance(ch, str) else ch.get("field")
+        if field in dates and (isinstance(ch, str) or "type" not in ch):
+            channels[k] = {**({"field": ch} if isinstance(ch, str) else ch), "type": "temporal"}
+    arrays: dict = {}
+    if isinstance(cols, dict):
+        # Numeric columns of any length go over as buffers.
+        conv = {}
+        for k, v in cols.items():
+            if not isinstance(v, list) and _numeric_any(v):
+                name = str(len(arrays))
+                arrays[name] = v
+                conv[k] = "@" + name
+            else:
+                conv[k] = v
+        cols = conv
+    spec = {"data": cols, "mark": mark, "encoding": channels, **options}
+    return spec, arrays
+
+
+def _numeric_any(v: Any) -> bool:
+    kind = getattr(getattr(v, "dtype", None), "kind", None)
+    if kind is not None:
+        return kind in "iufb"
+    return _numeric(v) or (str(getattr(v, "dtype", "")).lower().startswith(("int", "float", "uint")))
+
+
+def plot(data: Any, mark: str = "point", *, width: int = 900, height: int = 600,
+         theme: Optional[str] = None, **encoding: Any) -> Figure:
+    """A chart from data, a mark and encodings (grammar of graphics, as
+    Vega-Lite / Altair / ggplot2)::
+
+        dv.plot(penguins, "point", x="flipper", y="mass", color="species")
+        dv.plot(df, "bar", x="island", y="mean(mass)", color="species", stack="grouped")
+        dv.plot(df, "bar", x={"field": "mass", "bin": 30})          # histogram
+        dv.plot(df, "line", x="date", y="sum(sales)", color="region")
+        dv.plot(df, "point", x="bill", y="mass", facet="species", columns=3)
+
+    ``data``: a pandas or Polars DataFrame, ``{column: values}`` or a list
+    of row dicts. ``mark``: point, line, area, bar, rect, boxplot. Channels
+    x, y, color, size, facet take a column name, Altair shorthand
+    (``"mean(mass)"``, ``"year:O"``, ``"count()"``) or a dict ``{field,
+    type, aggregate, bin, title, scale: {"type": "log"}}``. Options:
+    ``columns`` (facets per row), ``stack`` (stacked, grouped, percent),
+    ``colormap``, ``title``.
+    """
+    spec, arrays = _grammar(data, mark, encoding)
+    spec.update({"width": int(width), "height": int(height)})
+    if theme:
+        spec["theme"] = theme
+    return Figure(_core=_Core.from_json(_json.dumps(spec, default=_plain), arrays))

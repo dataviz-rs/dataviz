@@ -46,6 +46,55 @@ Same Python process, 800×600 PNG, median of 6 runs on one core
 | histogram, 1 000 000 values | 2.4 ms | 40.1 ms | 16.9× |
 | 3D surface, 60 × 60 | 8.7 ms | 60.1 ms | 6.9× |
 
+## Grammar of graphics (Altair / ggplot style)
+
+`dv.plot` draws a chart from a DataFrame (pandas or Polars), a dict of
+columns or a list of row dicts, a mark and encodings. Color groups,
+legends, aggregation, histograms and small multiples follow from the
+encodings. Numeric columns go to the renderer as buffers, not as JSON:
+1 million rows take about 20 ms.
+
+```python
+dv.plot(penguins, "point", x="flipper", y="mass", color="species", size="bill")
+dv.plot(penguins, "bar", x="island", y="mean(mass)", color="species", stack="grouped")
+dv.plot(penguins, "bar", x={"field": "mass", "bin": 30}, color="species")   # histograms
+dv.plot(sales, "area", x="date", y="sum(revenue)", color="region")
+dv.plot(penguins, "point", x="bill", y="mass", color="sex", facet="species", columns=3)
+fig.subplot(0, 1).encode(df, "boxplot", x="species", y="mass")              # into a plot
+```
+
+Marks: `point`, `line`, `area`, `bar`, `rect` (heatmap), `boxplot`.
+Channels: `x`, `y`, `color`, `size`, `facet`. Each takes a column name,
+Altair shorthand (`"mean(mass)"`, `"year:O"`, `"count()"`) or a dict
+`{field, type, aggregate, bin, title, scale}`.
+
+## matplotlib code, unchanged
+
+```python
+import dataviz.pyplot as plt     # instead of matplotlib.pyplot
+
+fig, axs = plt.subplots(2, 2, figsize=(10, 7))
+axs[0, 0].plot(x, np.sin(x), "r--", label="sin"); axs[0, 0].legend()
+axs[0, 1].scatter(a, b, s=12, c=a * b, cmap="viridis")
+axs[1, 0].hist(samples, bins=40); axs[1, 0].set_yscale("log")
+axs[1, 1].bar(["a", "b", "c"], [3, 5, 2], color="tab:purple")
+fig.suptitle("Report"); fig.savefig("report.png")
+```
+
+The common pyplot and `Axes` calls and their options work:
+
+- **Drawing:** `plot` with format strings, `scatter`, `bar`, `barh`,
+  `hist`, `fill_between`, `boxplot`, `violinplot`, `pie`, `imshow`,
+  `axhline`, `axvline`, `text`
+- **Axes:** `set_*` and the `xlabel`, `ylabel`, `xlim`, `ylim`,
+  `xscale`, `yscale`, `title`, `suptitle`, `legend` and `grid` functions
+- **Figures:** `subplots`, `subplot`, `figure(figsize=…)`, `savefig`,
+  `show`, `style.use`
+
+Unknown keyword arguments are ignored, so existing scripts keep running.
+The 4-panel script above runs in 9 ms instead of 372 ms with
+matplotlib, and a 1 million point line in 19 ms instead of 110 ms.
+
 ## Charts
 
 | Method | Chart |

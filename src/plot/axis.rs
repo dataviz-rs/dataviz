@@ -344,9 +344,15 @@ impl AxisMap {
     /// Data → pixel for values outside the limits too (clamped to a large
     /// range to keep paths finite).
     pub(crate) fn px_clamped(&self, v: f64) -> f64 {
-        let p = self.px(v);
         let lo = self.p0.min(self.p1) - 1e5;
         let hi = self.p0.max(self.p1) + 1e5;
+        // Zero and negatives on a log axis lie below its start (bars and
+        // areas from 0 then reach past the edge and are clipped, as in
+        // matplotlib).
+        if matches!(self.scale, Scale::Log(_)) && v <= 0.0 {
+            return if self.p0 > self.p1 { hi } else { lo };
+        }
+        let p = self.px(v);
         if p.is_nan() {
             p
         } else {

@@ -54,6 +54,19 @@
   overflows; group numbers are made dense.
 
 ### Python
+- 0.4.0 (unreleased):
+  - `dv.plot(data, mark, x=, y=, color=, size=, facet=)` and
+    `Axes.encode`: grammar of graphics from pandas or Polars DataFrames,
+    dicts or row lists, with Altair shorthand (`"mean(mass)"`,
+    `"year:O"`).
+  - `dataviz.pyplot`: matplotlib-style `plot` (format strings),
+    `scatter`, `subplots`, `savefig`, … as a drop-in import.
+  - Long NumPy, pandas and Polars arrays in `from_spec` and `Axes.chart`
+    are read from their buffers instead of through JSON (1 M points:
+    2 ms).
+  - `Axes.scatter(values=, colormap=, colorbar=)`.
+  - Fixed: a histogram or bars on a log axis were empty (bars from 0 now
+    reach past the axis start and are clipped).
 - 0.3.0: `Axes.volume(array)`, the globe and equal-area projections,
   arc diagrams and edge bundling through `chart`, `theme="high_contrast"`.
 

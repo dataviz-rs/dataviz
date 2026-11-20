@@ -581,6 +581,11 @@ impl Chart {
             }
             _ => vec![(None, rows.to_vec())],
         };
+        // Legends of color groups sit outside the data, as in Vega-Lite
+        // and ggplot2 (a spec's `legend` still overrides it).
+        if groups.len() > 1 && self.mark != Mark::Boxplot {
+            ax.legend(super::legend::LegendPosition::OutsideRight);
+        }
         for (field, axis) in [(&self.x, 0), (&self.y, 1)] {
             if let Some(f) = field {
                 let (r, a) = if axis == 0 {

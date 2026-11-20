@@ -11,7 +11,7 @@ use dataviz::prelude::*;
 use numpy::{PyReadonlyArray1, PyReadonlyArray2};
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
-use pyo3::types::PyBytes;
+use pyo3::types::{PyBytes, PyDict};
 
 /// A plot cell: (row, col, rowspan, colspan), or the single plot.
 type Cell = Option<(usize, usize, usize, usize)>;
@@ -212,12 +212,15 @@ impl Core {
         }
     }
 
+    /// A figure from a JSON spec; `arrays` hold the numbers of fields
+    /// written `"@name"` (read from NumPy/Arrow buffers, not JSON).
     #[staticmethod]
-    fn from_json(json: &str) -> PyResult<Self> {
+    #[pyo3(signature = (json, arrays=None))]
+    fn from_json(json: &str, arrays: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let v: serde_json::Value = serde_json::from_str(json).map_err(err)?;
-        Ok(Self {
-            fig: spec::figure(&v).map_err(err)?,
-        })
+        let data = spec_arrays(arrays)?;
+        let fig = with_spec_arrays(&data, || spec::figure(&v)).map_err(err)?;
+        Ok(Self { fig })
     }
 
     fn grid(&mut self, rows: usize, cols: usize) {
@@ -802,11 +805,69 @@ impl Core {
         }
     }
 
-    /// Any of the 40 spec chart types (or `layers`) as JSON.
-    fn chart_json(&mut self, cell: Cell, json: &str) -> PyResult<()> {
-        let v: serde_json::Value = serde_json::from_str(json).map_err(err)?;
-        spec::apply(self.ax(cell), &v).map_err(err)
+    /// Colors the last scatter series of a plot by `values` through a
+    /// colormap (with a colorbar titled `colorbar`).
+    #[pyo3(signature = (cell, values, colormap=None, colorbar=None))]
+    fn color_by(
+        &mut self,
+        cell: Cell,
+        values: &Bound<'_, PyAny>,
+        colormap: Option<String>,
+        colorbar: Option<String>,
+    ) -> PyResult<()> {
+        let v = self::values(values)?;
+        let ax = self.ax(cell);
+        let i = ax
+            .series_count()
+            .checked_sub(1)
+            .ok_or_else(|| err("no series"))?;
+        let s = ax
+            .series_mut::<dataviz::plot::series::scatter::Scatter>(i)
+            .ok_or_else(|| err("the last series is not a scatter"))?;
+        s.values(v);
+        s.colormap(spec::colormap(colormap.as_deref().unwrap_or("viridis")));
+        if let Some(t) = colorbar {
+            s.colorbar(t);
+        }
+        Ok(())
     }
+
+    /// Any spec chart type (or `layers`, or a `mark` with encodings) as
+    /// JSON, with `"@name"` arrays as in `from_json`.
+    #[pyo3(signature = (cell, json, arrays=None))]
+    fn chart_json(
+        &mut self,
+        cell: Cell,
+        json: &str,
+        arrays: Option<&Bound<'_, PyDict>>,
+    ) -> PyResult<()> {
+        let v: serde_json::Value = serde_json::from_str(json).map_err(err)?;
+        let data = spec_arrays(arrays)?;
+        let ax = self.ax(cell);
+        with_spec_arrays(&data, || spec::apply(ax, &v)).map_err(err)
+    }
+}
+
+/// Numbers of `{name: array}` (any input `values` reads).
+fn spec_arrays(arrays: Option<&Bound<'_, PyDict>>) -> PyResult<Vec<(String, Vec<f64>)>> {
+    let Some(d) = arrays else {
+        return Ok(Vec::new());
+    };
+    d.iter()
+        .map(|(k, v)| Ok((k.extract::<String>()?, values(&v)?)))
+        .collect()
+}
+
+fn with_spec_arrays<R>(data: &[(String, Vec<f64>)], f: impl FnOnce() -> R) -> R {
+    let arrays: Vec<spec::Array<'_>> = data
+        .iter()
+        .map(|(n, v)| spec::Array {
+            name: n,
+            data: v,
+            cols: 0,
+        })
+        .collect();
+    spec::with_arrays(&arrays, f)
 }
 
 /// The chart types of `Axes.chart` with their fields.

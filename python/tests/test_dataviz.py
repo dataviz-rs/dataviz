@@ -191,3 +191,69 @@ def test_density_points_and_streamed_grid():
     png_ok(fig)
     with pytest.raises(ValueError):
         dv.Figure(200, 200).axes().density(x, y, how="nope")
+
+
+def test_grammar_plot_from_columns_rows_and_dataframes():
+    import numpy as np
+
+    rng = np.random.default_rng(0)
+    n = 200
+    data = {"g": rng.choice(["a", "b", "c"], n).tolist(), "x": rng.normal(size=n),
+            "y": rng.normal(size=n)}
+    for mark, enc in [("point", dict(x="x", y="y", color="g")),
+                      ("bar", dict(x="g", y="mean(y)")),
+                      ("bar", dict(x={"field": "x", "bin": 20}, color="g")),
+                      ("boxplot", dict(x="g", y="y")),
+                      ("line", dict(x="x", y="y", color="g"))]:
+        fig = dv.plot(data, mark, **enc)
+        assert fig.to_svg().startswith("<svg")
+    rows = [{"g": g, "y": float(y)} for g, y in zip(data["g"], data["y"])]
+    assert dv.plot(rows, "bar", x="g", y="count()").to_png()[:4] == b"\x89PNG"
+    fig = dv.plot(data, "point", x="x", y="y", facet="g", columns=3)
+    assert "<svg" in fig.to_svg()
+    with pytest.raises(Exception, match="no field"):
+        dv.plot(data, "point", x="nope", y="y")
+    ax = dv.Figure().axes()
+    ax.encode(data, "point", x="x", y="y")
+    try:
+        import pandas as pd
+    except ImportError:
+        return
+    df = pd.DataFrame(data)
+    df["day"] = pd.date_range("2024-01-01", periods=n, freq="h")
+    assert dv.plot(df, "line", x="day", y="x").to_png()[:4] == b"\x89PNG"
+
+
+def test_spec_arrays_skip_json():
+    import numpy as np
+
+    x = np.linspace(0, 1, 10_000)
+    fig = dv.from_spec({"type": "line", "x": x, "y": x ** 2, "name": "sq"})
+    assert "sq" in fig.to_svg()
+    ax = dv.Figure().axes()
+    ax.chart("violin", groups={"a": x, "b": x[::-1]})
+
+
+def test_pyplot_runs_matplotlib_style_code(tmp_path):
+    import numpy as np
+    import dataviz.pyplot as plt
+
+    x = np.linspace(0, 10, 100)
+    fig, axs = plt.subplots(2, 2, figsize=(8, 6))
+    axs[0, 0].plot(x, np.sin(x), "r--o", label="sin")
+    axs[0, 0].legend()
+    axs[0, 1].scatter(x, x, s=10, c=x, cmap="magma")
+    axs[1, 0].hist(np.random.default_rng(1).normal(size=500), bins=20)
+    axs[1, 0].set_yscale("log")
+    axs[1, 1].bar(["a", "b"], [1, 2], color="tab:red")
+    for a in axs.flat:
+        a.set_xlabel("x")
+    fig.suptitle("t")
+    fig.savefig(tmp_path / "a.png")
+    plt.figure(figsize=(4, 3))
+    plt.plot(x, x ** 2)
+    plt.xlabel("x"); plt.ylabel("y"); plt.title("p"); plt.xlim(0, 5); plt.grid(True)
+    plt.savefig(tmp_path / "b.svg")
+    plt.close("all")
+    assert (tmp_path / "a.png").stat().st_size > 1000
+    assert (tmp_path / "b.svg").read_text().startswith("<svg")
