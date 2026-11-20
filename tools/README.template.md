@@ -45,7 +45,8 @@ memory of the Rust plotting libraries.**
   matplotlib for typical charts (2× for a 100-million-value histogram,
   78× for animations), and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
-  Optional multi-core and GPU backends.
+  Optional multi-core and GPU backends. An idle window uses no CPU (it
+  only sends frames that changed).
 - **Everything in one crate.** 120+ chart types — lines, bars, statistics,
   heatmaps, contours, 3D, maps, sankey, networks — plus ready-made charts
   for **data scientists** (ROC/PR curves, confusion matrices, regression
@@ -61,13 +62,18 @@ memory of the Rust plotting libraries.**
   slider, measurement, selection and linked brushing across plots; `fig.show_live()` streams data with
   rolling windows and records it to CSV or a GIF.
 - **Every output.** PNG, SVG, PDF, JPEG, WebP, interactive HTML (one file,
-  no internet needed: hover, zoom, pan, rotating 3D), animated GIF/PNG and MP4, the terminal, raw pixels
+  no internet needed: hover, zoom, pan, rotating 3D), animated GIF/PNG/WebP and MP4, the terminal, raw pixels
   for your own GUI, and the browser via WebAssembly.
 - **Text done right.** TeX math (`$\sigma^2 = \frac{1}{N}\sum x_i^2$`) in
   every label, any language (CJK, Arabic and Hebrew right to left, Hindi,
   Thai) and color emoji.
 - **Accessible.** Generated text descriptions for screen readers, color
   blindness simulation and warnings for colors that look alike.
+- **From any language.** Rust, Python (with a matplotlib-compatible
+  `dataviz.pyplot` and an Altair-style `dv.plot`), JavaScript/npm (React,
+  Svelte), C and C++ (CMake; prebuilt for Linux, macOS, Windows, iOS and
+  Android), and Claude through the MCP server. A grammar of graphics (data,
+  mark, encodings, facets) works in all of them.
 - **Pure Rust, few dependencies.** No Python, JavaScript, browser,
   Cairo or system fonts needed (a font is embedded); builds headless and
   for `wasm32`.
@@ -382,6 +388,23 @@ fig.backend(Backend::Gpu);                 // `gpu` feature: Vulkan / Metal / DX
 ```
 
 {{PERFORMANCE}}
+
+### Beyond Rust plotting libraries
+
+Each of these was measured on the same machine, against the most common
+tool for the job:
+
+| Task | dataviz | Compared with |
+|---|---:|---:|
+| Density image of 100 M points (Datashader style), Rust / Python | **70 ms / 81 ms** | Datashader 372 ms |
+| Density image of 10 M points, Python | **39 ms** | Datashader 73 ms |
+| 4-panel script through `dataviz.pyplot` (lines, scatter, log histogram, bars) | **9 ms** | matplotlib 372 ms |
+| 1 M point line through `dataviz.pyplot` | **19 ms** | matplotlib 110 ms |
+| 10 M rows from Polars / pyarrow into a chart | **59 ms** | 508 ms / 2.86 s via NumPy |
+| 1 M point chart built in JavaScript (npm, Float64Array) | **3 ms** | 214 ms in 0.18 (JSON) |
+| 1 M point chart built in C/C++ with binary arrays | **4–7 ms** | 166 ms through JSON text |
+| 3D point cloud, 1 M colormapped points, CPU | **73 ms** | 3.3 s in 0.18 |
+| Idle chart window, CPU use | **0.5 %** | 7 % in 0.18 |
 
 ## Gallery
 

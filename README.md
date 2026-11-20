@@ -45,7 +45,8 @@ memory of the Rust plotting libraries.**
   matplotlib for typical charts (2× for a 100-million-value histogram,
   78× for animations), and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
-  Optional multi-core and GPU backends.
+  Optional multi-core and GPU backends. An idle window uses no CPU (it
+  only sends frames that changed).
 - **Everything in one crate.** 120+ chart types — lines, bars, statistics,
   heatmaps, contours, 3D, maps, sankey, networks — plus ready-made charts
   for **data scientists** (ROC/PR curves, confusion matrices, regression
@@ -61,13 +62,18 @@ memory of the Rust plotting libraries.**
   slider, measurement, selection and linked brushing across plots; `fig.show_live()` streams data with
   rolling windows and records it to CSV or a GIF.
 - **Every output.** PNG, SVG, PDF, JPEG, WebP, interactive HTML (one file,
-  no internet needed: hover, zoom, pan, rotating 3D), animated GIF/PNG and MP4, the terminal, raw pixels
+  no internet needed: hover, zoom, pan, rotating 3D), animated GIF/PNG/WebP and MP4, the terminal, raw pixels
   for your own GUI, and the browser via WebAssembly.
 - **Text done right.** TeX math (`$\sigma^2 = \frac{1}{N}\sum x_i^2$`) in
   every label, any language (CJK, Arabic and Hebrew right to left, Hindi,
   Thai) and color emoji.
 - **Accessible.** Generated text descriptions for screen readers, color
   blindness simulation and warnings for colors that look alike.
+- **From any language.** Rust, Python (with a matplotlib-compatible
+  `dataviz.pyplot` and an Altair-style `dv.plot`), JavaScript/npm (React,
+  Svelte), C and C++ (CMake; prebuilt for Linux, macOS, Windows, iOS and
+  Android), and Claude through the MCP server. A grammar of graphics (data,
+  mark, encodings, facets) works in all of them.
 - **Pure Rust, few dependencies.** No Python, JavaScript, browser,
   Cairo or system fonts needed (a font is embedded); builds headless and
   for `wasm32`.
@@ -385,56 +391,56 @@ fig.backend(Backend::Gpu);                 // `gpu` feature: Vulkan / Metal / DX
 
 Measured against **matplotlib** (Python) and the Rust libraries plotters, ruviz, kuva and charts-rs: the same charts, separate processes, medians (Intel(R) Core(TM) Ultra 7 255HX, NVIDIA GeForce RTX 5070 Ti Laptop GPU, Linux). Full results, method and the code to rerun them: [dataviz-examples/benchmarks](https://github.com/dataviz-rs/dataviz-examples/tree/main/benchmarks).
 
-> **Compared with matplotlib**: 8–53× faster for charts saved to PNG, 29× faster for a live 100 000-point chart, and 143× less memory for 10 M points.
+> **Compared with matplotlib**: 8–53× faster for charts saved to PNG, 28× faster for a live 100 000-point chart, and 178× less memory for 10 M points.
 
 **Charts to an 800×600 PNG** (one thread, time per chart):
 
 | Chart | dataviz | plotters | ruviz | kuva | charts-rs | matplotlib |
 |---|---:|---:|---:|---:|---:|---:|
-| line, 1 000 points | **1.53 ms** | 1.69 ms | 3.58 ms | 5.09 ms | 11.6 ms | 30.2 ms |
-| bar, 20 bars | **0.82 ms** | 0.84 ms | 3.83 ms | 3.66 ms | 2.15 ms | 43.1 ms |
-| scatter, 10 000 points | **2.26 ms** | 2.93 ms | 4.29 ms | 8.86 ms | 78.6 ms | 38.7 ms |
-| scatter, 100 000 points | **10.2 ms** | 17.0 ms | 18.0 ms | 18.0 ms | 808.3 ms | 83.8 ms |
-| line, 100 000 points | **2.21 ms** | 6.12 ms | 8.08 ms | 29.1 ms | 861.2 ms | 52.2 ms |
-| histogram, 1 M values | **2.16 ms** | 2.83 ms | 30.3 ms | 16.6 ms | 13.2 ms | 50.8 ms |
+| line, 1 000 points | **1.50 ms** | 1.66 ms | 3.60 ms | 4.98 ms | 11.1 ms | 29.3 ms |
+| bar, 20 bars | **0.79 ms** | 0.83 ms | 3.90 ms | 3.55 ms | 2.08 ms | 41.8 ms |
+| scatter, 10 000 points | **2.12 ms** | 2.83 ms | 4.37 ms | 8.53 ms | 76.2 ms | 37.5 ms |
+| scatter, 100 000 points | **9.88 ms** | 16.6 ms | 16.9 ms | 17.4 ms | 784.5 ms | 81.8 ms |
+| line, 100 000 points | **2.17 ms** | 5.91 ms | 8.39 ms | 28.2 ms | 829.7 ms | 50.2 ms |
+| histogram, 1 M values | **2.06 ms** | 2.76 ms | 30.2 ms | 16.1 ms | 12.8 ms | 49.6 ms |
 
 **Big data** (time / memory above the data itself):
 
 | Chart | dataviz | dataviz all cores | plotters | ruviz | kuva | charts-rs | matplotlib |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| line, 10 M points | 126.8 ms / +8 MB | **106.2 ms / +8 MB** | 491.9 ms / +315 MB | 330.8 ms / +389 MB | 2.78 s / +787 MB | fails | 597.0 ms / +1162 MB |
-| scatter, 10 M points | 236.4 ms / +9 MB | **183.2 ms / +8 MB** | 1.64 s / +12 MB | 1.30 s / +377 MB | 1.61 s / +788 MB | fails | 5.16 s / +910 MB |
-| histogram, 100 M values | 240.0 ms / +8 MB | **239.9 ms / +7 MB** | 247.2 ms / +12 MB | 3.72 s / +1915 MB | 1.67 s / +1551 MB | 1.26 s / +1532 MB | 535.0 ms / +13 MB |
+| line, 10 M points | 129.0 ms / +7 MB | **103.1 ms / +6 MB** | 481.9 ms / +315 MB | 332.5 ms / +389 MB | 2.70 s / +787 MB | fails | 533.1 ms / +1162 MB |
+| scatter, 10 M points | 230.3 ms / +8 MB | **181.6 ms / +7 MB** | 1.53 s / +12 MB | 1.23 s / +376 MB | 1.56 s / +788 MB | fails | 5.08 s / +910 MB |
+| histogram, 100 M values | 243.5 ms / +7 MB | **235.2 ms / +6 MB** | 264.6 ms / +12 MB | 3.64 s / +1915 MB | 1.64 s / +1551 MB | 1.23 s / +1533 MB | 516.6 ms / +13 MB |
 
 **Live chart** (rolling window, one new point and a full redraw per frame; latency p50 / CPU per frame / memory of the process):
 
 | Window | dataviz 1 thread | dataviz all cores | dataviz GPU | plotters | ruviz | kuva | matplotlib |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| 1 000 points, 800×600 | 0.78 ms / 0.77 ms / 8 MB | **0.50 ms / 2.60 ms / 9 MB** | 0.67 ms / 0.40 ms / 239 MB | 0.65 ms / 0.63 ms / 14 MB | 5.33 ms / 5.33 ms / 11 MB | 5.44 ms / 5.43 ms / 27 MB | 10.1 ms / 10.2 ms / 73 MB |
-| 100 000 points, 800×600 | 2.15 ms / 2.13 ms / 12 MB | 1.99 ms / 4.60 ms / 13 MB | **1.73 ms / 1.30 ms / 243 MB** | 5.53 ms / 5.53 ms / 16 MB | 33.3 ms / 33.3 ms / 18 MB | 47.5 ms / 47.5 ms / 36 MB | 61.4 ms / 61.5 ms / 112 MB |
-| 1 000 points, 1920×1080 | 1.67 ms / 1.70 ms / 16 MB | **0.82 ms / 5.87 ms / 18 MB** | 1.52 ms / 1.30 ms / 245 MB | 1.48 ms / 1.50 ms / 18 MB | 17.4 ms / 17.4 ms / 18 MB | 18.1 ms / 18.2 ms / 33 MB | 12.0 ms / 11.9 ms / 79 MB |
-| 100 000 points, 1920×1080 | 5.37 ms / 5.40 ms / 19 MB | 3.26 ms / 14.4 ms / 22 MB | **2.82 ms / 2.50 ms / 250 MB** | 8.45 ms / 8.47 ms / 21 MB | 121.9 ms / 121.5 ms / 29 MB | 117.8 ms / 117.8 ms / 42 MB | 139.3 ms / 140.1 ms / 177 MB |
+| 1 000 points, 800×600 | 0.77 ms / 0.77 ms / 7 MB | **0.49 ms / 2.57 ms / 8 MB** | 0.67 ms / 0.47 ms / 214 MB | 0.65 ms / 0.63 ms / 14 MB | 4.66 ms / 4.67 ms / 11 MB | 5.26 ms / 5.23 ms / 27 MB | 10.1 ms / 10.1 ms / 73 MB |
+| 100 000 points, 800×600 | 2.20 ms / 2.17 ms / 12 MB | **2.02 ms / 4.67 ms / 13 MB** | 2.04 ms / 1.63 ms / 219 MB | 5.40 ms / 5.37 ms / 16 MB | 34.6 ms / 34.6 ms / 17 MB | 47.0 ms / 47.1 ms / 36 MB | 62.0 ms / 62.0 ms / 112 MB |
+| 1 000 points, 1920×1080 | 1.69 ms / 1.70 ms / 15 MB | **0.77 ms / 5.83 ms / 17 MB** | 1.39 ms / 1.23 ms / 221 MB | 1.48 ms / 1.50 ms / 18 MB | 17.4 ms / 17.4 ms / 18 MB | 18.0 ms / 18.0 ms / 33 MB | 12.4 ms / 12.6 ms / 79 MB |
+| 100 000 points, 1920×1080 | 5.51 ms / 5.53 ms / 18 MB | 3.25 ms / 14.1 ms / 20 MB | **2.70 ms / 2.53 ms / 225 MB** | 8.43 ms / 8.43 ms / 21 MB | 119.9 ms / 119.9 ms / 28 MB | 115.8 ms / 115.8 ms / 42 MB | 136.8 ms / 136.8 ms / 177 MB |
 
 **Animated GIF** (800×600, 120 frames; time, file size):
 
 | Animation | dataviz | plotters | ruviz | matplotlib |
 |---|---:|---:|---:|---:|
-| whole plot moves | **301.0 ms, 1001 KB** | 995.0 ms, 3227 KB | 3.87 s, 1741 KB | 5.45 s, 1119 KB |
-| line grows on fixed axes | **84.0 ms, 38 KB** | 2.98 s, 3257 KB | 4.00 s, 1701 KB | 6.53 s, 420 KB |
+| whole plot moves | **282.0 ms, 1001 KB** | 1.09 s, 3227 KB | 3.00 s, 1741 KB | 5.24 s, 1119 KB |
+| line grows on fixed axes | **81.0 ms, 38 KB** | 2.40 s, 3257 KB | 2.91 s, 1701 KB | 5.75 s, 420 KB |
 
 **3D charts** (800×600 PNG; dataviz, plotters and matplotlib on one core, PyVista on the GPU; a rotation frame is the camera turned and the image drawn again):
 
 | Chart | dataviz | dataviz GPU | plotters | matplotlib | PyVista |
 |---|---:|---:|---:|---:|---:|
-| surface 60² | 6.36 ms | **2.39 ms** | 5.93 ms | 56.3 ms | 93.2 ms |
-| surface 200² | 29.4 ms | **5.28 ms** | 21.2 ms | 142.5 ms | 100.0 ms |
-| scatter 10,000 | 2.74 ms | **2.15 ms** | 3.19 ms | 94.9 ms | 86.1 ms |
-| scatter 1,000,000 | 138.5 ms | **39.5 ms** | 169.0 ms | 5.61 s | 118.3 ms |
-| line 100,000 (Lorenz) | 9.75 ms | **3.93 ms** | 8.47 ms | 59.0 ms | 85.1 ms |
-| molecule 1BNA (486 atoms) | 3.38 ms | 2.05 ms | **1.92 ms** | 37.6 ms | 81.5 ms |
-| rotation frame: surface 60² | 5.09 ms | **0.48 ms** | 5.00 ms | 24.9 ms | 0.53 ms |
-| rotation frame: molecule | 2.12 ms | **0.45 ms** | 0.89 ms | 11.4 ms | 0.58 ms |
-| GIF, 90 frames turning | 886.7 ms, 3949 KB | **740.1 ms, 3453 KB** | 2.79 s, 4544 KB | 7.34 s, 5713 KB | 4.05 s, 3441 KB |
+| surface 60² | 6.34 ms | **2.37 ms** | 6.05 ms | 57.0 ms | 93.7 ms |
+| surface 200² | 29.9 ms | **5.41 ms** | 21.3 ms | 146.2 ms | 101.0 ms |
+| scatter 10,000 | 2.81 ms | **2.00 ms** | 3.19 ms | 96.3 ms | 89.2 ms |
+| scatter 1,000,000 | 147.0 ms | **39.9 ms** | 170.3 ms | 5.71 s | 119.2 ms |
+| line 100,000 (Lorenz) | 9.93 ms | **3.79 ms** | 8.41 ms | 59.3 ms | 87.8 ms |
+| molecule 1BNA (486 atoms) | 3.35 ms | 2.31 ms | **1.91 ms** | 37.6 ms | 82.1 ms |
+| rotation frame: surface 60² | 5.10 ms | **0.45 ms** | 4.98 ms | 25.0 ms | 0.55 ms |
+| rotation frame: molecule | 2.13 ms | **0.46 ms** | 0.88 ms | 11.4 ms | 0.61 ms |
+| GIF, 90 frames turning | 885.7 ms, 3949 KB | **665.9 ms, 3453 KB** | 2.80 s, 4544 KB | 7.38 s, 5713 KB | 4.14 s, 3441 KB |
 
 What makes it fast: the scene is drawn straight into the output buffer by
 dataviz's own anti-aliased rasterizer; dense lines become one pixel-column
@@ -461,6 +467,23 @@ thread plotters is 0.1–0.2 ms faster per frame; dataviz on all cores is
 the fastest there. The GPU backend needs the least CPU time but ~240 MB of
 driver memory and ~0.3 s to start, so the default stays on the CPU.
 
+### Beyond Rust plotting libraries
+
+Each of these was measured on the same machine, against the most common
+tool for the job:
+
+| Task | dataviz | Compared with |
+|---|---:|---:|
+| Density image of 100 M points (Datashader style), Rust / Python | **70 ms / 81 ms** | Datashader 372 ms |
+| Density image of 10 M points, Python | **39 ms** | Datashader 73 ms |
+| 4-panel script through `dataviz.pyplot` (lines, scatter, log histogram, bars) | **9 ms** | matplotlib 372 ms |
+| 1 M point line through `dataviz.pyplot` | **19 ms** | matplotlib 110 ms |
+| 10 M rows from Polars / pyarrow into a chart | **59 ms** | 508 ms / 2.86 s via NumPy |
+| 1 M point chart built in JavaScript (npm, Float64Array) | **3 ms** | 214 ms in 0.18 (JSON) |
+| 1 M point chart built in C/C++ with binary arrays | **4–7 ms** | 166 ms through JSON text |
+| 3D point cloud, 1 M colormapped points, CPU | **73 ms** | 3.3 s in 0.18 |
+| Idle chart window, CPU use | **0.5 %** | 7 % in 0.18 |
+
 ## Gallery
 
 Every image links to its example in
@@ -470,9 +493,10 @@ Every image links to its example in
 ### Live, interactive and animated
 
 <table>
-<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-interactive"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-interactive/screenshots/interactive.gif" alt="Zoom, pan and range slider" width="100%"><br><sub>Zoom, pan and range slider</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-streaming"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-streaming/screenshots/streaming.gif" alt="Live dashboard (streaming data)" width="100%"><br><sub>Live dashboard (streaming data)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-animation"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-animation/screenshots/animation.gif" alt="Animations (GIF, APNG, MP4)" width="100%"><br><sub>Animations (GIF, APNG, MP4)</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-interactive"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-interactive/screenshots/interactive.gif" alt="Zoom, pan and range slider" width="100%"><br><sub>Zoom, pan and range slider</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-streaming"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-streaming/screenshots/streaming.gif" alt="Live dashboard (streaming data)" width="100%"><br><sub>Live dashboard (streaming data)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-animation"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-animation/screenshots/animation.gif" alt="Animations (GIF, APNG, WebP, MP4)" width="100%"><br><sub>Animations (GIF, APNG, WebP, MP4)</sub></a></td></tr>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-binance"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-binance/screenshots/binance.png" alt="Live Binance BTC dashboard" width="100%"><br><sub>Live Binance BTC dashboard</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-html"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-html/screenshots/html.png" alt="Interactive HTML (hover, crosshair)" width="100%"><br><sub>Interactive HTML (hover, crosshair)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-wasm"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-wasm/screenshots/wasm.png" alt="In the browser (WebAssembly)" width="100%"><br><sub>In the browser (WebAssembly)</sub></a></td></tr>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-egui"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-egui/screenshots/egui.png" alt="Inside an egui app" width="100%"><br><sub>Inside an egui app</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-backends"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-backends/screenshots/backends.png" alt="CPU, multi-core and GPU backends" width="100%"><br><sub>CPU, multi-core and GPU backends</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-terminal"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-terminal/screenshots/terminal.png" alt="Charts in the terminal" width="100%"><br><sub>Charts in the terminal</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-c-cpp"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-c-cpp/screenshots/dashboard.png" alt="From C and C++ (CMake)" width="100%"><br><sub>From C and C++ (CMake)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-grammar"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-grammar/screenshots/grammar.png" alt="Grammar of graphics (data + mark + encodings)" width="100%"><br><sub>Grammar of graphics (data + mark + encodings)</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-grammar"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-grammar/screenshots/grammar_facets.png" alt="Grammar of graphics: facets" width="100%"><br><sub>Grammar of graphics: facets</sub></a></td></tr>
 </table>
 
 ### For data scientists, biologists, engineers and traders
@@ -482,7 +506,8 @@ Every image links to its example in
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology/screenshots/clustermap.png" alt="Clustermap of gene expression" width="100%"><br><sub>Clustermap of gene expression</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology/screenshots/genomics.png" alt="Genomics: Circos, Hi-C, trees, oncoprint" width="100%"><br><sub>Genomics: Circos, Hi-C, trees, oncoprint</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology-3d"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology-3d/screenshots/rotate.gif" alt="3D DNA and cell turning around x, y, z" width="100%"><br><sub>3D DNA and cell turning around x, y, z</sub></a></td></tr>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology-3d"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology-3d/screenshots/biology_3d.png" alt="3D: DNA, PDB molecules, cell, organoid, UMAP" width="100%"><br><sub>3D: DNA, PDB molecules, cell, organoid, UMAP</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-biology-3d"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-biology-3d/screenshots/protein.png" alt="Protein cartoons, Ramachandran, isosurfaces" width="100%"><br><sub>Protein cartoons, Ramachandran, isosurfaces</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-engineering"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-engineering/screenshots/engineering.png" alt="Engineering: spectrum, spectrogram, Nyquist, Smith" width="100%"><br><sub>Engineering: spectrum, spectrogram, Nyquist, Smith</sub></a></td></tr>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-engineering"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-engineering/screenshots/bode.png" alt="Bode plot" width="100%"><br><sub>Bode plot</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-engineering"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-engineering/screenshots/science.png" alt="Streamlines, ternary, SPC, Pareto, 3D waterfall" width="100%"><br><sub>Streamlines, ternary, SPC, Pareto, 3D waterfall</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-trading"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-trading/screenshots/trading.png" alt="Trading: Ichimoku, VWAP, volume profile, depth" width="100%"><br><sub>Trading: Ichimoku, VWAP, volume profile, depth</sub></a></td></tr>
-<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-trading"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-trading/screenshots/orderflow.png" alt="Order flow: liquidity, footprint, TPO, options" width="100%"><br><sub>Order flow: liquidity, footprint, TPO, options</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-business"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-business/screenshots/business.png" alt="Business: bullet, slope, chord, streamgraph" width="100%"><br><sub>Business: bullet, slope, chord, streamgraph</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-trading"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-trading/screenshots/orderflow.png" alt="Order flow: liquidity, footprint, TPO, options" width="100%"><br><sub>Order flow: liquidity, footprint, TPO, options</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-drawing-tools"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-drawing-tools/screenshots/drawing_tools.png" alt="Drawing tools: trend lines, levels, Fibonacci" width="100%"><br><sub>Drawing tools: trend lines, levels, Fibonacci</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-volume-files"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-volume-files/screenshots/volume_files.png" alt="NIfTI and DICOM scans, lit volume rendering" width="100%"><br><sub>NIfTI and DICOM scans, lit volume rendering</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-business"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-business/screenshots/business.png" alt="Business: bullet, slope, chord, streamgraph" width="100%"><br><sub>Business: bullet, slope, chord, streamgraph</sub></a></td></tr>
 </table>
 
 ### Lines, points and bars
@@ -518,7 +543,7 @@ Every image links to its example in
 
 <table>
 <tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/maps.png" alt="Choropleth and flight routes" width="100%"><br><sub>Choropleth and flight routes</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/regions.png" alt="States, flows, hexbin, OpenStreetMap basemap" width="100%"><br><sub>States, flows, hexbin, OpenStreetMap basemap</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/projections.png" alt="Map projections (incl. equal-area)" width="100%"><br><sub>Map projections (incl. equal-area)</sub></a></td></tr>
-<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/globe.png" alt="Globe with a great-circle route" width="100%"><br><sub>Globe with a great-circle route</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/globe_spin.gif" alt="Spinning globe" width="100%"><br><sub>Spinning globe</sub></a></td></tr>
+<tr><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/conic_polar.png" alt="Conic (USA, Europe) and polar maps" width="100%"><br><sub>Conic (USA, Europe) and polar maps</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/globe.png" alt="Globe with a great-circle route" width="100%"><br><sub>Globe with a great-circle route</sub></a></td><td width="33%" align="center"><a href="https://github.com/dataviz-rs/dataviz-examples/tree/main/plot-maps"><img src="https://raw.githubusercontent.com/dataviz-rs/dataviz-examples/main/plot-maps/screenshots/globe_spin.gif" alt="Spinning globe" width="100%"><br><sub>Spinning globe</sub></a></td></tr>
 </table>
 
 ### Parts, flows and polar
