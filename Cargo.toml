@@ -32,7 +32,7 @@ flate2 = { version = "1", optional = true }
 wgpu = { version = "30", optional = true }
 
 [features]
-default = ["window", "formats", "full-font", "shaping"]
+default = ["window", "formats", "full-font", "shaping", "gzip"]
 # Text shaping for complex scripts (Arabic, Hebrew, Indic, Thai, …) with
 # HarfRust; without it text is laid out with kerning only (+0.8 MB).
 shaping = ["dep:harfrust"]
@@ -41,6 +41,8 @@ formats = ["image/jpeg", "image/webp", "image/bmp"]
 # The full embedded font (DejaVu Sans, 760 KB); without it a 235 KB subset
 # (Latin, Greek, Cyrillic, math and symbols) is embedded: for WebAssembly.
 full-font = []
+# gzip-compressed volume files (`.nii.gz`, compressed MetaImage).
+gzip = ["dep:flate2"]
 # Interactive windows (`Figure::show`, `Figure::show_live`); disable for headless/WASM builds.
 window = ["dep:minifb"]
 # PDF output (`Figure::save("x.pdf")`).

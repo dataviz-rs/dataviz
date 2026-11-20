@@ -20,6 +20,17 @@
   (`dataviz-rs/svelte`).
 
 ### Added
+- Volume files (`plot::volume_file::VolumeData`, `Axes::volume_data`,
+  spec `volume` with `path`, Python `Axes.volume("scan.nii.gz")`):
+  - NIfTI-1 and NIfTI-2 (`.nii`, `.nii.gz`; either byte order, every
+    data type, intensity scaling; for 4D files the first volume);
+  - VTK legacy structured points (ASCII or binary);
+  - MetaImage (`.mhd` + raw, `.mha`, zlib-compressed).
+
+  Voxel spacing and origin are kept, so scans keep their physical
+  proportions. `VolumeData::to_nifti` writes a NIfTI file, and
+  `Axes::volume_f32` takes `f32` data without conversion. New default
+  feature `gzip`.
 - Grammar of graphics (`plot::grammar`, spec `mark` + `encoding`, as in
   Vega-Lite and ggplot2):
   - data as columns, rows or `{"values": rows}`;

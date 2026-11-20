@@ -163,7 +163,7 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
     ),
     (
         "volume",
-        "values ([z][y][x] nested, or flat x-fastest with dims: [nx, ny, nz]), x_range?, y_range?, z_range?, colormap?, opacity?, threshold?, mode? (composite, mip)",
+        "values ([z][y][x] nested, or flat x-fastest with dims: [nx, ny, nz]) or path (.nii, .nii.gz, .vtk, .mhd, .mha), x_range?, y_range?, z_range?, colormap?, opacity?, threshold?, mode? (composite, mip)",
         "Volume rendering of a 3D grid (densities, scans).",
     ),
     (
@@ -766,6 +766,11 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                 d.colorbar(c);
             }
         }
+        "volume" if p.get("path").is_some() => {
+            let path = s(p, "path").ok_or("`path` must be a file name")?;
+            let data = crate::plot::volume_file::VolumeData::read(path)?;
+            volume_options(ax.volume_data(&data), p);
+        }
         "volume" => {
             let (values, dims) = match p.get("dims").and_then(to_nums) {
                 Some(d) if d.len() == 3 => (
@@ -806,18 +811,7 @@ fn chart(ax: &mut Axes, p: &Value) -> Result<()> {
                 r("y_range", dims[1]),
                 r("z_range", dims[2]),
             );
-            if let Some(c) = s(p, "colormap") {
-                v.colormap(colormap(c));
-            }
-            if let Some(a) = f(p, "opacity") {
-                v.opacity(a);
-            }
-            if let Some(t) = f(p, "threshold") {
-                v.threshold(t);
-            }
-            if matches!(s(p, "mode"), Some("mip" | "max" | "max_intensity")) {
-                v.mode(crate::plot::series::volume::VolumeMode::MaxIntensity);
-            }
+            volume_options(v, p);
         }
         "arc_diagram" | "edge_bundling" => {
             let nodes = names_any(p, &["nodes", "labels", "names"])?;
@@ -1135,6 +1129,21 @@ mod network_tests {
         let bad = serde_json::json!({"type": "arc_diagram", "nodes": ["a"], "edges": [["a", "z"]]});
         let err = super::figure(&bad).err().unwrap_or_default();
         assert!(err.contains("unknown node"), "{err}");
+    }
+}
+
+fn volume_options(v: &mut crate::plot::series::volume::Volume, p: &Value) {
+    if let Some(c) = s(p, "colormap") {
+        v.colormap(colormap(c));
+    }
+    if let Some(a) = f(p, "opacity") {
+        v.opacity(a);
+    }
+    if let Some(t) = f(p, "threshold") {
+        v.threshold(t);
+    }
+    if matches!(s(p, "mode"), Some("mip" | "max" | "max_intensity")) {
+        v.mode(crate::plot::series::volume::VolumeMode::MaxIntensity);
     }
 }
 

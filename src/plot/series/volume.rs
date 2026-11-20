@@ -408,8 +408,14 @@ impl Axes {
     /// `[nx, ny, nz]`. Low values are transparent ([`Volume::threshold`]),
     /// higher ones glow in the colormap; drawn behind the other 3D series.
     pub fn volume(&mut self, values: impl super::IntoValues, dims: [usize; 3]) -> &mut Volume {
-        self.use_3d();
         let values: Vec<f32> = values.into_values().into_iter().map(|v| v as f32).collect();
+        self.volume_f32(values, dims)
+    }
+
+    /// [`Axes::volume`] from `f32` values, without a conversion (half the
+    /// memory of `f64`; how scans and simulations usually store them).
+    pub fn volume_f32(&mut self, values: Vec<f32>, dims: [usize; 3]) -> &mut Volume {
+        self.use_3d();
         let ranges = dims.map(|n| (0.0, n.saturating_sub(1).max(1) as f64));
         self.add(Volume {
             values: Arc::new(values),

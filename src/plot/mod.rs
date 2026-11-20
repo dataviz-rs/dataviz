@@ -50,6 +50,7 @@ pub(crate) mod text;
 pub mod theme;
 pub mod ticks;
 pub mod time;
+pub mod volume_file;
 #[cfg(feature = "window")]
 pub mod window;
 

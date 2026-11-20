@@ -257,3 +257,47 @@ fn fuzz_json_specs() {
         }
     });
 }
+
+#[test]
+fn fuzz_volume_files() {
+    use dataviz::plot::volume_file::VolumeData;
+    let v = VolumeData {
+        values: (0..27).map(|i| i as f32).collect(),
+        dims: [3, 3, 3],
+        spacing: [1.0, 2.0, 0.5],
+        origin: [0.0; 3],
+    };
+    let nifti = v.to_nifti();
+    let mut rng = Rng(0x5eed);
+    for _ in 0..iterations(3000) {
+        let mut b = nifti.clone();
+        for _ in 0..1 + rng.below(8) {
+            match rng.below(3) {
+                0 if !b.is_empty() => {
+                    let i = rng.below(b.len());
+                    b[i] = rng.next() as u8;
+                }
+                1 => b.truncate(rng.below(b.len() + 1)),
+                _ => {
+                    // Header fields: dims, datatype, offset.
+                    let i = [40, 42, 44, 46, 70, 108][rng.below(6)];
+                    if i + 2 <= b.len() {
+                        b[i] = rng.next() as u8;
+                        b[i + 1] = rng.next() as u8;
+                    }
+                }
+            }
+        }
+        if catch_unwind(AssertUnwindSafe(|| VolumeData::from_nifti(&b))).is_err() {
+            panic!("nifti reader panicked on {:?}", &b[..b.len().min(400)]);
+        }
+    }
+    let vtk = "# vtk DataFile Version 3.0\nb\nASCII\nDATASET STRUCTURED_POINTS\nDIMENSIONS 2 2 2\nSPACING 1 1 1\nORIGIN 0 0 0\nPOINT_DATA 8\nSCALARS s float 1\nLOOKUP_TABLE default\n0 1 2 3 4 5 6 7\n";
+    let mhd = "NDims = 3\nDimSize = 2 2 1\nElementType = MET_UCHAR\nElementDataFile = LOCAL\nabcd";
+    fuzz("vtk", &[vtk], 3000, |s| {
+        let _ = VolumeData::from_vtk(s.as_bytes());
+    });
+    fuzz("mhd", &[mhd], 3000, |s| {
+        let _ = VolumeData::from_metaimage(s.as_bytes(), None);
+    });
+}

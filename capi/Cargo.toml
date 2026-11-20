@@ -22,5 +22,5 @@ pdf = ["dataviz/pdf"]
 gpu = ["dataviz/gpu"]
 
 [dependencies]
-dataviz = { path = "..", default-features = false, features = ["spec", "formats", "full-font", "shaping"] }
+dataviz = { path = "..", default-features = false, features = ["spec", "formats", "full-font", "shaping", "gzip"] }
 serde_json = "1"
