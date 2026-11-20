@@ -32,6 +32,12 @@ dv_figure_save(fig, "hello.png");
 dv_figure_free(fig);
 ```
 
+## Prebuilt libraries
+
+Releases tagged `c-v*` carry archives with `include/` and `lib/` (shared
+and static library) for Linux (x86_64, aarch64), macOS (arm64, x86_64),
+Windows (x86_64), Android (arm64, static) and iOS (arm64, static).
+
 ## Building
 
 You need Rust 1.89+ ([rustup.rs](https://rustup.rs)) and CMake 3.16+.

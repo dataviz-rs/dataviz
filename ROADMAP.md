@@ -46,7 +46,7 @@ then breadth. There is no backward-compatibility promise before 1.0.
 - [x] Interactive Jupyter widget (rotate 3D, zoom) for the Python `Figure`
 - [x] C and C++ API (`capi/`) on Linux, macOS, Windows, iOS, Android
 - [x] matplotlib-style `dataviz.pyplot` and Altair-style `dv.plot` in Python
-- [ ] Prebuilt C/C++ libraries attached to GitHub releases
+- [x] Prebuilt C/C++ libraries attached to GitHub releases (`c-v*` tags; workflow ready, no tag yet)
 - [ ] Release dataviz 0.19, Python 0.4.0, npm 0.2.0
 
 ## Quality

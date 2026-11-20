@@ -1,0 +1,76 @@
+# Prebuilt C/C++ libraries (capi/): pushed tags `c-v*` build the shared and
+# static library for each platform and attach archives (include/, lib/,
+# README) to the GitHub release of the tag.
+name: C/C++ libraries
+
+on:
+  push:
+    tags: ["c-v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu, name: linux-x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64-unknown-linux-gnu, name: linux-aarch64 }
+          - { os: macos-latest, target: aarch64-apple-darwin, name: macos-arm64 }
+          - { os: macos-13, target: x86_64-apple-darwin, name: macos-x86_64 }
+          - { os: windows-latest, target: x86_64-pc-windows-msvc, name: windows-x86_64 }
+          - { os: ubuntu-latest, target: aarch64-linux-android, name: android-arm64, mobile: true }
+          - { os: macos-latest, target: aarch64-apple-ios, name: ios-arm64, mobile: true }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        if: runner.os == 'Linux' && !matrix.mobile
+        run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - name: Build (desktop)
+        if: ${{ !matrix.mobile }}
+        run: cargo build --release -p dataviz-c --target ${{ matrix.target }}
+      - name: Build (mobile, static, no windows)
+        if: ${{ matrix.mobile }}
+        run: cargo rustc --release -p dataviz-c --target ${{ matrix.target }} --no-default-features --features pdf --crate-type staticlib
+      - name: Package
+        shell: bash
+        run: |
+          d=dataviz-c-${{ matrix.name }}
+          mkdir -p $d/lib
+          cp -r capi/include capi/README.md LICENSE $d/
+          out=target/${{ matrix.target }}/release
+          for f in libdataviz_c.so libdataviz_c.dylib libdataviz_c.a dataviz_c.dll dataviz_c.dll.lib dataviz_c.lib; do
+            [ -f $out/$f ] && cp $out/$f $d/lib/
+          done
+          # Smaller shared libraries (debug symbols are not needed to link).
+          if [ -f $d/lib/libdataviz_c.so ]; then strip $d/lib/libdataviz_c.so; fi
+          if [ -f $d/lib/libdataviz_c.dylib ]; then strip -x $d/lib/libdataviz_c.dylib; fi
+          if [ "${{ runner.os }}" = "Windows" ]; then 7z a $d.zip $d; else tar czf $d.tar.gz $d; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dataviz-c-${{ matrix.name }}
+          path: dataviz-c-${{ matrix.name }}.*
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --title "C/C++ libraries $GITHUB_REF_NAME" --notes "Prebuilt dataviz C/C++ libraries (see capi/README.md)."
+          gh release upload "$GITHUB_REF_NAME" dist/* -R "$GITHUB_REPOSITORY" --clobber
