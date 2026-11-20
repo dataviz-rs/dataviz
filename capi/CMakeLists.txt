@@ -69,6 +69,15 @@ if(DATAVIZ_STATIC)
 else()
   add_library(dataviz_c SHARED IMPORTED GLOBAL)
   set_target_properties(dataviz_c PROPERTIES IMPORTED_LOCATION ${_shared})
+  if(APPLE)
+    # The library is named @rpath/libdataviz_c.dylib: programs find it
+    # through an rpath to the build directory.
+    set_target_properties(dataviz_c PROPERTIES IMPORTED_SONAME "@rpath/libdataviz_c.dylib"
+                          INTERFACE_LINK_OPTIONS "LINKER:-rpath,${_out}")
+  elseif(UNIX)
+    set_target_properties(dataviz_c PROPERTIES IMPORTED_SONAME "libdataviz_c.so"
+                          INTERFACE_LINK_OPTIONS "LINKER:-rpath,${_out}")
+  endif()
   if(WIN32)
     set_target_properties(dataviz_c PROPERTIES IMPORTED_IMPLIB ${_implib}
                           INTERFACE_COMPILE_DEFINITIONS DATAVIZ_SHARED)
