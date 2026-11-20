@@ -54,12 +54,13 @@ if(DATAVIZ_STATIC)
   add_library(dataviz_c STATIC IMPORTED GLOBAL)
   set_target_properties(dataviz_c PROPERTIES IMPORTED_LOCATION ${_static})
   if(WIN32)
-    set(_sys ws2_32 userenv bcrypt ntdll advapi32 kernel32 user32 gdi32 ole32 shell32 winmm
+    set(_sys ws2_32 userenv bcrypt ntdll advapi32 kernel32 user32 gdi32 ole32 shell32 winmm synchronization
              oleaut32 propsys runtimeobject d3dcompiler opengl32 dwmapi)
   elseif(APPLE)
     set(_sys "-framework Cocoa" "-framework Foundation" "-framework CoreFoundation"
              "-framework AppKit" "-framework CoreGraphics" "-framework CoreVideo"
-             "-framework QuartzCore" "-framework Metal" "-framework IOKit" "-framework Security"
+             "-framework QuartzCore" "-framework Metal" "-framework MetalKit" "-framework Carbon"
+             "-framework IOKit" "-framework Security"
              objc iconv m)
   else()
     set(_sys dl pthread m rt util)
