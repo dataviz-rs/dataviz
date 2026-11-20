@@ -37,8 +37,11 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/npm-v')
         working-directory: wasm/npm
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
+          # Trusted publishing (OIDC) needs no token; an empty one would be
+          # used instead and fail, so it is set only when the secret exists.
+          if [ -n "$NPM_TOKEN" ]; then export NODE_AUTH_TOKEN="$NPM_TOKEN"; fi
           cp ../../LICENSE .
           test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME#npm-}"
           npm install -g npm@latest
