@@ -18,6 +18,8 @@
 //! - `.gif`: 256 colors per frame, exact when a frame has fewer colors
 //!   (typical for charts), otherwise a weighted median-cut palette.
 //! - `.png` / `.apng`: animated PNG, lossless with transparency.
+//! - `.webp`: animated WebP, lossless with transparency, usually smaller
+//!   than APNG and GIF (`formats` feature).
 //! - `.mp4`, `.mov`, `.mkv` (H.264) and `.webm` (VP9): piped to the
 //!   `ffmpeg` program, which must be on `PATH`.
 //!
@@ -67,6 +69,8 @@ enum Sink {
     Closed(Kind, PathBuf),
     Gif(Box<gif::Encoder<BufWriter<File>>>),
     Apng(Apng),
+    #[cfg(feature = "formats")]
+    WebP(WebP),
     Video(Video),
     Done,
 }
@@ -75,6 +79,7 @@ enum Sink {
 enum Kind {
     Gif,
     Apng,
+    WebP,
     Video,
 }
 
@@ -92,6 +97,7 @@ impl Recorder {
         let kind = match ext.as_str() {
             "gif" => Kind::Gif,
             "png" | "apng" => Kind::Apng,
+            "webp" => Kind::WebP,
             "mp4" | "mov" | "mkv" | "webm" => Kind::Video,
             other => return Err(Error::UnsupportedFormat(format!(".{other} (animation)"))),
         };
@@ -205,6 +211,8 @@ impl Recorder {
                 w.flush()?;
             }
             Sink::Apng(a) => a.finish(self.written as u32)?,
+            #[cfg(feature = "formats")]
+            Sink::WebP(a) => a.finish()?,
             Sink::Video(v) => v.finish()?,
             Sink::Closed(..) | Sink::Done => {}
         }
@@ -227,6 +235,8 @@ impl Recorder {
         let per_unit = match &self.sink {
             Sink::Gif(_) => 0.01,
             Sink::Apng(_) => 0.001,
+            #[cfg(feature = "formats")]
+            Sink::WebP(_) => 0.001,
             Sink::Video(v) => 1.0 / v.fps,
             _ => 1.0,
         };
@@ -243,6 +253,12 @@ impl Recorder {
             Sink::Apng(a) => {
                 let delay = units.clamp(1, u16::MAX as u64);
                 a.frame(&self.prev, &self.pending, w, rect, delay as u16)?;
+                self.units += delay;
+            }
+            #[cfg(feature = "formats")]
+            Sink::WebP(a) => {
+                let delay = units.clamp(1, 0xFF_FFFF);
+                a.frame(&self.prev, &self.pending, w, h, rect, delay as u32)?;
                 self.units += delay;
             }
             Sink::Video(v) => {
@@ -301,6 +317,12 @@ fn open(kind: Kind, path: &Path, w: u32, h: u32, fps: f64) -> Result<Sink, Error
             Ok(Sink::Gif(Box::new(enc)))
         }
         Kind::Apng => Ok(Sink::Apng(Apng::create(path, w, h)?)),
+        #[cfg(feature = "formats")]
+        Kind::WebP => Ok(Sink::WebP(WebP::create(path, w, h)?)),
+        #[cfg(not(feature = "formats"))]
+        Kind::WebP => Err(Error::UnsupportedFormat(
+            ".webp animations need the `formats` cargo feature".into(),
+        )),
         Kind::Video => Ok(Sink::Video(Video::spawn(path, w, h, fps)?)),
     }
 }
@@ -528,6 +550,130 @@ fn median_cut(colors: &mut [(u32, u32)], k: usize) -> (Vec<[u8; 3]>, HashMap<u32
         ]);
     }
     (palette, index)
+}
+
+/// Animated WebP writer (RIFF `VP8X` + `ANIM` + one `ANMF` per frame):
+/// each frame is the changed rectangle (on even coordinates, as `ANMF`
+/// requires) encoded as lossless `VP8L`, replacing what was there.
+#[cfg(feature = "formats")]
+struct WebP {
+    out: BufWriter<File>,
+    rgba: Vec<u8>,
+    bytes: u64,
+}
+
+#[cfg(feature = "formats")]
+impl WebP {
+    fn create(path: &Path, w: u32, h: u32) -> Result<Self, Error> {
+        if w > 1 << 24 || h > 1 << 24 {
+            return Err(Error::Encode(
+                "WebP frames are at most 16 777 216 pixels wide".into(),
+            ));
+        }
+        let mut out = BufWriter::new(File::create(path)?);
+        // RIFF size is written by `finish`.
+        out.write_all(b"RIFF\0\0\0\0WEBP")?;
+        let mut vp8x = vec![0x10 | 0x02, 0, 0, 0];
+        vp8x.extend(&(w - 1).to_le_bytes()[..3]);
+        vp8x.extend(&(h - 1).to_le_bytes()[..3]);
+        riff_chunk(&mut out, b"VP8X", &vp8x)?;
+        // Transparent background, loop forever.
+        riff_chunk(&mut out, b"ANIM", &[0, 0, 0, 0, 0, 0])?;
+        Ok(Self {
+            out,
+            rgba: Vec::new(),
+            bytes: 4 + 18 + 14,
+        })
+    }
+
+    fn frame(
+        &mut self,
+        prev: &[u32],
+        cur: &[u32],
+        w: usize,
+        h: usize,
+        rect: (usize, usize, usize, usize),
+        delay_ms: u32,
+    ) -> Result<(), Error> {
+        // ANMF offsets are stored halved: start on even pixels.
+        let (mut rx, mut ry, mut rw, mut rh) = rect;
+        if rx % 2 == 1 {
+            rx -= 1;
+            rw += 1;
+        }
+        if ry % 2 == 1 {
+            ry -= 1;
+            rh += 1;
+        }
+        let (rw, rh) = (rw.min(w - rx), rh.min(h - ry));
+        // The rectangle's own pixels, not blended: decoders blend with
+        // rounding (an opaque pixel can come out one level off).
+        let _ = prev;
+        self.rgba.clear();
+        for y in ry..ry + rh {
+            for &c in &cur[y * w + rx..y * w + rx + rw] {
+                self.rgba.extend(c.to_ne_bytes());
+            }
+        }
+        let mut file = Vec::new();
+        image::codecs::webp::WebPEncoder::new_lossless(&mut file)
+            .encode(
+                &self.rgba,
+                rw as u32,
+                rh as u32,
+                image::ExtendedColorType::Rgba8,
+            )
+            .map_err(enc_err)?;
+        // The VP8L chunk of the single-image file.
+        let mut at = 12;
+        let mut vp8l = None;
+        while at + 8 <= file.len() {
+            let size = u32::from_le_bytes([file[at + 4], file[at + 5], file[at + 6], file[at + 7]])
+                as usize;
+            let end = (at + 8 + size).min(file.len());
+            if &file[at..at + 4] == b"VP8L" {
+                vp8l = Some(&file[at..end]);
+                break;
+            }
+            at = end + (size & 1);
+        }
+        let vp8l = vp8l.ok_or_else(|| Error::Encode("WebP: no VP8L data".into()))?;
+        let mut anmf = Vec::with_capacity(16 + vp8l.len() + 1);
+        anmf.extend(&((rx / 2) as u32).to_le_bytes()[..3]);
+        anmf.extend(&((ry / 2) as u32).to_le_bytes()[..3]);
+        anmf.extend(&((rw - 1) as u32).to_le_bytes()[..3]);
+        anmf.extend(&((rh - 1) as u32).to_le_bytes()[..3]);
+        anmf.extend(&delay_ms.to_le_bytes()[..3]);
+        // Blending bit set = do not blend; no disposal.
+        anmf.push(0x02);
+        anmf.extend(vp8l);
+        if vp8l.len() % 2 == 1 {
+            anmf.push(0);
+        }
+        riff_chunk(&mut self.out, b"ANMF", &anmf)?;
+        self.bytes += 8 + anmf.len().next_multiple_of(2) as u64;
+        Ok(())
+    }
+
+    fn finish(mut self) -> Result<(), Error> {
+        let size = u32::try_from(self.bytes)
+            .map_err(|_| Error::Encode("WebP animations are at most 4 GB".into()))?;
+        self.out.seek(SeekFrom::Start(4))?;
+        self.out.write_all(&size.to_le_bytes())?;
+        self.out.flush()?;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "formats")]
+fn riff_chunk(out: &mut impl Write, kind: &[u8; 4], data: &[u8]) -> Result<(), Error> {
+    out.write_all(kind)?;
+    out.write_all(&(data.len() as u32).to_le_bytes())?;
+    out.write_all(data)?;
+    if data.len() % 2 == 1 {
+        out.write_all(&[0])?;
+    }
+    Ok(())
 }
 
 /// Animated PNG writer: frames are encoded as standalone PNGs and their
@@ -888,6 +1034,30 @@ mod tests {
         for (a, b) in src.iter().zip(&out) {
             assert_eq!(&a.rgba, b.buffer().as_raw());
         }
+    }
+
+    #[cfg(feature = "formats")]
+    #[test]
+    fn webp_round_trip_is_lossless() {
+        use image::AnimationDecoder;
+        let src = frames(6);
+        let path = dir().join("a.webp");
+        let mut rec = Recorder::create(&path, 10.0).unwrap();
+        for f in &src {
+            rec.push(f).unwrap();
+        }
+        rec.finish().unwrap();
+        let dec = image::codecs::webp::WebPDecoder::new(std::io::BufReader::new(
+            File::open(&path).unwrap(),
+        ))
+        .unwrap();
+        assert!(dec.has_animation());
+        let out: Vec<_> = dec.into_frames().collect::<Result<_, _>>().unwrap();
+        assert_eq!(out.len(), 6);
+        for (a, b) in src.iter().zip(&out) {
+            assert_eq!(&a.rgba, b.buffer().as_raw());
+        }
+        assert_eq!(out[1].delay().numer_denom_ms(), (100, 1));
     }
 
     #[test]

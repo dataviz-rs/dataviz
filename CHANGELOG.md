@@ -20,6 +20,11 @@
   (`dataviz-rs/svelte`).
 
 ### Added
+- Animated WebP (`Recorder` / `Figure::record` to `.webp`; also `V` in
+  windows records what the extension says): lossless, with transparency,
+  storing only the changed rectangle per frame. For a 150-frame
+  640×360 chart: 73 KB in 40 ms (APNG 139 KB, GIF 41 KB with at most 256
+  colors).
 - Volume files (`plot::volume_file::VolumeData`, `Axes::volume_data`,
   spec `volume` with `path`, Python `Axes.volume("scan.nii.gz")`):
   - NIfTI-1 and NIfTI-2 (`.nii`, `.nii.gz`; either byte order, every

@@ -29,7 +29,7 @@ then breadth. There is no backward-compatibility promise before 1.0.
 
 - [x] Linked brushing between subplots in the window and in HTML output
 - [x] 2D HTML output with zoom/pan and hover tooltips (3D already rotates)
-- [ ] Animated WebP output (GIF, APNG and video already work)
+- [x] Animated WebP output (GIF, APNG and video already work)
 
 ## Ecosystem
 
