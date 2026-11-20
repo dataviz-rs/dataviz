@@ -1,7 +1,7 @@
 //! Volume files for [`Axes::volume_data`]: NIfTI-1/NIfTI-2 (`.nii`,
 //! `.nii.gz`: MRI, CT, PET, fMRI), VTK legacy structured points and image
-//! data (`.vtk`: simulations, ParaView exports) and MetaImage (`.mhd`/`.mha`:
-//! ITK, 3D Slicer). Values are kept as `f32` with their voxel spacing and
+//! data (`.vtk`: simulations, ParaView exports), MetaImage (`.mhd`/`.mha`:
+//! ITK, 3D Slicer) and DICOM series ([`super::dicom`]: CT, MRI). Values are kept as `f32` with their voxel spacing and
 //! origin, so scans keep their physical proportions.
 //!
 //! ```no_run
@@ -35,14 +35,21 @@ const MAX_VOXELS: usize = 1 << 30;
 
 impl VolumeData {
     /// Reads a file by extension: `.nii`, `.nii.gz`, `.vtk`, `.mhd`
-    /// (with its raw data file), `.mha`.
+    /// (with its raw data file), `.mha`, `.dcm` (multi-frame), or a
+    /// directory of DICOM slices.
     pub fn read(path: impl AsRef<Path>) -> Result<Self, String> {
         let path = path.as_ref();
+        if path.is_dir() {
+            return Self::from_dicom(path);
+        }
         let name = path
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
+        if name.ends_with(".dcm") || name.ends_with(".dicom") {
+            return Self::from_dicom(path);
+        }
         let bytes = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
         if name.ends_with(".nii") || name.ends_with(".nii.gz") || name.ends_with(".gz") {
             Self::from_nifti(&bytes)
@@ -52,7 +59,7 @@ impl VolumeData {
             Self::from_metaimage(&bytes, path.parent())
         } else {
             Err(format!(
-                "{}: unknown volume format (.nii, .nii.gz, .vtk, .mhd, .mha)",
+                "{}: unknown volume format (.nii, .nii.gz, .vtk, .mhd, .mha, .dcm, a DICOM directory)",
                 path.display()
             ))
         }

@@ -301,4 +301,27 @@ fn fuzz_volume_files() {
     fuzz("mhd", &[mhd], 3000, |s| {
         let _ = VolumeData::from_metaimage(s.as_bytes(), None);
     });
+    let dcm =
+        dataviz::plot::dicom::write_test_slice(3, 3, 1.0, &[1, 2, 3, 4, 5, 6, 7, 8, 9], 1.0, 0.0);
+    for _ in 0..iterations(4000) {
+        let mut b = dcm.clone();
+        for _ in 0..1 + rng.below(6) {
+            match rng.below(3) {
+                0 if !b.is_empty() => {
+                    let i = rng.below(b.len());
+                    b[i] = rng.next() as u8;
+                }
+                1 => b.truncate(rng.below(b.len() + 1)),
+                _ if b.len() > 140 => {
+                    // Lengths and tags after the preamble.
+                    let i = 132 + rng.below(b.len() - 132);
+                    b[i] = [0xFF, 0x00, 0xFE, 0xE0][rng.below(4)];
+                }
+                _ => {}
+            }
+        }
+        if catch_unwind(AssertUnwindSafe(|| dataviz::plot::dicom::Slice::parse(&b))).is_err() {
+            panic!("dicom reader panicked on {b:?}");
+        }
+    }
 }

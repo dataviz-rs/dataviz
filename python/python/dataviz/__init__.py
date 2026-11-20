@@ -230,12 +230,14 @@ class Axes:
         """Volume rendering of a 3D array ``values[z, y, x]`` (densities,
         CT/MRI scans, simulation fields) or of a file: NIfTI (``.nii``,
         ``.nii.gz``), VTK structured points (``.vtk``), MetaImage (``.mhd``,
-        ``.mha``), in its physical units. ``extent``: ((x0, x1), (y0, y1),
+        ``.mha``) or DICOM (a directory of slices or a multi-frame ``.dcm``),
+        in its physical units. ``extent``: ((x0, x1), (y0, y1),
         (z0, z1)) in data units; ``opacity`` per grid cell (default 0.25);
         values below ``threshold`` (fraction of the range, default 0.1) are
         transparent; ``mode``: "composite" or "mip" (maximum intensity)."""
         if isinstance(values, (str, _os.PathLike)):
-            # A scan or simulation file: .nii, .nii.gz, .vtk, .mhd, .mha.
+            # A scan or simulation file (.nii, .nii.gz, .vtk, .mhd, .mha,
+            # .dcm) or a directory of DICOM slices.
             fields = {k: v for k, v in (("colormap", colormap), ("opacity", opacity),
                                         ("threshold", threshold)) if v is not None}
             if mode in ("mip", "max"):

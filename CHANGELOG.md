@@ -65,7 +65,12 @@
   - NIfTI-1 and NIfTI-2 (`.nii`, `.nii.gz`; either byte order, every
     data type, intensity scaling; for 4D files the first volume);
   - VTK legacy structured points (ASCII or binary);
-  - MetaImage (`.mhd` + raw, `.mha`, zlib-compressed).
+  - MetaImage (`.mhd` + raw, `.mha`, zlib-compressed);
+  - DICOM (`plot::dicom`): a directory of CT/MRI slices, sorted along the
+    slice normal and stacked with the rescale applied (Hounsfield units),
+    or a multi-frame `.dcm`. Uncompressed transfer syntaxes (implicit
+    and explicit VR, little and big endian) are read; compressed ones get
+    a clear error.
 
   Voxel spacing and origin are kept, so scans keep their physical
   proportions. `VolumeData::to_nifti` writes a NIfTI file, and

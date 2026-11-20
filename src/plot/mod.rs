@@ -24,6 +24,7 @@ pub mod axis;
 pub mod brush;
 pub mod color;
 pub mod data;
+pub mod dicom;
 pub mod facet;
 pub mod figure;
 pub mod geo;

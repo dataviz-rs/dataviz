@@ -163,7 +163,7 @@ pub const CHART_TYPES: &[(&str, &str, &str)] = &[
     ),
     (
         "volume",
-        "values ([z][y][x] nested, or flat x-fastest with dims: [nx, ny, nz]) or path (.nii, .nii.gz, .vtk, .mhd, .mha), x_range?, y_range?, z_range?, colormap?, opacity?, threshold?, mode? (composite, mip)",
+        "values ([z][y][x] nested, or flat x-fastest with dims: [nx, ny, nz]) or path (.nii, .nii.gz, .vtk, .mhd, .mha, .dcm or a DICOM directory), x_range?, y_range?, z_range?, colormap?, opacity?, threshold?, mode? (composite, mip)",
         "Volume rendering of a 3D grid (densities, scans).",
     ),
     (
