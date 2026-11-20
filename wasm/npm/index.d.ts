@@ -43,7 +43,19 @@ export class Chart {
   hover(x: number, y: number): Hover | null;
   /** Draws on a canvas and handles zoom, pan, 3D turning, legend clicks and
    * hover readouts; returns a function removing the handlers. */
-  mount(canvas: HTMLCanvasElement, options?: { interactive?: boolean; tooltip?: boolean }): () => void;
+  mount(
+    canvas: HTMLCanvasElement,
+    options?: {
+      interactive?: boolean;
+      tooltip?: boolean;
+      /** A click on the data: the nearest point (null when none). */
+      onClick?: (point: Hover | null) => void;
+      /** The point under the mouse changed. */
+      onHover?: (point: Hover | null) => void;
+      /** After zooming or panning. */
+      onView?: () => void;
+    },
+  ): () => void;
   free(): void;
 }
 

@@ -248,8 +248,11 @@ export class Chart {
    * `interactive: false`, handles the wheel (zoom), dragging (pan, turn
    * 3D), Shift+drag (zoom to a box), double click (reset), legend clicks
    * and hover readouts. Returns a function that removes the handlers.
+   * Callbacks: `onClick(point)` for a click on the data (the nearest point
+   * `{ plot, x, y, text }` or null), `onHover(point)` when the point under
+   * the mouse changes, `onView()` after zooming or panning.
    */
-  mount(canvas, { interactive = true, tooltip = true } = {}) {
+  mount(canvas, { interactive = true, tooltip = true, onClick, onHover, onView } = {}) {
     const ctx = canvas.getContext("2d");
     const css = () => [this.width, this.height];
     let frame = 0;
@@ -302,12 +305,15 @@ export class Chart {
       return [e.clientX - r.left, e.clientY - r.top];
     };
     let drag = null;
+    let viewTimer = 0;
     const on = [
       ["wheel", (e) => {
         const [x, y] = pos(e);
         if (this.zoom(x, y, e.deltaY < 0 ? 0.85 : 1 / 0.85)) {
           e.preventDefault();
           redraw();
+          clearTimeout(viewTimer);
+          viewTimer = setTimeout(() => onView?.(), 150);
         }
       }, { passive: false }],
       ["pointerdown", (e) => {
@@ -327,15 +333,23 @@ export class Chart {
           }
           return;
         }
-        if (tooltip) {
-          tip = this.hover(x, y);
-          redraw();
+        if (tooltip || onHover) {
+          const h = this.hover(x, y);
+          if (onHover && (h?.text ?? null) !== (tip?.text ?? null)) onHover(h);
+          if (tooltip) {
+            tip = h;
+            redraw();
+          }
         }
       }],
       ["pointerup", (e) => {
         const [x, y] = pos(e);
-        if (drag?.box && drag.moved) this.zoomBox(drag.x0, drag.y0, x, y);
-        else if (drag && !drag.moved) this.click(x, y);
+        if (drag?.box && drag.moved) {
+          this.zoomBox(drag.x0, drag.y0, x, y);
+          onView?.();
+        } else if (drag && !drag.moved) {
+          if (!this.click(x, y) && onClick) onClick(this.hover(x, y));
+        } else if (drag?.moved) onView?.();
         drag = null;
         redraw();
       }],

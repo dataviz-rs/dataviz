@@ -334,6 +334,18 @@ window.addEventListener('mousemove',ev=>{if(!drag)return;const m=pos(ev),d=[m[0]
 window.addEventListener('mouseup',()=>{if(drag&&drag.moved){svg.style.cursor='';const stop=e=>e.stopImmediatePropagation();
  svg.addEventListener('click',stop,{capture:true,once:true});setTimeout(()=>svg.removeEventListener('click',stop,{capture:true}),0);}drag=null;});
 function reset(P){P.x=Object.assign({},P.x0);P.y=Object.assign({},P.y0);redraw(P);}
+// ---- events for an embedding page (Jupyter widget callbacks): clicks
+// and hovers on data points, view changes after zoom and pan ----
+function post(m){try{if(window.parent!==window)window.parent.postMessage(m,'*');}catch(e){}}
+function nearest(P,m){const kx=P.kx??1,tx=P.tx??0,ky=P.ky??1,ty=P.ty??0;let b=null,bd=12;
+ for(const s of P.series){if(hidden.has(s.id))continue;for(let i=0;i<s.xy.length;i+=2){const d=Math.hypot(kx*s.xy[i]+tx-m[0],ky*s.xy[i+1]+ty-m[1]);
+  if(d<bd){bd=d;const [xl,yl]=s.labels[i/2].split('\u001f');b={series:s.name,index:i/2,x:xl,y:yl};}}}return b;}
+function pointEvent(type,ev){const m=pos(ev),P=M.plots.find(p=>inside(p,m));if(!P)return;const n=nearest(P,m);
+ if(n)post(Object.assign({dataviz:type,plot:M.plots.indexOf(P)},n));}
+svg.addEventListener('click',ev=>pointEvent('click',ev));
+let hoverAt=0;svg.addEventListener('mousemove',ev=>{const t=Date.now();if(t-hoverAt<120)return;hoverAt=t;pointEvent('hover',ev);});
+let viewT=null;{const r0=redraw;redraw=P=>{r0(P);clearTimeout(viewT);viewT=setTimeout(()=>post({dataviz:'view',plot:M.plots.indexOf(P),
+ x:[P.x.min,P.x.max],y:[P.y.min,P.y.max]}),150);};}
 // ---- linked brushing: Shift+drag (or Ctrl+drag) selects rows, which are
 // highlighted in every plot; Shift+click clears ----
 const B=M.brush;

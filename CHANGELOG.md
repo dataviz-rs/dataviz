@@ -33,6 +33,14 @@
   (`dataviz-rs/svelte`).
 
 ### Added
+- Callbacks for dashboards:
+  - HTML output posts `click`, `hover` (throttled) and `view` (after zoom
+    or pan) messages to the embedding page.
+  - Python widgets get `on_click`, `on_hover`, `on_view` and
+    `on_select`.
+  - npm `mount(canvas, {onClick, onHover, onView})`, React
+    `onPointClick` / `onPointHover` / `onView`, Svelte `pointclick` /
+    `pointhover` / `view` events.
 - Chart drawing tools, as in trading platforms:
   - `Axes::trendline`, `Axes::ray`, `Axes::price_level` (value tag at the
     right edge) and `Axes::fib_retracement` (0–100 % levels with prices

@@ -463,8 +463,15 @@ class Figure:
 
         With `anywidget <https://anywidget.dev>`_ installed this is a widget
         whose ``brushed`` trait follows the rows selected in the browser (also
-        stored in the figure: :meth:`brushed`, highlighted in saved images);
-        otherwise a plain HTML display."""
+        stored in the figure: :meth:`brushed`, highlighted in saved images),
+        with callbacks for dashboards::
+
+            w = fig.interactive()
+            w.on_click(lambda e: print(e["series"], e["index"], e["x"], e["y"]))
+            w.on_view(lambda e: table.update(*e["x"]))   # after zoom / pan
+            w.on_select(lambda rows: detail.show(rows))  # Shift+drag
+
+        Without anywidget: a plain HTML display."""
         html = self.to_html()
         h = int(height) if height else self._core.size()[1] + 40
         try:
@@ -522,10 +529,17 @@ export default { render({ model, el }) {
   const load = () => { f.style.height = model.get('height') + 'px'; f.srcdoc = model.get('html'); };
   load();
   el.appendChild(f);
+  let n = 0;
   const on = e => {
-    if (e.source !== f.contentWindow || !e.data || e.data.dataviz !== 'brush') return;
-    model.set('selection', { rows: e.data.rows, sel: e.data.sel });
-    model.set('brushed', e.data.sel);
+    if (e.source !== f.contentWindow || !e.data || !e.data.dataviz) return;
+    const d = e.data;
+    if (d.dataviz === 'brush') {
+      model.set('selection', { rows: d.rows, sel: d.sel });
+      model.set('brushed', d.sel);
+    } else {
+      // click, hover, view: a numbered event (repeats still notify).
+      model.set('event', Object.assign({ n: ++n }, d));
+    }
     model.save_changes();
   };
   window.addEventListener('message', on);
@@ -536,6 +550,38 @@ export default { render({ model, el }) {
             height = traitlets.Int(500).tag(sync=True)
             brushed = traitlets.List(traitlets.Int()).tag(sync=True)
             selection = traitlets.Dict().tag(sync=True)
+            event = traitlets.Dict().tag(sync=True)
+
+            def _on(self, kind, fn):
+                def handler(change):
+                    e = dict(change["new"])
+                    if e.get("dataviz") == kind:
+                        e.pop("n", None)
+                        e["type"] = e.pop("dataviz")
+                        fn(e)
+                self.observe(handler, names="event")
+                return self
+
+            def on_click(self, fn):
+                """``fn(event)`` when a data point is clicked: ``{"type": "click",
+                "plot", "series", "index", "x", "y"}`` (x and y as shown)."""
+                return self._on("click", fn)
+
+            def on_hover(self, fn):
+                """``fn(event)`` when the mouse is over a data point (at most
+                about 8 times a second); fields as :meth:`on_click`."""
+                return self._on("hover", fn)
+
+            def on_view(self, fn):
+                """``fn(event)`` after zooming or panning: ``{"type": "view",
+                "plot", "x": [min, max], "y": [min, max]}``."""
+                return self._on("view", fn)
+
+            def on_select(self, fn):
+                """``fn(rows)`` when rows are selected with Shift+drag (linked
+                brushing); an empty list when the selection is cleared."""
+                self.observe(lambda c: fn(list(c["new"])), names="brushed")
+                return self
 
         _WIDGET = FigureWidget
     return _WIDGET

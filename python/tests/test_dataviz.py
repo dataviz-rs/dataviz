@@ -257,3 +257,19 @@ def test_pyplot_runs_matplotlib_style_code(tmp_path):
     plt.close("all")
     assert (tmp_path / "a.png").stat().st_size > 1000
     assert (tmp_path / "b.svg").read_text().startswith("<svg")
+
+
+def test_widget_callbacks():
+    pytest.importorskip("anywidget")
+    fig = dv.Figure(400, 300)
+    fig.axes().line([0, 1, 2], [1, 3, 2], label="a")
+    w = fig.interactive()
+    got = []
+    w.on_click(got.append).on_view(got.append).on_select(lambda rows: got.append(rows))
+    w.event = {"n": 1, "dataviz": "click", "plot": 0, "series": "a", "index": 1, "x": "1", "y": "3"}
+    w.event = {"n": 2, "dataviz": "hover", "plot": 0, "series": "a", "index": 2, "x": "2", "y": "2"}
+    w.event = {"n": 3, "dataviz": "view", "plot": 0, "x": [0, 1], "y": [0, 2]}
+    w.brushed = [1, 2]
+    assert got[0] == {"type": "click", "plot": 0, "series": "a", "index": 1, "x": "1", "y": "3"}
+    assert got[1]["type"] == "view" and got[1]["x"] == [0, 1]
+    assert got[2] == [1, 2]
