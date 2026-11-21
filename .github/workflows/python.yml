@@ -12,7 +12,7 @@ on:
     paths: ["python/**", "src/**", "Cargo.toml", ".github/workflows/python.yml"]
     tags: ["py-v*"]
   pull_request:
-    paths: ["python/**", "src/**"]
+    paths: ["python/**", "src/**", ".github/workflows/python.yml"]
 
 permissions:
   contents: read
