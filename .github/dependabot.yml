@@ -20,6 +20,9 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Its tags name Rust toolchains (the MSRV pin), not action versions.
+      - dependency-name: dtolnay/rust-toolchain
     groups:
       actions:
         patterns: ["*"]
