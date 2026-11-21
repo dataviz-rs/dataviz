@@ -91,9 +91,15 @@ The common pyplot and `Axes` calls and their options work:
 - **Figures:** `subplots`, `subplot`, `figure(figsize=…)`, `savefig`,
   `show`, `style.use`
 
-Unknown keyword arguments are ignored, so existing scripts keep running.
-The 4-panel script above runs in 9 ms instead of 372 ms with
-matplotlib, and a 1 million point line in 19 ms instead of 110 ms.
+This is a subset of matplotlib, not all of it (no `annotate`, `errorbar`,
+`contour`, `colorbar`, `twinx`, tick locators or `rcParams`, for example).
+Unknown keyword arguments are *ignored* rather than rejected, so existing
+scripts keep running but may look different; each function's docstring
+says which arguments it supports.
+
+Warm, with imports excluded, the 4-panel script above renders in 3.3 ms
+instead of 94 ms with matplotlib, and a 1 million point line in 17 ms
+instead of 190 ms ([benchmark script](https://github.com/dataviz-rs/dataviz-examples/blob/main/benchmarks/pyplot_bench.py)).
 
 ## Charts
 

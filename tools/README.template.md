@@ -24,8 +24,10 @@
 
 **Fast plotting for Rust, Python, JavaScript and C/C++: 120+ chart types,
 interactive windows, live data, 3D, maps and a grammar of graphics.
-Up to 50× faster than matplotlib, and the fastest and leanest of the Rust
-plotting libraries.**
+Renders charts 8–50× faster than matplotlib in [these benchmarks](#performance)
+(with a much smaller API: see [differences](#differences-from-matplotlib)),
+and faster than the other Rust plotting libraries in nearly every
+measurement.**
 
 ```rust ignore
 let mut fig = Figure::new(900, 500);
@@ -34,7 +36,7 @@ fig.save("signal.png")?;          // or fig.show() for a live, zoomable window
 ```
 
 ```python
-import dataviz.pyplot as plt      # your matplotlib code, many times faster
+import dataviz.pyplot as plt      # the common matplotlib calls, not all of them
 ```
 
 <table>
@@ -54,12 +56,14 @@ import dataviz.pyplot as plt      # your matplotlib code, many times faster
 **[Live demo in the browser](https://dataviz-rs.github.io/dataviz/demo/)** ·
 [API docs](https://docs.rs/dataviz) · [Examples](https://github.com/dataviz-rs/dataviz-examples)
 
+*Built with heavy AI assistance (Claude Code); see [how it's made](#how-its-made).*
+
 ## Why dataviz
 
 - **Fast and lean.** Its own rasterizer draws straight into the output
   buffer: a 10-million-point line renders in about 0.1 s with a few MB of
   extra memory, a live chart redraws in 1–2 ms. 4–50× faster than
-  matplotlib for typical charts (2× for a 100-million-value histogram,
+  matplotlib for typical charts (warm runs, imports excluded) (2× for a 100-million-value histogram,
   78× for animations), and faster and lighter than plotters, ruviz, kuva and
   charts-rs in nearly every measurement ([numbers below](#performance)).
   Optional multi-core and GPU backends. An idle window uses no CPU (it
@@ -415,13 +419,20 @@ tool for the job:
 |---|---:|---:|
 | Density image of 100 M points (Datashader style), Rust / Python | **70 ms / 81 ms** | Datashader 372 ms |
 | Density image of 10 M points, Python | **39 ms** | Datashader 73 ms |
-| 4-panel script through `dataviz.pyplot` (lines, scatter, log histogram, bars) | **9 ms** | matplotlib 372 ms |
-| 1 M point line through `dataviz.pyplot` | **19 ms** | matplotlib 110 ms |
+| 4-panel script through `dataviz.pyplot` (lines, scatter, log histogram, bars) | **3.3 ms** | matplotlib 94 ms |
+| 1 M point line through `dataviz.pyplot` | **17 ms** | matplotlib 190 ms |
 | 10 M rows from Polars / pyarrow into a chart | **59 ms** | 508 ms / 2.86 s via NumPy |
 | 1 M point chart built in JavaScript (npm, Float64Array) | **3 ms** | 214 ms in 0.18 (JSON) |
 | 1 M point chart built in C/C++ with binary arrays | **4–7 ms** | 166 ms through JSON text |
 | 3D point cloud, 1 M colormapped points, CPU | **73 ms** | 3.3 s in 0.18 |
 | Idle chart window, CPU use | **0.5 %** | 7 % in 0.18 |
+
+The `pyplot` rows are the median of warm runs in one process, with the
+imports excluded and both libraries saving the same PNG
+([script](https://github.com/dataviz-rs/dataviz-examples/blob/main/benchmarks/pyplot_bench.py)). The first call costs more: 7 ms against matplotlib's
+326 ms, and the imports take about 60 ms against 230 ms. matplotlib does
+far more than these scripts use, so these numbers compare the common
+case, not the whole library.
 
 ## Gallery
 
@@ -481,6 +492,27 @@ fig = dv.Figure(900, 500, title="Signal")
 fig.axes().line(x, np.sin(x), label="sin").set(x_label="t [s]")
 fig.save("signal.png")
 ```
+
+## Differences from matplotlib
+
+`dataviz.pyplot` covers the common calls of matplotlib's pyplot and `Axes`
+API (listed in the [Python README](python#matplotlib-code-unchanged)), not
+all of matplotlib. Keep using matplotlib when you need:
+
+- **Calls that are missing:** `annotate`, `errorbar`, `contour`, `step`,
+  `stackplot`, `hexbin`, `colorbar`, `twinx`, `set_xticks`,
+  `tick_params`, and the artist, patch and transform APIs. (`dv.Figure`
+  has contours, through `chart("contour", …)`, and colorbars, through
+  `colorbar=` on heatmaps and colored scatters, but under its own names.)
+- **Fine control:** `rcParams`, tick locators and formatters, custom
+  projections, GridSpec and `sharex`/`sharey` in `subplots`.
+- **Every argument honored:** unknown keyword arguments are *ignored*,
+  not rejected, so a script keeps running but may look different (for
+  example `hist(bins=[…edges…])`, `bar(width=…)` or `savefig(dpi=…)`).
+  The docstrings say what each call supports.
+- **Embedding in Qt, Tk or GTK applications** through matplotlib's
+  backends, and the many libraries built on matplotlib (seaborn, pandas
+  `.plot()`).
 
 ## Use it from Claude
 
@@ -551,6 +583,13 @@ See [CHANGELOG.md](CHANGELOG.md).
 MIT; see `LICENSE`. The embedded DejaVu Sans font has its own license
 (`assets/DejaVuSans-LICENSE.txt`); the world map is Natural Earth (public
 domain).
+
+## How it's made
+
+dataviz is developed with heavy AI assistance (Claude Code). The author
+decides the design and the scope, reviews the changes and runs the tests,
+fuzzing and benchmarks; the benchmark code is public so the numbers can be
+checked. Bug reports about anything that looks wrong are very welcome.
 
 ## Contributing
 

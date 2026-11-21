@@ -379,6 +379,7 @@ class Figure:
         return Axes(self, (row, col, rowspan, colspan))
 
     def title(self, title: str) -> "Figure":
+        """Sets the title of the whole figure."""
         self._core.title(title)
         return self
 
@@ -388,6 +389,7 @@ class Figure:
         return self
 
     def resize(self, width: int, height: int) -> "Figure":
+        """Changes the image size to ``width`` × ``height`` pixels."""
         self._core.resize(width, height)
         return self
 
@@ -406,6 +408,7 @@ class Figure:
         return self
 
     def clear_brush(self) -> "Figure":
+        """Clears the linked-brushing selection (see :meth:`link_brushing`)."""
         self._core.clear_brush()
         return self
 
@@ -420,9 +423,11 @@ class Figure:
         self._core.save(_os.fspath(path))
 
     def to_png(self) -> bytes:
+        """The figure encoded as PNG bytes."""
         return bytes(self._core.encode("png"))
 
     def to_svg(self) -> str:
+        """The figure as an SVG document."""
         return bytes(self._core.encode("svg")).decode()
 
     def to_html(self) -> str:
