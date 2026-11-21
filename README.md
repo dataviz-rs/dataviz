@@ -1,26 +1,20 @@
 # **DataViz** 🚀
 
-<a href="https://crates.io/crates/dataviz">
-    <img style="display: inline!important" src="https://img.shields.io/crates/v/dataviz.svg"></img>
-</a>
-<a href="https://docs.rs/dataviz">
-    <img style="display: inline!important" src="https://docs.rs/dataviz/badge.svg"></img>
-</a>
-<a href="https://docs.rs/dataviz">
-    <img style="display: inline!important" src="https://img.shields.io/crates/d/dataviz"></img>
-</a>
-<a href="https://pypi.org/project/dataviz-rs/">
-    <img style="display: inline!important" src="https://img.shields.io/pypi/v/dataviz-rs.svg"></img>
-</a>
-<a href="https://www.npmjs.com/package/dataviz-rs">
-    <img style="display: inline!important" src="https://img.shields.io/npm/v/dataviz-rs.svg"></img>
-</a>
-<a href="https://github.com/dataviz-rs/dataviz/stargazers">
-    <img style="display: inline!important" src="https://img.shields.io/github/stars/dataviz-rs/dataviz?style=social"></img>
-</a>
-<a href="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml">
-    <img style="display: inline!important" src="https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml/badge.svg"></img>
-</a>
+[![crates.io](https://img.shields.io/crates/v/dataviz.svg)](https://crates.io/crates/dataviz)
+[![docs.rs](https://docs.rs/dataviz/badge.svg)](https://docs.rs/dataviz)
+[![crates.io downloads](https://img.shields.io/crates/d/dataviz)](https://crates.io/crates/dataviz)
+[![PyPI](https://img.shields.io/pypi/v/dataviz-rs.svg)](https://pypi.org/project/dataviz-rs/)
+[![PyPI downloads](https://img.shields.io/pypi/dm/dataviz-rs)](https://pypi.org/project/dataviz-rs/)
+[![npm](https://img.shields.io/npm/v/dataviz-rs.svg)](https://www.npmjs.com/package/dataviz-rs)
+[![npm downloads](https://img.shields.io/npm/dm/dataviz-rs)](https://www.npmjs.com/package/dataviz-rs)
+
+[![CI](https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml/badge.svg)](https://github.com/dataviz-rs/dataviz/actions/workflows/rust.yml)
+[![Python](https://github.com/dataviz-rs/dataviz/actions/workflows/python.yml/badge.svg)](https://github.com/dataviz-rs/dataviz/actions/workflows/python.yml)
+[![CodeQL](https://github.com/dataviz-rs/dataviz/actions/workflows/codeql.yml/badge.svg)](https://github.com/dataviz-rs/dataviz/actions/workflows/codeql.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/dataviz-rs/dataviz/badge)](https://scorecard.dev/viewer/?uri=github.com/dataviz-rs/dataviz)
+[![MSRV](https://img.shields.io/crates/msrv/dataviz)](Cargo.toml)
+[![License: MIT](https://img.shields.io/crates/l/dataviz)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/dataviz-rs/dataviz?style=social)](https://github.com/dataviz-rs/dataviz/stargazers)
 
 **Fast plotting for Rust, Python, JavaScript and C/C++: 120+ chart types,
 interactive windows, live data, 3D, maps and a grammar of graphics.

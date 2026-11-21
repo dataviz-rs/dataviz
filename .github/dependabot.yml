@@ -1,0 +1,25 @@
+# Weekly update PRs for dependencies and the actions used in CI.
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      cargo:
+        patterns: ["*"]
+  - package-ecosystem: pip
+    directory: /python
+    schedule:
+      interval: weekly
+  - package-ecosystem: npm
+    directory: /wasm/npm
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]

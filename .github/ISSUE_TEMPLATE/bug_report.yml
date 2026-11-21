@@ -1,0 +1,31 @@
+name: Bug report
+description: Something renders wrong, crashes or behaves unexpectedly
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you expected, and what you got instead. Screenshots help.
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Code to reproduce
+      description: The smallest code that shows the problem.
+      render: text
+    validations:
+      required: true
+  - type: dropdown
+    id: binding
+    attributes:
+      label: Which package
+      options: [Rust crate, Python (dataviz-rs), JavaScript (dataviz-rs), C/C++, MCP server]
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version and platform
+      placeholder: dataviz 1.0.0, Ubuntu 24.04

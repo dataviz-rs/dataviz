@@ -1,5 +1,8 @@
 # dataviz-mcp
 
+[![crates.io](https://img.shields.io/crates/v/dataviz-mcp.svg)](https://crates.io/crates/dataviz-mcp)
+[![Glama score](https://glama.ai/mcp/servers/dataviz-rs/dataviz/badges/score.svg)](https://glama.ai/mcp/servers/dataviz-rs/dataviz)
+
 A [Model Context Protocol](https://modelcontextprotocol.io) server that
 gives AI assistants charts: 120+ chart types — statistics, machine
 learning, finance, genomics, maps, 3D surfaces and molecules — drawn in
