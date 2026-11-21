@@ -12,7 +12,7 @@ scripts when the goal is to see or show data.
 ## Tools
 
 - `plot` — a figure from a JSON spec: `panels` (laid out in a grid), each
-  with a `type` and its data. Call `chart_types` once to see all 40 types
+  with a `type` and its data. Call `chart_types` once to see all 44 types
   and their fields.
 - `plot_file` — a chart of a CSV/TSV/JSON file without loading it yourself
   (`kind`: auto, line, scatter, bar, hist, box, violin, correlation).

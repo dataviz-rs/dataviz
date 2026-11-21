@@ -6,7 +6,7 @@ use dataviz::prelude::*;
 use serde_json::{json, Value};
 
 pub const INSTRUCTIONS: &str = "dataviz draws charts and returns them as PNG images you can look at. \
-Use `plot` for data you have (a JSON spec of one or more panels; call `chart_types` for the 40 panel types and their fields), \
+Use `plot` for data you have (a JSON spec of one or more panels; call `chart_types` for the 44 panel types and their fields), \
 `plot_file` to chart a CSV/TSV/JSON file directly, and `molecule` for protein/DNA structures from the PDB. \
 Look at the returned image and refine (labels, limits, chart type) when needed. \
 Pass `output` with a .png/.svg/.pdf/.html path to save the chart for the user.";
@@ -16,8 +16,8 @@ fn common_props() -> Value {
         "title": { "type": "string", "description": "Figure title." },
         "width": { "type": "number", "description": "Width in pixels (default 900)." },
         "height": { "type": "number", "description": "Height in pixels (default 600)." },
-        "theme": { "type": "string", "enum": ["light", "dark", "minimal", "ggplot", "seaborn", "publication", "solarized", "high_contrast"] },
-        "output": { "type": "string", "description": "Also save the chart to this path (.png, .svg, .pdf or .html, interactive)." },
+        "theme": { "type": "string", "enum": ["light", "dark", "minimal", "ggplot", "seaborn", "publication", "solarized", "high_contrast"], "description": "Color theme (default light). high_contrast uses dark colors with at least 4.5:1 contrast and larger text." },
+        "output": { "type": "string", "description": "Also save the chart to this file path; the format follows the extension (.png, .svg, .pdf, or .html for an interactive page). An existing file at that path is overwritten. Omit to write nothing." },
         "image": { "type": "boolean", "description": "Return the image (default true; false returns only the text summary)." }
     })
 }
@@ -35,13 +35,13 @@ pub fn list() -> Value {
         {
             "name": "plot",
             "title": "Plot data",
-            "description": "Draw a chart (or a grid of charts) from data and return it as an image. Each panel has a `type` (line, scatter, bar, hist, box, violin, heatmap, pie, sankey, chord, candlestick, roc, surface, scatter3d, molecule, … — call chart_types for all types and their fields) and its data fields; common panel options: title, x_label, y_label, z_label, x_limits, y_limits, x_log, y_log, legend, camera [azimuth, elevation], rotate {x, y, z} (degrees, 3D), drawings [{type: trend|ray|fib (from [x, y], to [x, y]) or level (y), color?}] (chart drawing tools).",
+            "description": "Draw one or more charts from data passed inline in the call and return them as a PNG image plus a short text description of what was drawn.\n\nWhen to use: you already have the numbers (from the conversation, a computation or another tool). To chart a CSV/TSV/JSON file on disk use plot_file instead; for a 3D protein or DNA structure on its own, molecule is simpler (a molecule panel here is only needed to combine it with other charts).\n\nHow: `panels` is a list of charts laid out in a grid. Each panel has a `type` (line, scatter, bar, hist, box, violin, heatmap, pie, sankey, candlestick, roc, surface, scatter3d, … 44 in all) plus that type's data fields, for example {\"type\": \"line\", \"x\": [1, 2, 3], \"y\": [2, 4, 3]}. Call chart_types first if unsure of a type's fields. Options every panel takes: title, x_label, y_label, z_label, x_limits [min, max], y_limits, x_log, y_log, legend, camera [azimuth, elevation] and rotate {x, y, z} in degrees (3D), drawings [{type: trend|ray|fib, from [x, y], to [x, y]} or {type: level, y}].\n\nBehavior: draws in memory and writes nothing unless `output` is given. Molecule panels with a pdb_id download the structure from files.rcsb.org; nothing else uses the network. Width and height are clamped to 100-6000 px. An invalid spec (unknown type, missing or mismatched data fields) returns an error result whose text names the problem, and nothing is drawn or saved.",
             "inputSchema": {
                 "type": "object",
                 "properties": merge(common_props(), json!({
                     "panels": {
                         "type": "array",
-                        "description": "Charts, laid out in a grid (rows/cols automatic unless given).",
+                        "description": "Charts, one per panel, laid out in a grid (rows/cols automatic unless given). Each item needs `type` (or `mark` for the grammar of graphics) and that type's data fields.",
                         "items": {
                             "type": "object",
                             "properties": {
@@ -52,50 +52,54 @@ pub fn list() -> Value {
                             "additionalProperties": true
                         }
                     },
-                    "rows": { "type": "number" },
-                    "cols": { "type": "number" }
+                    "rows": { "type": "number", "description": "Rows of the panel grid (default: chosen from the number of panels)." },
+                    "cols": { "type": "number", "description": "Columns of the panel grid (default: chosen from the number of panels)." }
                 })),
                 "required": ["panels"]
-            }
+            },
+            "annotations": { "title": "Plot data", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": true }
         },
         {
             "name": "plot_file",
             "title": "Plot a data file",
-            "description": "Chart columns of a CSV, TSV or JSON file (array of objects or {column: [values]}) and return the image and a summary. kind=auto picks a line chart for a numeric x column, bars for a text x column, a histogram for a single numeric column, and `correlation` draws the correlation matrix of all numeric columns.",
+            "description": "Chart the columns of a CSV, TSV or JSON file on disk and return a PNG image plus a text summary (columns found, what was drawn).\n\nWhen to use: the data is in a file the server can read, especially a large one you should not paste into a call. For data you already have in the conversation use plot, which also offers all 44 chart types; plot_file covers the common kinds below.\n\nHow: give `path`; JSON may be an array of objects or {column: [values]}. kind=auto (default) picks a line chart for a numeric x column, bars for a text x column and a histogram for a single numeric column; `correlation` draws the correlation matrix of all numeric columns. `x`, `y` and `group` choose columns by name.\n\nBehavior: only reads the file; writes nothing unless `output` is given, and uses no network. A missing file, an unknown column or a file with no rows returns an error result whose text says which.",
             "inputSchema": {
                 "type": "object",
                 "properties": merge(common_props(), json!({
-                    "path": { "type": "string", "description": "Path of the CSV/TSV/JSON file." },
+                    "path": { "type": "string", "description": "Path of the CSV, TSV or JSON file, absolute or relative to the server's working directory; the format follows the extension." },
                     "kind": { "type": "string", "enum": ["auto", "line", "scatter", "bar", "hist", "box", "violin", "correlation"], "description": "Chart kind (default auto)." },
                     "x": { "type": "string", "description": "Column for x (categories for bar)." },
                     "y": { "description": "Column(s) for y: a name or a list of names (default: all numeric columns except x).", "anyOf": [{ "type": "string" }, { "type": "array", "items": { "type": "string" } }] },
                     "group": { "type": "string", "description": "Column with group names (box/violin: one box per group)." }
                 })),
                 "required": ["path"]
-            }
+            },
+            "annotations": { "title": "Plot a data file", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false }
         },
         {
             "name": "molecule",
             "title": "Draw a molecule",
-            "description": "Draw a protein, DNA or small molecule in 3D from the Protein Data Bank (pdb_id, downloaded), a PDB file (pdb_path) or PDB text (pdb). Styles: cartoon (proteins), ball_and_stick, sticks, space_filling, backbone; coloring: element, chain, rainbow. Turn it with rotate {x, y, z} in degrees.",
+            "description": "Draw a protein, DNA or small molecule in 3D and return a PNG image plus a text summary.\n\nWhen to use: to show one structure. To put a structure next to other charts, use a molecule panel in plot instead.\n\nHow: give exactly one source: pdb_id (a 4-character Protein Data Bank id such as 1UBQ), pdb_path (a local .pdb file) or pdb (the PDB text itself). The style defaults to cartoon for proteins and ball_and_stick otherwise; coloring defaults to element. rotate {x, y, z} turns the model by degrees; ramachandran adds a Ramachandran plot of the backbone angles.\n\nBehavior: pdb_id downloads the structure from files.rcsb.org (the only network access); pdb_path only reads the file; nothing is written unless `output` is given. An unknown id, an unreadable file or PDB data without ATOM/HETATM records returns an error result whose text says which.",
             "inputSchema": {
                 "type": "object",
                 "properties": merge(common_props(), json!({
                     "pdb_id": { "type": "string", "description": "4-character PDB id, e.g. 1UBQ." },
-                    "pdb_path": { "type": "string" },
+                    "pdb_path": { "type": "string", "description": "Path of a local .pdb file to read." },
                     "pdb": { "type": "string", "description": "PDB file content." },
-                    "style": { "type": "string", "enum": ["cartoon", "ball_and_stick", "sticks", "space_filling", "backbone"] },
-                    "coloring": { "type": "string", "enum": ["element", "chain", "rainbow"] },
-                    "rotate": { "type": "object", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" } } },
+                    "style": { "type": "string", "enum": ["cartoon", "ball_and_stick", "sticks", "space_filling", "backbone"], "description": "Drawing style (default cartoon for proteins, ball_and_stick otherwise)." },
+                    "coloring": { "type": "string", "enum": ["element", "chain", "rainbow"], "description": "Atom colors: by element (default), by chain, or a rainbow along the chain." },
+                    "rotate": { "type": "object", "description": "Rotation in degrees about each axis, applied x, then y, then z.", "properties": { "x": { "type": "number" }, "y": { "type": "number" }, "z": { "type": "number" } } },
                     "ramachandran": { "type": "boolean", "description": "Add a Ramachandran plot next to the structure." }
                 }))
-            }
+            },
+            "annotations": { "title": "Draw a molecule", "readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": true }
         },
         {
             "name": "chart_types",
             "title": "Chart types",
-            "description": "List the panel types of `plot` with their data fields.",
-            "inputSchema": { "type": "object", "properties": {} }
+            "description": "List every panel type that plot accepts (44 types plus the grammar-of-graphics `mark`), each with its data fields and a one-line description, followed by a complete example call. Call it before plot when unsure which type fits the data or which fields a type needs. Takes no arguments, reads and writes nothing, and always returns the same text.",
+            "inputSchema": { "type": "object", "properties": {} },
+            "annotations": { "title": "Chart types", "readOnlyHint": true, "idempotentHint": true, "openWorldHint": false }
         }
     ])
 }
@@ -458,6 +462,18 @@ pub fn base64(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_tool_is_documented() {
+        for t in list().as_array().unwrap() {
+            let name = t["name"].as_str().unwrap();
+            assert!(t["description"].as_str().unwrap().len() > 100, "{name}");
+            assert!(t["annotations"]["readOnlyHint"].is_boolean(), "{name}");
+            for (k, v) in t["inputSchema"]["properties"].as_object().unwrap() {
+                assert!(v["description"].is_string(), "{name}.{k} has no description");
+            }
+        }
+    }
 
     #[test]
     fn base64_rfc4648() {

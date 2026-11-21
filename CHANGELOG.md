@@ -6,6 +6,11 @@
 - `Axes::group_bars`: places bar series with the same categories and
   orientation side by side.
 
+- dataviz-mcp 0.1.1: tool descriptions say when to use each tool, what it
+  reads, writes and downloads, and how errors look; every parameter is
+  described, and the tools carry MCP annotations (read-only, network).
+  A Dockerfile and `glama.json` for the Glama listing.
+
 ### Fixed
 - Python: calling `bar` or `barh` again with the same categories draws
   grouped bars, as documented, instead of drawing them on top of each

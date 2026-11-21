@@ -39,7 +39,7 @@ Or use the shortcuts:
 
 | Tool | What it does |
 |---|---|
-| `plot` | A figure from a JSON spec: one or more panels of 40 types (line, scatter, bar, hist, box, violin, raincloud, heatmap, contour, pie, sankey, chord, streamgraph, bullet, pareto, SPC, candlestick, ROC, calibration, confusion matrix, UpSet, volcano, phylogenetic tree, choropleth, 3D surface/scatter, DNA helix, molecule, …) |
+| `plot` | A figure from a JSON spec: one or more panels of 44 types (line, scatter, bar, hist, box, violin, raincloud, heatmap, contour, pie, sankey, chord, streamgraph, bullet, pareto, SPC, candlestick, ROC, calibration, confusion matrix, UpSet, volcano, phylogenetic tree, choropleth, 3D surface/scatter, DNA helix, molecule, …) |
 | `plot_file` | A chart of a CSV/TSV/JSON file: auto, line, scatter, bar, histogram, box, violin or correlation matrix |
 | `molecule` | A PDB structure (by id, file or text) as cartoon, ball-and-stick, sticks, space-filling or backbone; optional Ramachandran plot |
 | `chart_types` | The panel types and their fields |
