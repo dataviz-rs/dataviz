@@ -3,14 +3,14 @@ name: npm package
 # it and publishes `dataviz-rs` to npm with provenance. Publishing uses npm
 # trusted publishing (add this repository and workflow as a trusted
 # publisher of `dataviz-rs` on npmjs.com) or, until then, an `NPM_TOKEN`
-# repository secret.
+# repository secret. Node 24 ships npm 11, which trusted publishing needs.
 on:
   push:
     branches: ["**"]
     paths: ["wasm/**", "src/**", "Cargo.toml", ".github/workflows/npm.yml"]
     tags: ["npm-v*"]
   pull_request:
-    paths: ["wasm/**", "src/**"]
+    paths: ["wasm/**", "src/**", ".github/workflows/npm.yml"]
 
 permissions:
   contents: read
@@ -30,7 +30,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
-          node-version: "22"
+          node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - name: Build
         run: ./wasm/build.sh
@@ -48,5 +48,4 @@ jobs:
           if [ -n "$NPM_TOKEN" ]; then export NODE_AUTH_TOKEN="$NPM_TOKEN"; fi
           cp ../../LICENSE .
           test "v$(node -p 'require("./package.json").version')" = "${GITHUB_REF_NAME#npm-}"
-          npm install -g npm@latest
           npm publish --provenance --access public
