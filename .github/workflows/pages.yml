@@ -21,8 +21,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
         with:
           repository: dataviz-rs/dataviz-examples
           path: ex
@@ -47,7 +47,7 @@ jobs:
           mkdir -p ../book/book/demo
           cp plot-wasm/www/* ../book/book/demo/
           cp target/wasm32-unknown-unknown/wasm/plot_wasm.wasm ../book/book/demo/
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-pages-artifact@v5
         with:
           path: book/book
 
@@ -59,4 +59,4 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5
