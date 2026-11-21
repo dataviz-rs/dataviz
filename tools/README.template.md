@@ -589,7 +589,8 @@ domain).
 dataviz is developed with heavy AI assistance (Claude Code). The author
 decides the design and the scope, reviews the changes and runs the tests,
 fuzzing and benchmarks; the benchmark code is public so the numbers can be
-checked. Bug reports about anything that looks wrong are very welcome.
+checked. How an early benchmark got it wrong, and how it was fixed:
+[My benchmark said 40× faster than matplotlib. It was wrong.](https://medium.com/@sameteraslan/my-benchmark-said-40-faster-than-matplotlib-it-was-wrong-62ec98a74fff) Bug reports about anything that looks wrong are very welcome.
 
 ## Contributing
 
