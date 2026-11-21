@@ -470,7 +470,10 @@ mod tests {
             assert!(t["description"].as_str().unwrap().len() > 100, "{name}");
             assert!(t["annotations"]["readOnlyHint"].is_boolean(), "{name}");
             for (k, v) in t["inputSchema"]["properties"].as_object().unwrap() {
-                assert!(v["description"].is_string(), "{name}.{k} has no description");
+                assert!(
+                    v["description"].is_string(),
+                    "{name}.{k} has no description"
+                );
             }
         }
     }
