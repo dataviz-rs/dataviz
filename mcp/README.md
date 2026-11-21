@@ -28,6 +28,13 @@ cargo install dataviz-mcp
 { "mcpServers": { "dataviz": { "command": "dataviz-mcp" } } }
 ```
 
+## Docker
+
+```sh
+docker build -t dataviz-mcp mcp/
+docker run -i --rm -v "$PWD:/data" dataviz-mcp   # stdio; saved charts land in the mounted folder
+```
+
 ## Tools
 
 | Tool | What it does |
