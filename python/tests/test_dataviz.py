@@ -14,6 +14,18 @@ def png_ok(fig):
     return data
 
 
+def test_bar_called_twice_is_grouped():
+    # The red bars are shorter than the blue ones: overlaid, they would be
+    # hidden; grouped, they stand next to them.
+    fig = dv.Figure(300, 200)
+    ax = fig.axes()
+    ax.bar(["a", "b"], [1, 2], color="#ff0000")
+    ax.bar(["a", "b"], [3, 4], color="#0000ff")
+    px = np.asarray(fig.to_array())
+    red = (px[..., 0] > 200) & (px[..., 1] < 60) & (px[..., 2] < 60)
+    assert red.sum() > 100
+
+
 def test_methods_draw():
     x = np.linspace(0, 10, 200)
     fig = dv.Figure(1200, 900, title="All methods", theme="light").grid(3, 4)

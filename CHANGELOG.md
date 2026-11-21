@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Added
+- `Axes::group_bars`: places bar series with the same categories and
+  orientation side by side.
+
+### Fixed
+- Python: calling `bar` or `barh` again with the same categories draws
+  grouped bars, as documented, instead of drawing them on top of each
+  other (also in `dataviz.pyplot`).
+
 ## 1.0.0
 
 dataviz 1.0: the API is stable, and 1.x releases follow semantic

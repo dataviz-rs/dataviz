@@ -319,6 +319,44 @@ impl Axes {
         self.last_n(n)
     }
 
+    /// Places bar series that share their categories and orientation side
+    /// by side, as [`bars`](Self::bars) with [`BarMode::Grouped`] does, so
+    /// that calling [`bar`](Self::bar) again with the same categories gives
+    /// grouped bars. Series with bottoms (stacked) are left as they are.
+    pub fn group_bars(&mut self) -> &mut Self {
+        self.revision += 1;
+        let mut groups: Vec<(Vec<String>, bool, Vec<usize>)> = Vec::new();
+        for (i, s) in self.series.iter_mut().enumerate() {
+            let Some(b) = s.as_any_mut().downcast_mut::<Bars>() else {
+                continue;
+            };
+            let Some(names) = &b.names else { continue };
+            if b.bottoms.iter().any(|&v| v != 0.0) {
+                continue;
+            }
+            match groups
+                .iter_mut()
+                .find(|g| &g.0 == names && g.1 == b.horizontal)
+            {
+                Some(g) => g.2.push(i),
+                None => groups.push((names.clone(), b.horizontal, vec![i])),
+            }
+        }
+        for (_, _, members) in groups {
+            let k = members.len();
+            if k < 2 {
+                continue;
+            }
+            for (j, &i) in members.iter().enumerate() {
+                if let Some(b) = self.series[i].as_any_mut().downcast_mut::<Bars>() {
+                    b.width = 0.8 / k as f64;
+                    b.offset = -0.4 + b.width * (j as f64 + 0.5);
+                }
+            }
+        }
+        self
+    }
+
     /// The `index`-th series if it has type `S` (e.g. to update data).
     pub fn series_mut<S: Series>(&mut self, index: usize) -> Option<&mut S> {
         self.revision += 1;
@@ -1887,5 +1925,33 @@ fn group_tail(out: &mut Vec<Node>, from: usize, id: &str) {
             tooltip: None,
             id: Some(id.into()),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn group_bars_places_same_categories_side_by_side() {
+        let mut fig = crate::plot::Figure::new(400, 300);
+        let ax = fig.axes();
+        ax.bar(["a", "b"], [1.0, 2.0]);
+        ax.bar(["a", "b"], [3.0, 4.0]);
+        ax.bar(["x"], [5.0]); // other categories: untouched
+        ax.barh(["a", "b"], [1.0, 2.0]); // other orientation, alone: untouched
+        ax.group_bars();
+        let bars: Vec<(f64, f64)> = ax
+            .series
+            .iter_mut()
+            .filter_map(|s| s.as_any_mut().downcast_mut::<Bars>())
+            .map(|b| (b.width, b.offset))
+            .collect();
+        let close =
+            |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-9 && (a.1 - b.1).abs() < 1e-9;
+        assert!(close(bars[0], (0.4, -0.2)), "{:?}", bars[0]);
+        assert!(close(bars[1], (0.4, 0.2)), "{:?}", bars[1]);
+        assert!(close(bars[2], (0.8, 0.0)), "{:?}", bars[2]);
+        assert!(close(bars[3], (0.8, 0.0)), "{:?}", bars[3]);
     }
 }

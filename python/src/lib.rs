@@ -470,6 +470,8 @@ impl Core {
         if let Some(c) = color {
             b.color(c.as_str());
         }
+        // Calling bar again with the same categories gives grouped bars.
+        ax.group_bars();
         Ok(())
     }
 
